@@ -5,18 +5,17 @@ default:
 env               :   'myoHandPoseRandom-v0' #myosuite-v1          # placeholder name, not a real env
 algorithm         :   PPO
 seed              :   123
-n_env             :   32
-n_eval_env        :   5
-frame_skip        :   25
+n_env             :   10  #32
+n_eval_env        :   2  #5
 
 # PPO object
 policy            : 'MlpPolicy'  #'MlpPolicy'
 learning_rate     : 1e-5 
-batch_size        : 256
+batch_size        : 1024  #256
 gamma             : 0.95
 
 # PPO.learn function
-total_timesteps   : 40000000 #150000
+total_timesteps   : 200000000 #150000
 log_interval      : 1000
 
 eval_freq : 1000000
@@ -25,8 +24,8 @@ save_freq : 10000000
 
 policy_kwargs:                                              # Policy parameters (initial STD and architecture)
   net_arch:
-    - pi: [256, 128]
-      vf: [256, 128]
+    - pi: [256, 256]
+      vf: [256, 256]
 
 
 # Algorithm hyperparameters : if alg requires additional params, can be specified here (or defaults will be used)

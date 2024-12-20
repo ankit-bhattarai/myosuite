@@ -467,6 +467,12 @@ class LLCEEPosAdaptiveEnvV0(BaseV0):
         self.target_area_dynamic_width_scale = new_target_area_width
 
     def reset(self, **kwargs):
+        # Reset counters
+        self._steps_since_last_hit = 0
+        self._steps_inside_target = 0
+        self._trial_idx = 0
+        self._targets_hit = 0
+
         self.generate_target()
         self.robot.sync_sims(self.sim, self.sim_obsd)
 
