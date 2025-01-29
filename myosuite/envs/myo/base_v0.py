@@ -29,6 +29,7 @@ class BaseV0(env_base.MujocoEnv):
         weighted_reward_keys: dict,
         sites: list = None,
         frame_skip=10,
+        sex=None,
         muscle_condition="",
         fatigue_reset_vec=None,
         fatigue_reset_random=False,
@@ -52,6 +53,7 @@ class BaseV0(env_base.MujocoEnv):
         self.fatigue_reset_vec = fatigue_reset_vec
         self.fatigue_reset_random = fatigue_reset_random
         self.frame_skip = frame_skip
+        self.sex = sex
         self.initializeConditions()
         super()._setup(
             obs_keys=obs_keys,
@@ -73,7 +75,7 @@ class BaseV0(env_base.MujocoEnv):
         # for muscle fatigue we used the 3CC-r model
         elif self.muscle_condition == "fatigue":
             self.muscle_fatigue = CumulativeFatigue(
-                self.sim.model, self.frame_skip, seed=self.get_input_seed()
+                self.sim.model, frame_skip=self.frame_skip, sex=self.sex, seed=self.get_input_seed()
             )
 
         # Tendon transfer to redirect EIP --> EPL

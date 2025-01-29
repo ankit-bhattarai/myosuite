@@ -1,14 +1,51 @@
 from myosuite.utils import gym
 import mujoco
 import numpy as np
+from myosuite.utils.myosim_utils import MUSCLE_FMG
+
+### Parameters are taken from Rakshit et al. 2021 (https://doi.org/10.1016/j.jbiomech.2021.110695).
+MUSCLE_FATIGUE_PARAMS = {
+    "Ankle-Dorsiflexor-F": {"F": 0.00746, "R": 0.00081, "r": 4.97},
+    "Ankle-Dorsiflexor-M": {"F": 0.00725, "R": 0.00096, "r": 10.36},
+    "Ankle-Dorsiflexor": {"F": 0.00828, "R": 0.00204, "r": 7.07},
+    "Ankle-Plantarflexor-F": {"F": 0.00702, "R": 0.00098},
+    "Ankle-Plantarflexor-M": {"F": 0.00683, "R": 0.00093},
+    "Ankle-Plantarflexor": {"F": 0.00695, "R": 0.00096},
+    "Elbow-Extensor-F": {"F": 0.01874, "R": 0.00206, "r": 21.22},
+    "Elbow-Extensor-M": {"F": 0.01269, "R": 0.00085, "r": 30.21},
+    "Elbow-Extensor": {"F": 0.01559, "R": 0.00125, "r": 25.52},
+    "Elbow-Flexor-F": {"F": 0.00965, "R": 0.00197, "r": 6.22},
+    "Elbow-Flexor-M": {"F": 0.01302, "R": 0.00188, "r": 8.99},
+    "Elbow-Flexor": {"F": 0.01703, "R": 0.00494, "r": 4.68},
+    "Hand-Adductor-Pollicis-F": {"F": 0.00476, "R": 0.00093, "r": 6.62},
+    "Hand-Adductor-Pollicis-M": {"F": 0.00586, "R": 0.00202, "r": 1.00},
+    "Hand-Adductor-Pollicis": {"F": 0.00558, "R": 0.00283, "r": 1.00},
+    "Hand-First-Dorsal-Interossei-F": {"F": 0.03999, "R": 0.03983},
+    "Hand-First-Dorsal-Interossei-M": {"F": 0.01637, "R": 0.00360, "r": 3.66},
+    "Hand-First-Dorsal-Interossei": {"F": 0.02686, "R": 0.00656, "r": 3.41},
+    "Wrist-Flexor-F": {"F": 0.01159, "R": 0.00217, "r": 7.39},  #from Hand G/Grip group (https://doi.org/10.1016/j.jbiomech.2021.110695)
+    "Wrist-Flexor-M": {"F": 0.01238, "R": 0.00178, "r": 8.00},  #from Hand G/Grip group (https://doi.org/10.1016/j.jbiomech.2021.110695)
+    "Wrist-Flexor": {"F": 0.01235, "R": 0.00135, "r": 12.51},  #from Hand G/Grip group (https://doi.org/10.1016/j.jbiomech.2021.110695)
+    "Knee-Extensor-F": {"F": 0.01407, "R": 0.00185, "r": 6.32},
+    "Knee-Extensor-M": {"F": 0.01420, "R": 0.00153, "r": 10.96},
+    "Knee-Extensor": {"F": 0.00825, "R": 0.00076, "r": 14.85},
+    
+    "Ankle": {"F": 0.01485, "R": 0.00333, "r": 9.31},
+    "Toe": {"F": 0.01485, "R": 0.00333, "r": 9.31},  #from Ankle group (https://doi.org/10.1016/j.jbiomech.2021.110695)
+    "Elbow": {"F": 0.01086, "R": 0.00225, "r": 4.93},
+    "Hand": {"F": 0.01227, "R": 0.00134, "r": 9.10},
+    "Wrist": {"F": 0.01227, "R": 0.00134, "r": 9.10},  #from Hand group (https://doi.org/10.1016/j.jbiomech.2021.110695)
+    "Finger": {"F": 0.01227, "R": 0.00134, "r": 9.10},  #from Hand group (https://doi.org/10.1016/j.jbiomech.2021.110695)
+    "Knee": {"F": 0.00825, "R": 0.00076, "r": 14.85},
+    "Shoulder": {"F": 0.00825, "R": 0.00076, "r": 14.85},  #Shoulder values from Looft & Frey-Law 2020 (https://doi.org/10.1016/j.jbiomech.2020.109762)
+
+    "Default": {"F": 0.00970, "R": 0.00091, "r": 15},  #default values from Looft et al. 2018 (https://doi.org/10.1016/j.jbiomech.2018.06.005); NOTE: r=30 is better for hand/wrist/finger muscles (see https://doi.org/10.1016/j.jbiomech.2020.109762)
+}
 
 class CumulativeFatigue():
     # 3CC-r model, adapted from https://dl.acm.org/doi/pdf/10.1145/3313831.3376701 for muscles 
     # based on the implementation from Aleksi Ikkala and Florian Fischer https://github.com/aikkala/user-in-the-box/blob/main/uitb/bm_models/effort_models.py
-    def __init__(self, mj_model, frame_skip=1, seed=None):
-        self._r = 10 * 15 # Recovery time multiplier i.e. how many times more than during rest intervals https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6092960/ (factor 10 to compensate for 0.1 below)
-        self._F = 0.00912  # Fatigue coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/)
-        self._R = 0.1 * 0.00094  # Recivery coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/; factor 0.1 to get an approx. 1% R/F ratio)
+    def __init__(self, mj_model, frame_skip=1, sex=None, seed=None):
         # self.na = mj_model.na
         self._dt = mj_model.opt.timestep * frame_skip # dt might be different from model dt because it might include a frame skip
         muscle_act_ind = mj_model.actuator_dyntype == mujoco.mjtDyn.mjDYN_MUSCLE
@@ -19,19 +56,50 @@ class CumulativeFatigue():
         self._MR = np.ones((self.na,))   # Muscle Resting
         self._MF = np.zeros((self.na,))  # Muscle Fatigue
         self.TL  = np.zeros((self.na,))  # Target Load
+        
+        self._r = 10 * 15 # Recovery time multipslier i.e. how many times more than during rest intervals https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6092960/ (factor 10 to compensate for 0.1 below)
+        self._F = 0.00912  # Fatigue coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/)
+        self._R = 0.1 * 0.00094  # Recovery coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/; factor 0.1 to get an approx. 1% R/F ratio)
+        
+        self._r = np.zeros((self.na,))
+        self._F = np.zeros((self.na,))
+        self._R = np.zeros((self.na,))
+        for i in range(self.na):
+            if sex is not None:
+                # use sex-specific muscle fatigue parameters
+                self._r[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex, MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("r", MUSCLE_FATIGUE_PARAMS["Default"]["r"])
+                self._F[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex, MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("F", MUSCLE_FATIGUE_PARAMS["Default"]["F"])
+                self._R[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex, MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("R", MUSCLE_FATIGUE_PARAMS["Default"]["R"])
+            else:
+                self._r[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name], MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("r", MUSCLE_FATIGUE_PARAMS["Default"]["r"])
+                self._F[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name], MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("F", MUSCLE_FATIGUE_PARAMS["Default"]["F"])
+                self._R[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name], MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("R", MUSCLE_FATIGUE_PARAMS["Default"]["R"])
 
+        # self._r = self._r * np.ones((self.na,))
+        # self._F = self._F * np.ones((self.na,))
+        # self._R = self._R * np.ones((self.na,))
+        
         self.seed(seed)  # Create own Random Number Generator (RNG) used when reset is called with fatigue_reset_random=True
         ### NOTE: the seed from CumulativeFatigue is not synchronised with the seed used for the rest of MujocoEnv!
 
     def set_FatigueCoefficient(self, F):
+        if isinstance(F, int) or isinstance(F, float):
+            F = F * np.ones((self.na,))
+
         # Set Fatigue coefficients
         self._F = F
     
     def set_RecoveryCoefficient(self, R):
+        if isinstance(R, int) or isinstance(R, float):
+            R = R * np.ones((self.na,))
+
         # Set Recovery coefficients
         self._R = R
     
     def set_RecoveryMultiplier(self, r):
+        if isinstance(r, int) or isinstance(r, float):
+            r = r * np.ones((self.na,))
+
         # Set Recovery time multiplier
         self._r = r
         
@@ -57,9 +125,9 @@ class CumulativeFatigue():
         # Calculate rR
         rR = np.zeros_like(self._MA)
         idxs = self._MA >= self.TL
-        rR[idxs] = self._r*self._R
+        rR[idxs] = (self._r*self._R)[idxs]
         idxs = self._MA < self.TL
-        rR[idxs] = self._R
+        rR[idxs] = self._R[idxs]
 
         # Clip C(t) if needed, to ensure that MA, MR, and MF remain between 0 and 1
         C = np.clip(C, np.maximum(-self._MA/self._dt + self._F*self._MA, (self._MR - 1)/self._dt + rR*self._MF),
