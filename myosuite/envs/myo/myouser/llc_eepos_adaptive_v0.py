@@ -11,8 +11,7 @@ import numpy as np
 from myosuite.envs.myo.base_v0 import BaseV0
 
 
-
-class LLCEEPosAdaptiveEnvV0(BaseV0):
+class LLCEEPosAdaptiveDirectCtrlEnvV0(BaseV0):
 
     DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'act', 'motor_act', 'ee_pos', 'target_pos', 'target_radius']
     DEFAULT_RWD_KEYS_AND_WEIGHTS = {
@@ -193,12 +192,12 @@ class LLCEEPosAdaptiveEnvV0(BaseV0):
                 **kwargs,
                 )
     
-    # step the simulation forward (overrides BaseV0.step; --> use control smoothening instead of normalisation; also, enable signal-dependent and/or constant motor noise)
+    # step the simulation forward (overrides BaseV0.step; --> also, enable signal-dependent and/or constant motor noise)
     def step(self, a, **kwargs):
         new_ctrl = a.copy()
 
-        _selected_motor_control = np.clip(self._motor_act + a[:self._nm], 0, 1)
-        _selected_muscle_control = np.clip(self.sim.data.act[self._muscle_actuators] + a[self._nm:], 0, 1)
+        _selected_motor_control = np.clip(a[:self._nm], 0, 1)
+        _selected_muscle_control = np.clip(a[self._nm:], 0, 1)
 
         if self.sigdepnoise_type is not None:
             if self.sigdepnoise_type == "white":
@@ -223,9 +222,10 @@ class LLCEEPosAdaptiveEnvV0(BaseV0):
             else:
                 raise NotImplementedError(f"{self.constantnoise_type}")
 
-        # Update smoothed online estimate of motor actuation
-        self._motor_act = (1 - self._motor_alpha) * self._motor_act \
-                                + self._motor_alpha * np.clip(_selected_motor_control, 0, 1)
+        # # Update smoothed online estimate of motor actuation
+        # self._motor_act = (1 - self._motor_alpha) * self._motor_act \
+        #                         + self._motor_alpha * np.clip(_selected_motor_control, 0, 1)
+        self._motor_act = _selected_motor_control
 
         new_ctrl[self._motor_actuators] = self.sim.model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.sim.model.actuator_ctrlrange[self._motor_actuators, 1] - self.sim.model.actuator_ctrlrange[self._motor_actuators, 0])
         new_ctrl[self._muscle_actuators] = np.clip(_selected_muscle_control, 0, 1)
@@ -581,3 +581,77 @@ class LLCEEPosAdaptiveEnvV0(BaseV0):
         # Reset accumulative noise
         self._sigdepnoise_acc = 0
         self._constantnoise_acc = 0
+    
+
+class LLCEEPosAdaptiveEnvV0(LLCEEPosAdaptiveDirectCtrlEnvV0):
+    # # step the simulation forward (overrides BaseV0.step; --> use control smoothening instead of normalisation; also, enable signal-dependent and/or constant motor noise)
+    def step(self, a, **kwargs):
+        new_ctrl = a.copy()
+
+        _selected_motor_control = np.clip(self._motor_act + a[:self._nm], 0, 1)
+        _selected_muscle_control = np.clip(self.sim.data.act[self._muscle_actuators] + a[self._nm:], 0, 1)
+
+        if self.sigdepnoise_type is not None:
+            if self.sigdepnoise_type == "white":
+                _added_noise = self.sigdepnoise_level*self.np_random.normal(scale=_selected_muscle_control)
+                _selected_muscle_control += _added_noise
+            elif self.sigdepnoise_type == "whiteonly":  #only for debugging purposes
+                _selected_muscle_control = self.sigdepnoise_level*self.np_random.normal(scale=_selected_muscle_control)
+            elif self.sigdepnoise_type == "red":
+                # self.sigdepnoise_acc *= 1 - 0.1
+                self.sigdepnoise_acc += self.sigdepnoise_level*self.np_random.normal(scale=_selected_muscle_control)
+                _selected_muscle_control += self.sigdepnoise_acc
+            else:
+                raise NotImplementedError(f"{self.sigdepnoise_type}")
+        if self.constantnoise_type is not None:
+            if self.constantnoise_type == "white":
+                _selected_muscle_control += self.constantnoise_level*self.np_random.normal(scale=1)
+            elif self.constantnoise_type == "whiteonly":  #only for debugging purposes
+                _selected_muscle_control = self.constantnoise_level*self.np_random.normal(scale=1)
+            elif self.constantnoise_type == "red":
+                self.constantnoise_acc += self.constantnoise_level*self.np_random.normal(scale=1)
+                _selected_muscle_control += self.constantnoise_acc
+            else:
+                raise NotImplementedError(f"{self.constantnoise_type}")
+
+        # Update smoothed online estimate of motor actuation
+        self._motor_act = (1 - self._motor_alpha) * self._motor_act \
+                                + self._motor_alpha * np.clip(_selected_motor_control, 0, 1)
+
+        new_ctrl[self._motor_actuators] = self.sim.model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.sim.model.actuator_ctrlrange[self._motor_actuators, 1] - self.sim.model.actuator_ctrlrange[self._motor_actuators, 0])
+        new_ctrl[self._muscle_actuators] = np.clip(_selected_muscle_control, 0, 1)
+
+        isNormalized = False  #TODO: check whether we can integrate the default normalization from BaseV0.step
+        
+
+        ##### rest is re-implemented from BaseV0.step
+
+        # implement abnormalities
+        if self.muscle_condition == "fatigue":
+            # import ipdb; ipdb.set_trace()
+            new_ctrl[self._muscle_actuators], _, _ = self.muscle_fatigue.compute_act(
+                new_ctrl[self._muscle_actuators]
+            )
+        elif self.muscle_condition == "reafferentation":
+            # redirect EIP --> EPL
+            new_ctrl[self.EPLpos] = new_ctrl[self.EIPpos].copy()
+            # Set EIP to 0
+            new_ctrl[self.EIPpos] = 0
+        
+        # step forward
+        self.last_ctrl = self.robot.step(
+            ctrl_desired=new_ctrl,
+            ctrl_normalized=isNormalized,
+            step_duration=self.dt,
+            realTimeSim=self.mujoco_render_frames,
+            render_cbk=self.mj_render if self.mujoco_render_frames else None,
+        )
+
+        return self.forward(**kwargs)
+    
+    # # updates executed at each step, after MuJoCo step (see BaseV0.step) but before MyoSuite returns observations, reward and infos (see MujocoEnv.forward)
+    # def _forward(self, **kwargs):
+    #     pass
+        
+    #     # continue with default forward step
+    #     super()._forward(**kwargs)
