@@ -61,19 +61,19 @@ class CumulativeFatigue():
         self._F = 0.00912  # Fatigue coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/)
         self._R = 0.1 * 0.00094  # Recovery coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/; factor 0.1 to get an approx. 1% R/F ratio)
         
+        # Get muscle functional groups (MFG) [use sex-specific muscle fatigue parameters, if provided]
+        self.MFG = [MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex if sex is not None else MUSCLE_FMG[mj_model.actuator(i).name] for i in range(self.na)]
+        self.MFG_r = [mfg if mfg in MUSCLE_FATIGUE_PARAMS.keys() else (mfg+" -> "+(mfg.split("-")[0]) if "r" in MUSCLE_FATIGUE_PARAMS[mfg.split("-")[0]].keys() else mfg+" -> "+(mfg.split("-")[0])+"->"+"Default") for mfg in self.MFG]
+        self.MFG_F = [mfg if mfg in MUSCLE_FATIGUE_PARAMS.keys() else (mfg+" -> "+(mfg.split("-")[0]) if "F" in MUSCLE_FATIGUE_PARAMS[mfg.split("-")[0]].keys() else mfg+" -> "+(mfg.split("-")[0])+"->"+"Default") for mfg in self.MFG]
+        self.MFG_R = [mfg if mfg in MUSCLE_FATIGUE_PARAMS.keys() else (mfg+" -> "+(mfg.split("-")[0]) if "R" in MUSCLE_FATIGUE_PARAMS[mfg.split("-")[0]].keys() else mfg+" -> "+(mfg.split("-")[0])+"->"+"Default") for mfg in self.MFG]
+
         self._r = np.zeros((self.na,))
         self._F = np.zeros((self.na,))
         self._R = np.zeros((self.na,))
         for i in range(self.na):
-            if sex is not None:
-                # use sex-specific muscle fatigue parameters
-                self._r[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex, MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("r", MUSCLE_FATIGUE_PARAMS["Default"]["r"])
-                self._F[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex, MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("F", MUSCLE_FATIGUE_PARAMS["Default"]["F"])
-                self._R[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex, MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("R", MUSCLE_FATIGUE_PARAMS["Default"]["R"])
-            else:
-                self._r[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name], MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("r", MUSCLE_FATIGUE_PARAMS["Default"]["r"])
-                self._F[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name], MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("F", MUSCLE_FATIGUE_PARAMS["Default"]["F"])
-                self._R[i] = MUSCLE_FATIGUE_PARAMS.get(MUSCLE_FMG[mj_model.actuator(i).name], MUSCLE_FATIGUE_PARAMS[MUSCLE_FMG[mj_model.actuator(i).name].split("-")[0]]).get("R", MUSCLE_FATIGUE_PARAMS["Default"]["R"])
+            self._r[i] = MUSCLE_FATIGUE_PARAMS.get(self.MFG[i], MUSCLE_FATIGUE_PARAMS[self.MFG[i].split("-")[0]]).get("r", MUSCLE_FATIGUE_PARAMS["Default"]["r"])
+            self._F[i] = MUSCLE_FATIGUE_PARAMS.get(self.MFG[i], MUSCLE_FATIGUE_PARAMS[self.MFG[i].split("-")[0]]).get("F", MUSCLE_FATIGUE_PARAMS["Default"]["r"]) 
+            self._R[i] = MUSCLE_FATIGUE_PARAMS.get(self.MFG[i], MUSCLE_FATIGUE_PARAMS[self.MFG[i].split("-")[0]]).get("R", MUSCLE_FATIGUE_PARAMS["Default"]["r"])
 
         # self._r = self._r * np.ones((self.na,))
         # self._F = self._F * np.ones((self.na,))
