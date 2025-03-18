@@ -157,3 +157,47 @@ register_env_with_variants(id='mobl_arms_index_llc_eepos_adaptive-v0',
             'reset_type': 'range_uniform'
         }
     )
+
+
+### MJX variants
+register_env_with_variants(id='myoArm_llc_eepos_adaptive_mjx-v0',
+        entry_point='myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v0:LLCEEPosAdaptiveEnvMJXV0',
+        max_episode_steps=80,  #100,
+        kwargs={
+            'model_path': curr_dir+'/../assets/arm/myoarm_pose.xml',
+            'frame_skip': 25,
+            'target_pos_range': {'IFtip': ((-0.3, -0.35, -0.3), (0.1, -0.225, 0.4)),},
+            'target_radius_range': {'IFtip': ((0.01, 0.15)),},
+            'ref_site': 'R.Shoulder_marker',
+            'adaptive_task': True,
+            # 'init_target_area_width_scale': 0,
+            # 'adaptive_increase_success_rate': 0.6,
+            # 'adaptive_decrease_success_rate': 0.3,
+            # 'adaptive_change_step_size': 0.05,
+            # 'adaptive_change_min_trials': 50,
+            'adaptive_change_trial_buffer_length': 500,
+            # 'normalize_act': True,
+            'reset_type': 'range_uniform'
+        }
+    )
+
+register_env_with_variants(id='mobl_arms_index_llc_eepos_adaptive_mjx-v0',
+        entry_point='myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v0:LLCEEPosAdaptiveEnvMJXV0',
+        max_episode_steps=80,  #100,
+        kwargs={
+            'model_path': curr_dir+'/../../../simhive/uitb_sim/mobl_arms_index_llc_eepos_pointing.xml',
+            'frame_skip': 25,
+            'target_pos_range': {'fingertip': ((0.225, -0.3, -0.3), (0.35, 0.1, 0.4)),},
+            'target_radius_range': {'fingertip': ((0.01, 0.15)),},
+            'ref_site': 'humphant',
+            'adaptive_task': True,
+            # 'init_target_area_width_scale': 0,
+            # 'adaptive_increase_success_rate': 0.6,
+            # 'adaptive_decrease_success_rate': 0.3,
+            # 'adaptive_change_step_size': 0.05,
+            # 'adaptive_change_min_trials': 50,
+            'adaptive_change_trial_buffer_length': 500,
+            # 'normalize_act': True,
+            'reset_type': 'range_uniform'
+        }
+    )
