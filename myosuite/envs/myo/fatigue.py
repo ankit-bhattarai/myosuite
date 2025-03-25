@@ -57,9 +57,9 @@ class CumulativeFatigue():
         self._MF = np.zeros((self.na,))  # Muscle Fatigue
         self.TL  = np.zeros((self.na,))  # Target Load
         
-        self._r = 10 * 15 # Recovery time multipslier i.e. how many times more than during rest intervals https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6092960/ (factor 10 to compensate for 0.1 below)
-        self._F = 0.00912  # Fatigue coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/)
-        self._R = 0.1 * 0.00094  # Recovery coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/; factor 0.1 to get an approx. 1% R/F ratio)
+        # self._r = 10 * 15 # Recovery time multipslier i.e. how many times more than during rest intervals https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6092960/ (factor 10 to compensate for 0.1 below)
+        # self._F = 0.00912  # Fatigue coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/)
+        # self._R = 0.1 * 0.00094  # Recovery coefficients (default parameter was identified for elbow torque https://pubmed.ncbi.nlm.nih.gov/22579269/; factor 0.1 to get an approx. 1% R/F ratio)
         
         # Get muscle functional groups (MFG) [use sex-specific muscle fatigue parameters, if provided]
         self.MFG = [MUSCLE_FMG[mj_model.actuator(i).name]+"-"+sex if sex is not None else MUSCLE_FMG[mj_model.actuator(i).name] for i in range(self.na)]
