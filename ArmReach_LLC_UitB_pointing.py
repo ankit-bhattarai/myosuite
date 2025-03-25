@@ -29,9 +29,9 @@ import mediapy as media
 
 def main():
 
-  env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
-  from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v0 import LLCEEPosAdaptiveEnvMJXV0, LLCEEPosAdaptiveDirectCtrlEnvMJXV0
-  envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
+  env_name = 'myoArm_llc_eepos_mjx-v0'
+  from myosuite.envs.myo.myouser.llc_eepos_mjx_v0 import LLCEEPosEnvMJXV0, LLCEEPosDirectCtrlEnvMJXV0
+  envs.register_environment(env_name, LLCEEPosDirectCtrlEnvMJXV0)
   
   model_path = 'simhive/uitb_sim/mobl_arms_index_llc_eepos_pointing.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
@@ -50,7 +50,7 @@ def main():
             'success_log_buffer_length': 500,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
-            # 'max_trials': 10
+            # 'max_trials': 1
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
@@ -82,7 +82,7 @@ def main():
     return None
   
   train_fn = functools.partial(
-      ppo.train, num_timesteps=20_000_000, num_evals=5, reward_scaling=0.1,
+      ppo.train, num_timesteps=20_000_000, num_evals=20, reward_scaling=0.1,
       episode_length=800, normalize_observations=True, action_repeat=1,
       unroll_length=10, num_minibatches=24, num_updates_per_batch=8,
       discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=3072,
