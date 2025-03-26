@@ -367,7 +367,7 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         ## Update state info of internal variables at the end of each env step
         state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
         state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx']
+        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
 
         
         # Generate new target
@@ -505,7 +505,7 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         # print("....////")
         # obs_dict['steps_inside_target'] = jp.select([jp.all(obs_dict['reach_dist'] < obs_dict['target_radius'])], [obs_dict['steps_inside_target'] + 1], 0)
         # obs_dict['target_hit'] = jp.array([obs_dict['steps_inside_target'] >= self.dwell_threshold])
-        obs_dict['trial_idx'] = info['trial_idx'] + jp.select([obs_dict['target_success']], jp.ones(1))
+        obs_dict['trial_idx'] = info['trial_idx'].copy() + jp.select([obs_dict['target_success']], jp.ones(1))
         # print("trial_idx", obs_dict['trial_idx'])
 
         _steps_since_last_hit = jp.select([obs_dict['target_success']], jp.zeros(1), info['steps_since_last_hit'] + 1)
@@ -516,6 +516,8 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
         obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_fail']], jp.zeros(1), _steps_since_last_hit)
         # print("steps_since_last_hit", obs_dict['steps_since_last_hit'])
+        
+        obs_dict['task_completed'] = obs_dict['trial_idx'] >= self.max_trials
 
         return obs_dict
     
@@ -549,7 +551,7 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
             # Must keys
             ('sparse',  -1.*(jp.linalg.norm(reach_dist, axis=-1) ** 2)),
             ('solved',  1.*(obs_dict['target_success'])),
-            ('done',    1.*(obs_dict['trial_idx'] >= self.max_trials)), #np.any(reach_dist > far_th))),
+            ('done',    1.*(obs_dict['task_completed'])), #np.any(reach_dist > far_th))),
         ))
         # print(rwd_dict.items())
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.rwd_keys_wt.items()]), axis=0)
@@ -880,7 +882,7 @@ class LLCEEPosEnvMJXV0(LLCEEPosDirectCtrlEnvMJXV0):
         ## Update state info of internal variables at the end of each env step
         state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
         state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx']
+        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
 
         
         # Generate new target

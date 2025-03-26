@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from etils import epath
 import functools
@@ -27,7 +28,7 @@ from brax.io import html, mjcf, model
 from matplotlib import pyplot as plt
 import mediapy as media
 
-def main():
+def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v0 import LLCEEPosAdaptiveEnvMJXV0, LLCEEPosAdaptiveDirectCtrlEnvMJXV0
@@ -54,7 +55,7 @@ def main():
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
-  def _render(rollouts, video_type='single', height=480, width=640, camera='for_testing'):
+  def _render(rollouts, experiment_id='ArmReach', video_type='single', height=480, width=640, camera='for_testing'):
 
     front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
     front_view_pos[1] = -2
@@ -73,20 +74,32 @@ def main():
       elif video_type == 'multiple':
         videos.append(env.render(rollout['states'], height=height, width=width, camera=camera))
 
+    os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
+    eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
+
     if video_type == 'single':
-      media.write_video(cwd + '/ArmReach.mp4', videos, fps=1.0 / env.dt) 
+      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
     elif video_type == 'multiple':
       for i, video in enumerate(videos):
-        media.write_video(cwd + '/ArmReach' + str(i) + '.mp4', video, fps=1.0 / env.dt) 
+        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
 
     return None
   
+  def _create_render(env, height=480, width=640, camera='for_testing'):
+    front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
+    front_view_pos[1] = -2
+    front_view_pos[2] = 0.65
+    env.sys.mj_model.camera(camera).poscom0 = front_view_pos
+
+    return functools.partial(env.render, height=height, width=width, camera=camera)
+  
   train_fn = functools.partial(
-      ppo.train, num_timesteps=20_000_000, num_evals=5, reward_scaling=0.1,
+      ppo.train, num_timesteps=n_train_steps, num_evals=20, reward_scaling=0.1,
       episode_length=800, normalize_observations=True, action_repeat=1,
       unroll_length=10, num_minibatches=24, num_updates_per_batch=8,
       discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=3072,
       batch_size=512, seed=0)
+      # log_training_metrics=True)
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
 
   x_data = []
@@ -96,9 +109,10 @@ def main():
 
   max_y, min_y = 13000, 0
   def progress(num_steps, metrics):
-
-    print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}")
-
+    
+    print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
+          task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
+          episode length: {metrics['eval/avg_episode_length']}")
     times.append(datetime.now())
     x_data.append(num_steps)
     y_data.append(metrics['eval/episode_reward'])
@@ -115,29 +129,42 @@ def main():
         x_data, y_data, yerr=ydataerr)
     plt.show()
 
+  ## TRAINING
   make_inference_fn, params, _= train_fn(environment=env, progress_fn=progress)
 
-  print(f'time to jit: {times[1] - times[0]}')
-  print(f'time to train: {times[-1] - times[1]}')
+  if n_train_steps > 0:
+    print(f'time to jit: {times[1] - times[0]}')
+    print(f'time to train: {times[-1] - times[1]}')
 
-  import os
   cwd = os.path.dirname(os.path.abspath(__file__))
+  os.makedirs(cwd + '/myosuite-mjx-policies/', exist_ok=True)
 
-  model.save_params(cwd + '/ArmReachParams', params)
-  params = model.load_params(cwd + '/ArmReachParams')
-  inference_fn = make_inference_fn(params)
+  param_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_params')
+  if n_train_steps > 0:
+    model.save_params(param_path, params)
 
+  ## EVALUATION
   backend = 'positional' # @param ['generalized', 'positional', 'spring']
-  env = envs.create(env_name=env_name, model_path=path, backend=backend, episode_length=env._episode_length, **kwargs)
+  eval_env = envs.create(env_name=env_name, model_path=path, eval_mode=True, backend=backend, episode_length=env._episode_length, **kwargs)
 
+  params = model.load_params(param_path)
+  inference_fn = make_inference_fn(params)
 
   times = [datetime.now()]
 
+  render_fn = _create_render(env)
+  rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn)
+
+  _render(rollouts, experiment_id=experiment_id)
+
+def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single'):
+  if rng is None:
+    rng = jax.random.PRNGKey(seed=0)
+  
   jit_env_reset = jax.jit(env.reset)
   jit_env_step = jax.jit(env.step)
   jit_inference_fn = jax.jit(inference_fn)
 
-  rng = jax.random.PRNGKey(seed=0)
   state = jit_env_reset(rng=rng)
   act = jp.zeros(env.sys.nu)
   state = jit_env_step(state, act)
@@ -146,26 +173,59 @@ def main():
   print(f'time to jit: {times[1] - times[0]}')
 
   rollouts = []
-  for episode in range(10):
+  videos = []
+  for episode in range(n_eps):
     rng = jax.random.PRNGKey(seed=episode)
     state = jit_env_reset(rng=rng)
     rollout = {}
     # rollout['wrist_target'] = state.info['wrist_target']
     states = []
-    while not (state.done or state.info['truncation']):
+    states_pointer = 0
+    frame_collection = []
+    # while not (state.done or state.info['truncation']):
+    done = state.done
+    while not (done or state.info['truncation']):
       states.append(state.pipeline_state)
       act_rng, rng = jax.random.split(rng)
       act, _ = jit_inference_fn(state.obs, act_rng)
       state = jit_env_step(state, act)
+      
+      obs_dict = env.get_obs_dict(state.pipeline_state, state.info)
+      done = obs_dict['task_completed']
+      if obs_dict['target_success'] or obs_dict['target_fail']:
+        # print('RENDER', rollout_pointer, len(rollout), obs_dict['target_pos'])
+        if render_fn is not None:
+          frame_collection.extend(render_fn(states[states_pointer:], state.info['target_pos'])) #with render_mode="rgb_array_list", env.render() returns a list of all frames since last call of reset()
+          states_pointer = len(states)
 
-    times = [datetime.now()]
+    times.append(datetime.now())
 
     rollout['states'] = states
     rollouts.append(rollout)
 
-  _render(rollouts)
+    if render_fn is not None:
+      frame_collection.extend(render_fn(states[states_pointer:], state.info['target_pos'])) #with render_mode="rgb_array_list", env.render() returns a list of all frames since last call of reset()
+      states_pointer = len(states)
+      videos += frame_collection
+  
+  cwd = os.path.dirname(os.path.abspath(__file__))
+  os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
+  eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
+
+  if video_type == 'single':
+    media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
+  elif video_type == 'multiple':
+    for i, video in enumerate(videos):
+      media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
+
+  return rollouts
+
 
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  main()
+  experiment_id = 'mobl_llc_eepos_v0.1'
+  n_train_steps = 20_000_000
+  n_eval_eps = 10
+
+  main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps)

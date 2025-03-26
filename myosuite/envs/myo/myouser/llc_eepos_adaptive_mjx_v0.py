@@ -37,6 +37,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     }
 
     def __init__(self, model_path=None, frame_skip=25, # aka physics_steps_per_control_step
+            eval_mode=False,
             seed=123, **kwargs):
         # # EzPickle.__init__(**locals()) is capturing the input dictionary of the init method of this class.
         # # In order to successfully capture all arguments we need to call gym.utils.EzPickle.__init__(**locals())
@@ -82,6 +83,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._n_frames = kwargs.get('n_frames', frame_skip)  #TODO: check that this attribute is used by PipelineEnv
         # self._n_frames = kwargs['n_frames']
         kwargs['backend'] = 'mjx'
+
+        if eval_mode:
+            kwargs['adaptive_task'] = False  #disable adaptive target curriculum for evaluation
 
         # # self.data = self.pipeline_init(qpos0, qvel0)
         # data = mjx.make_data(sys)  #this is done by self.reset called in self._prepare_env
@@ -308,6 +312,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
         rng = state.info['rng']
 
+        # increase step counter
+        state.info['steps_since_last_hit'] = state.info['steps_since_last_hit'] + 1
+
         data0 = state.pipeline_state
         new_ctrl = action.copy()
 
@@ -388,7 +395,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
         ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
         def where_done(x, y):
-            done = rwd_dict['done']  #state.done
+            done = rwd_dict['done'].copy()  #state.done
             if done.shape:
                 done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
             return jp.where(done, x, y)
@@ -400,6 +407,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         )
         obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
         obs = jax.tree.map(where_done, state_after_reset.obs, obs)  #state.obs)
+        # info = jax.tree.map(where_done, state_after_reset.info, state.info)
+        # state.replace(info=info)
         ####################################################################################
 
         ## Update state info of internal variables at the end of each env step
@@ -407,11 +416,16 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         state.info['motor_act'] = obs_dict['motor_act']
         state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
         state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx']
+        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
         if self.adaptive_task:
             state.info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index']
             state.info['trial_success_log'] = obs_dict['trial_success_log']
         state.info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale']
+
+        # Also store variables useful for evaluation
+        state.info['target_success'] = obs_dict['target_success']
+        state.info['target_fail'] = obs_dict['target_fail']
+        state.info['task_completed'] = obs_dict['task_completed']
 
         # # finalize step
         # env_info = self.get_env_infos(state, data)
@@ -480,6 +494,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         state.metrics.update(
             target_area_dynamic_width_scale=state.info['target_area_dynamic_width_scale'],
+            success_rate=obs_dict['success_rate'],
             # bonus=rwd_dict['bonus'],
         )
 
@@ -551,17 +566,17 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # print("....////")
         # obs_dict['steps_inside_target'] = jp.select([jp.all(obs_dict['reach_dist'] < obs_dict['target_radius'])], [obs_dict['steps_inside_target'] + 1], 0)
         # obs_dict['target_hit'] = jp.array([obs_dict['steps_inside_target'] >= self.dwell_threshold])
-        obs_dict['trial_idx'] = info['trial_idx'] + jp.select([obs_dict['target_success']], jp.ones(1))
+        obs_dict['trial_idx'] = info['trial_idx'].copy() + jp.select([obs_dict['target_success']], jp.ones(1))
         # print("trial_idx", obs_dict['trial_idx'])
 
-        _steps_since_last_hit = jp.select([obs_dict['target_success']], jp.zeros(1), info['steps_since_last_hit'] + 1)
-        # print(info['steps_since_last_hit'], info['steps_since_last_hit'] + 1, obs_dict['steps_since_last_hit'])
-        # print("....////")
-        _target_timeout = jp.array(_steps_since_last_hit >= self._max_steps_without_hit)
+        # _steps_since_last_hit = jp.select([obs_dict['target_success']], jp.zeros(1), info['steps_since_last_hit'] + 1)
+        # _target_timeout = jp.array(_steps_since_last_hit >= self._max_steps_without_hit)
+        # obs_dict['target_fail'] = ~obs_dict['target_success'] & _target_timeout
+        # obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_fail']], jp.zeros(1), _steps_since_last_hit)
+
+        _target_timeout = jp.array(info['steps_since_last_hit'] >= self._max_steps_without_hit)
         obs_dict['target_fail'] = ~obs_dict['target_success'] & _target_timeout
-        # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_fail']], jp.zeros(1), _steps_since_last_hit)
-        # print("steps_since_last_hit", obs_dict['steps_since_last_hit'])
+        obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [jp.zeros(1)], info['steps_since_last_hit'])
 
         obs_dict['task_completed'] = obs_dict['trial_idx'] >= self.max_trials
 
@@ -575,23 +590,23 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             #     return _data
             _trial_success_log_pointer_value = jp.select([obs_dict['target_success'], obs_dict['target_fail']], [1, 0], -1)
             idx = jp.arange(info['trial_success_log'].shape[-1])
-            obs_dict['trial_success_log'] = jp.where((idx == info['trial_success_log_pointer_index']) & (_trial_success_log_pointer_value != -1), _trial_success_log_pointer_value, info['trial_success_log'])
-            obs_dict['trial_success_log_pointer_index'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(info['trial_success_log_pointer_index'] + 1) % self.success_log_buffer_length], info['trial_success_log_pointer_index']).astype(jp.int32)
+            obs_dict['trial_success_log'] = jp.where((idx == info['trial_success_log_pointer_index']) & (_trial_success_log_pointer_value != -1), _trial_success_log_pointer_value, info['trial_success_log']).copy()
+            obs_dict['trial_success_log_pointer_index'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(info['trial_success_log_pointer_index'] + 1) % self.success_log_buffer_length], info['trial_success_log_pointer_index']).astype(jp.int32).copy()
             # _trial_success_log_updated = jp.select([_trial_success_log_pointer_value != -1], [_trial_success_log_pointer_value], info['trial_success_log'].at[obs_dict['trial_success_log_pointer_index']])
             # obs_dict['trial_success_log'] = _trial_success_log_updated
             # obs_dict['trial_success_log'] = _update_success_log_entry(info['trial_success_log'], obs_dict['trial_success_log_pointer_index'], _trial_success_log_pointer_value)
             # obs_dict['trial_success_log'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [_trial_success_log_pointer_value], info['trial_success_log'])   #TODO: check dimensions?!
 
             # Check if target area width should be updated
-            n_targets_adj = jp.sum(obs_dict['trial_success_log'] != 0, axis=-1)
-            n_hits_adj = jp.sum(obs_dict['trial_success_log'], axis=-1)
-            success_rate = n_hits_adj / n_targets_adj
+            n_targets_adj = jp.sum(obs_dict['trial_success_log'] != -1, axis=-1)
+            n_hits_adj = jp.sum(obs_dict['trial_success_log'] == 1, axis=-1)
+            success_rate = jp.where((n_targets_adj != 0), n_hits_adj / jp.where(n_targets_adj != 0, n_targets_adj, 1), jp.zeros(1))
             # print(f"SUCCESS RATE: {self.success_rate*100}% ({self.n_hits_adj}/{self.n_targets_adj}) -- Last Adj. #{self.n_adjs}")
             obs_dict['target_area_dynamic_width_scale'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
                                 (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
                                 [info['target_area_dynamic_width_scale'] + self.adaptive_change_step_size,
                                 info['target_area_dynamic_width_scale'] - self.adaptive_change_step_size], 
-                                info['target_area_dynamic_width_scale'])
+                                info['target_area_dynamic_width_scale']).copy()
             ##TODO: check dimensions of arguments in above conditional function call
             # obs_dict = jp.select([n_targets_adj >= self.adaptive_change_min_trials], [self.update_adaptive_target_area_width(info, obs_dict, success_rate)], obs_dict)
             
@@ -600,15 +615,17 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # obs_dict['trial_success_log_pointer_index'] = zero  #jp.array([], dtype=jp.int32)
             obs_dict['trial_success_log'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
                                 (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
-                                [-1*jp.ones(self.success_log_buffer_length, dtype=jp.int32),
-                                -1*jp.ones(self.success_log_buffer_length, dtype=jp.int32)],
+                                [jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"]),
+                                 jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"])],
                                 obs_dict["trial_success_log"])
             obs_dict['trial_success_log_pointer_index'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
                                 (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
                                 [zero, zero],
                                 obs_dict["trial_success_log_pointer_index"]).astype(jp.int32)
+            obs_dict['success_rate'] = success_rate
         else:
             obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
+            obs_dict['success_rate'] = jp.array([-1.])  #unknown ##TODO: measure success rate if adaptive is not enabled
 
         return obs_dict
     
@@ -642,7 +659,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # Must keys
             ('sparse',  -1.*(jp.linalg.norm(reach_dist, axis=-1) ** 2)),
             ('solved',  1.*(obs_dict['target_success'])),
-            ('done',    1.*(obs_dict['trial_idx'] >= self.max_trials)), #np.any(reach_dist > far_th))),
+            ('done',    1.*(obs_dict['task_completed'])), #np.any(reach_dist > far_th))),
         ))
         # print(rwd_dict.items())
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.rwd_keys_wt.items()]), axis=0)
@@ -817,7 +834,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # self.generate_target(rng, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {'target_area_dynamic_width_scale': info['target_area_dynamic_width_scale']}  #'bonus': zero}
+        metrics = {'target_area_dynamic_width_scale': info['target_area_dynamic_width_scale'],
+                    'success_rate': obs_dict['success_rate'],
+                }  #'bonus': zero}
         
         return State(data, obs, reward, done, metrics, info)
     
@@ -874,7 +893,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # self.generate_target(rng1, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {'target_area_dynamic_width_scale': info['target_area_dynamic_width_scale']}  #'bonus': zero}
+        metrics = {'target_area_dynamic_width_scale': info['target_area_dynamic_width_scale'],
+                    'success_rate': obs_dict['success_rate'],
+                   }  #'bonus': zero}
         
         return obs_dict, State(data, obs, reward, done, metrics, info)
     
@@ -975,6 +996,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 data.replace(qpos=new_qpos)
 
     def _reset_bm_model(self, rng):
+        #TODO: do not store anything in self in this function, as its values should mostly be discarded after it is called (no permanent env changes!)
+
         # Sample random initial values for motor activation
         rng, rng1 = jax.random.split(rng, 2)
         self._motor_act = jax.random.uniform(rng1, shape=(self._nm,), minval=jp.zeros((self._nm,)), maxval=jp.ones((self._nm,)))
@@ -990,16 +1013,17 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     def render(
         self,
         trajectory: List[base.State],
-        target_pos: jp.ndarray = jp.array([]),
+        target_pos: Optional[jp.ndarray] = None,
         height: int = 240,
         width: int = 320,
         camera: Optional[str] = None,
     ) -> Sequence[np.ndarray]:
         """Sets target positions and then renders a trajectory using the MuJoCo renderer."""
-        for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
-            self.sys.mj_model.site(_target_sid).pos = _target_pos
-            # self.sys = self.sys.tree_replace({'site_pos': self.sys.mj_model.site_pos})
-            # print(self.sys.site_pos[_target_sid])#.set(new_position)
+        if target_pos is not None:
+            for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
+                self.sys.mj_model.site(_target_sid).pos = _target_pos
+                # self.sys = self.sys.tree_replace({'site_pos': self.sys.mj_model.site_pos})
+                # print(self.sys.site_pos[_target_sid])#.set(new_position)
 
         return super().render(trajectory, height, width, camera)
 
@@ -1009,6 +1033,9 @@ class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
         """Runs one timestep of the environment's dynamics."""
         # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
         rng = state.info['rng']
+
+        # increase step counter
+        state.info['steps_since_last_hit'] = state.info['steps_since_last_hit'] + 1
 
         data0 = state.pipeline_state
         new_ctrl = action.copy()
@@ -1093,7 +1120,7 @@ class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
         ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
         ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
         def where_done(x, y):
-            done = rwd_dict['done']  #state.done
+            done = rwd_dict['done'].copy()  #state.done
             if done.shape:
                 done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
             return jp.where(done, x, y)
@@ -1105,18 +1132,25 @@ class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
         )
         obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
         obs = jax.tree.map(where_done, state_after_reset.obs, obs)  #state.obs)
+        # info = jax.tree.map(where_done, state_after_reset.info, state.info)
+        # state.replace(info=info)
         ####################################################################################
 
         ## Update state info of internal variables at the end of each env step
-        state.info['last_ctrl'] = obs_dict['last_ctrl']
-        state.info['motor_act'] = obs_dict['motor_act']
-        state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
-        state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx']
+        state.info['last_ctrl'] = obs_dict['last_ctrl'].copy()
+        state.info['motor_act'] = obs_dict['motor_act'].copy()
+        state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit'].copy()
+        state.info['steps_inside_target'] = obs_dict['steps_inside_target'].copy()
+        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
         if self.adaptive_task:
-            state.info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index']
-            state.info['trial_success_log'] = obs_dict['trial_success_log']
-        state.info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale']
+            state.info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index'].copy()
+            state.info['trial_success_log'] = obs_dict['trial_success_log'].copy()
+        state.info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale'].copy()
+
+        # Also store variables useful for evaluation
+        state.info['target_success'] = obs_dict['target_success'].copy()
+        state.info['target_fail'] = obs_dict['target_fail'].copy()
+        state.info['task_completed'] = obs_dict['task_completed'].copy()
 
         # # finalize step
         # env_info = self.get_env_infos(state, data)
@@ -1185,6 +1219,7 @@ class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
 
         state.metrics.update(
             target_area_dynamic_width_scale=state.info['target_area_dynamic_width_scale'],
+            success_rate=obs_dict['success_rate'],
             # bonus=rwd_dict['bonus'],
         )
 
