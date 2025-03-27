@@ -60,7 +60,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
 
   cwd = os.path.dirname(os.path.abspath(__file__))
   if restore_params_path is not None:
-    restore_params = model.load_params(cwd + '/' + param_path)
+    restore_params = model.load_params(cwd + '/' + restore_params_path)
   else:
     restore_params = None
 
@@ -177,11 +177,11 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
 
       plt.xlabel('# environment steps')
       plt.ylabel('reward per episode')
-      plt.title(f'y={y_data[-1]:.3f}')
+      plt.title(f'y={y_data_train[-1]:.3f}')
 
-      plt.errorbar(
-          x_data, y_data, yerr=ydataerr)
-      plt.show()
+      # plt.errorbar(
+      #     x_data_train, y_data_train, yerr=ydataerr)
+      # plt.show()
 
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_reward.png')
       plt.savefig(fig_path)
