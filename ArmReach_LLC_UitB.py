@@ -179,9 +179,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       plt.ylabel('reward per episode')
       plt.title(f'y={y_data_train[-1]:.3f}')
 
-      # plt.errorbar(
-      #     x_data_train, y_data_train, yerr=ydataerr)
-      # plt.show()
+      plt.errorbar(
+          x_data_train, y_data_train) # yerr=ydataerr)
+      plt.show()
 
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_reward.png')
       plt.savefig(fig_path)
@@ -194,6 +194,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       plt.xlabel('# environment steps')
       plt.ylabel('episode length')
       plt.title(f'length={y_data_train_length[-1]:.3f}')
+      plt.errorbar(
+          x_data_train, y_data_train_length) # yerr=ydataerr)
+      plt.show()
       plt.show()
 
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_length.png')
@@ -207,6 +210,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       plt.xlabel('# environment steps')
       plt.ylabel('success rate')
       plt.title(f'success={y_data_train_success[-1]:.3f}')
+      plt.errorbar(
+          x_data_train, y_data_train_success) # yerr=ydataerr)
       plt.show()
 
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_success.png')
@@ -220,6 +225,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       plt.xlabel('# environment steps')
       plt.ylabel('curriculum state')
       plt.title(f'width={y_data_train_curriculum_state[-1]:.3f}')
+      plt.errorbar(
+          x_data_train, y_data_train_curriculum_state) # yerr=ydataerr)
       plt.show()
 
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_curriculum.png')
