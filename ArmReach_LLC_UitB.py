@@ -233,6 +233,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_curriculum.png')
       try:
         plt.savefig(fig_path)
+        plt.close()
       except:
         pass
 
@@ -368,10 +369,10 @@ if __name__ == '__main__':
 
   experiment_id = 'mobl_llc_eepos_v0.1.1c'
   n_train_steps = 100_000_000
-  n_eval_eps = 10
+  n_eval_eps = 1
 
   restore_params_path = "myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
-  init_target_area_width_scale = 0.25  #TODO: load from file
+  init_target_area_width_scale = 1.0  #TODO: load from file
 
   main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
        restore_params_path=restore_params_path, init_target_area_width_scale=init_target_area_width_scale)

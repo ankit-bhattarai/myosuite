@@ -3,7 +3,10 @@
 Authors  :: Florian Fischer (fjf33@cam.ac.uk); Vikash Kumar (vikashplus@gmail.com), Vittorio Caggiano (caggiano@gmail.com)
 ================================================= """
 
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import collections
+import functools
+
 from myosuite.utils import gym
 import mujoco
 import numpy as np
@@ -16,15 +19,18 @@ from jax import numpy as jp
 
 from mujoco import mjx
 
+from brax import base
 # from brax.base import State as PipelineState
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
+from brax.envs.wrappers.training import VmapWrapper
 # from brax.mjx.pipeline import _reformat_contact
 from brax.io import html, mjcf, model
 
 
 class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
 
-    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'act', 'motor_act', 'ee_pos', 'target_pos', 'target_radius']
+    # DEFAULT_OBS_KEYS = ['reach_dist', 'inside_target', 'steps_inside_target', 'target_success',    'qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']  #TODO: exclude 'reach_dist' etc.
+    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']
     DEFAULT_RWD_KEYS_AND_WEIGHTS = {
         "reach": 1.0,
         "bonus": 8.0,
@@ -33,9 +39,8 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
     }
 
     def __init__(self, model_path=None, frame_skip=25, # aka physics_steps_per_control_step
+            eval_mode=False,
             seed=123, **kwargs):
-        #TODO: forward frame_skip to brax's action_repeat parameter
-
         # # EzPickle.__init__(**locals()) is capturing the input dictionary of the init method of this class.
         # # In order to successfully capture all arguments we need to call gym.utils.EzPickle.__init__(**locals())
         # # at the leaf level, when we do inheritance like we do here.
@@ -91,11 +96,14 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         # self._prepare_reaching_task_pt1()
         self._setup(**kwargs)
 
-        # Do a forward step so stuff like geom and body positions are calculated
-        rng_init = jax.random.PRNGKey(self.seed)
-        init_state = self.reset(rng_init, target_pos=jp.zeros(3))
+        # Do a forward step so stuff like geom and body positions are calculated [using MjData rather than mjx.Data, to reduce computational overheat]
+        # rng_init = jax.random.PRNGKey(self.seed)
+        # init_state = self.reset(rng_init, target_pos=jp.zeros(3))
+        # _data = init_state.pipeline_state
+        _data = mujoco.MjData(self.sys.mj_model)
+        mujoco.mj_forward(self.sys.mj_model, _data)
 
-        self._prepare_after_init(init_state.pipeline_state)
+        self._prepare_after_init(_data)
 
     def _prepare_bm_model(self):
         # Total number of actuators
@@ -167,21 +175,15 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
     #     # self.n_adjs = zero  #number of target limit adjustments
     #     # self.success_rate = zero  #previous success rate
 
-    
+
     def _setup(self,
             target_pos_range:dict,
             target_radius_range:dict,
-            ref_site = None,
-            adaptive_task = True,
-            init_target_area_width_scale = 0,
-            adaptive_increase_success_rate = 0.6,
-            adaptive_decrease_success_rate = 0.3,
-            adaptive_change_step_size = 0.05,
-            adaptive_change_min_trials = 50,
-            success_log_buffer_length = 500,
+            target_origin_rel:list = jp.zeros(3),  #[0.225, -0.1, 0.05],  #NOTE: target area offset should be directly added to target_pos_range
+            ref_site = 'humphant',
             muscle_condition = None,
             sex = None,
-            max_trials = 1,
+            max_trials = 10,
             sigdepnoise_type = None,   #"white"
             sigdepnoise_level = 0.103,
             constantnoise_type = None,   #"white"
@@ -189,12 +191,14 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
             reset_type = "range_uniform",
             obs_keys:list = DEFAULT_OBS_KEYS,
             weighted_reward_keys:dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
-            episode_length = 80,
-            frame_skip = 25,  #frame_skip=25 corresponds to 20Hz; with episode_length=80, this results in 4s maximum time per episode
+            episode_length = 800,
+            frame_skip = 25,  #frame_skip=25 corresponds to 20Hz; with episode_length=800, this results in 40s maximum time per episode
             **kwargs,
         ):
+        # self.target_origin = getattr(data, self._shoulder[0])(self._shoulder[1]).xpos + jp.array(target_origin_rel)
         self.target_pos_range = target_pos_range
         self.target_radius_range = target_radius_range
+        self.target_origin_rel = target_origin_rel
         self.ref_site = ref_site
 
         zero = jp.zeros(1)
@@ -225,10 +229,9 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         valid_reset_types = ("zero", "epsilon_uniform", "range_uniform", None)
         assert self.reset_type in valid_reset_types, f"Invalid reset type '{self.reset_type} (valid types are {valid_reset_types})."
 
-        # Initialise other variables required for setup (i.e., by get_obs_vec, get_obs_dict, get_reward_dict, or get_env_infos)
-        self.dwell_threshold = zero  #0.
-        self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.ref_site)] if self.ref_site is not None else jp.zeros(3,)
-
+        # # Initialise other variables required for setup (i.e., by get_obs_vec, get_obs_dict, get_reward_dict, or get_env_infos)
+        # self.dwell_threshold = zero  #0.
+        
         # Setup reward function and observation components, and other meta-parameters
         self.rwd_keys_wt = weighted_reward_keys
         self.obs_keys = obs_keys
@@ -281,14 +284,8 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         elif self.muscle_condition == "reafferentation":
             self.EPLpos = self.sys.mj_model.actuator_name2id("EPL")
             self.EIPpos = self.sys.mj_model.actuator_name2id("EIP")
-    
-    # step the simulation forward (overrides BaseV0.step; --> also, enable signal-dependent and/or constant motor noise)
-    def step(self, state: State, action: jp.ndarray) -> State:
-        """Runs one timestep of the environment's dynamics."""
-        # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
-        rng = state.info['rng']
 
-        data0 = state.pipeline_state
+    def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
 
         _selected_motor_control = jp.clip(action[:self._nm], 0, 1)
@@ -331,9 +328,6 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
 
         isNormalized = False  #TODO: check whether we can integrate the default normalization from BaseV0.step
         
-
-        ##### rest is re-implemented from BaseV0.step
-
         # implement abnormalities
         if self.muscle_condition == "fatigue":
             # import ipdb; ipdb.set_trace()
@@ -345,7 +339,30 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
             # redirect EIP --> EPL
             new_ctrl = new_ctrl.at[self.EPLpos].set(new_ctrl[self.EIPpos].copy())
             # Set EIP to 0
-            new_ctrl = new_ctrl.at[self.EIPpos].set(jp.zeros(1))
+            new_ctrl = new_ctrl.at[self.EIPpos].set(0)
+
+        return new_ctrl
+    
+    # step the simulation forward (overrides BaseV0.step; --> also, enable signal-dependent and/or constant motor noise)
+    def step(self, state: State, action: jp.ndarray) -> State:
+        """Runs one timestep of the environment's dynamics."""
+        # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
+        rng = state.info['rng']
+
+        # increase step counter
+        state.info['steps_since_last_hit'] = state.info['steps_since_last_hit'] + 1
+
+        # Generate new target
+        ##TODO: update data0 when target is updated?
+        rng, rng1, rng2 = jax.random.split(rng, 3)
+        state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
+        state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
+        # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
+        # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
+
+        data0 = state.pipeline_state
+        rng, rng_ctrl = jax.random.split(rng, 2)
+        new_ctrl = self.get_ctrl(state, action, rng_ctrl)
         
         # step forward
         # self.last_ctrl = self.robot.step(
@@ -355,7 +372,7 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         #     realTimeSim=self.mujoco_render_frames,
         #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
         # )
-        self.last_ctrl = new_ctrl  #TODO: is this required?
+        # self.last_ctrl = new_ctrl  #TODO: is this required?
         data = self.pipeline_step(data0, new_ctrl)
 
         # collect observations and reward
@@ -364,75 +381,10 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
 
-        ## Update state info of internal variables at the end of each env step
-        state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
-        state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
+        _updated_info = self.update_info(state.info, obs_dict)
+        state.replace(info=_updated_info)
 
-        
-        # Generate new target
-        rng, rng1 = jax.random.split(rng, 2)
-        # obs_dict['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.reset_target(rng1)], obs_dict['target_pos'])
-        state.info['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.reset_target(rng1)], obs_dict['target_pos'])  #delay effect of target reset until next timestep
-        # state.info.update(info_targets)
-        # site_xpos.at[-1].set(jp.array([9.87, 9.87, 9.87]))
-        # data.replace(site_xpos=site_xpos)
-        # data = mjx.forward(self.sys, data)  #TODO: update data.x and data.xd arguments manually? (see brax.jax.pipeline init() and step())
-        # print(obs_dict)
-
-        # # finalize step
-        # env_info = self.get_env_infos(state, data)
-        
-        # # update internal episode variables
-        # # self._steps_inside_target = obs_dict['steps_inside_target']
-        # # self._trial_idx += jp.select([obs_dict['target_success']], jp.ones(1))
-        # # self._targets_hit += jp.select([obs_dict['target_success']], jp.ones(1))
-        
-        # # self._trial_success_log.at[self._trial_success_log_pointer_index] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(self._trial_success_log_pointer_index + 1) % self.success_log_buffer_length], self._trial_success_log_pointer_index)
-        # # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        # # self._trial_success_log = jp.where(obs_dict['target_fail'], jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        
-        # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # # self._steps_inside_target = jp.where(self._target_success, jp.zeros(1), self._steps_inside_target)
-        # jp.select([obs_dict['target_success']], self.generate_target(rng, obs_dict))
-
-        # _target_timeout = jp.array(obs_dict['steps_since_last_hit'] >= self._max_steps_without_hit)
-        # _failure_condition = ~obs_dict['target_success'] & _target_timeout
-        # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        # self._trial_success_log = jp.where(_failure_condition, jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # jp.select([obs_dict['target_fail']], self.generate_target(rng, obs_dict))
-
-        ## see JAX reimplementation above
-        # if self._target_success:
-        #     self._trial_idx += 1
-        #     self._targets_hit += 1
-        #     self._trial_success_log = jp.append(self._trial_success_log, [1])
-        #     self._steps_since_last_hit = jp.zeros(1)
-        #     self._steps_inside_target = jp.zeros(1)
-        #     self.generate_target(rng)
-        #     data = mjx.forward(self.sys, data)
-        #     ##TODO: required??
-        #     # data = _reformat_contact(self.sys, data)
-        # else:
-        #     self._steps_since_last_hit += 1
-            
-        #     if self._steps_since_last_hit >= self._max_steps_without_hit:
-        #         self._trial_success_log = jp.append(self._trial_success_log, [0])
-        #         # Spawn a new target
-        #         self._steps_since_last_hit = jp.zeros(1)
-        #         self._trial_idx += 1
-        #         self.generate_target(rng)
-        #         data = mjx.forward(self.sys, data)
-        #         ##TODO: required??
-        #         # data = _reformat_contact(self.sys, data)
-        
-        # env_info_additional = {
-        #     'target_area_dynamic_width_scale': self.target_area_dynamic_width_scale,
-        #     'success_rate': self.success_rate,
-        # }
-
-        # env_info.update(env_info_additional)
+        _, state.info['rng'] = jax.random.split(rng, 2)  #update rng after each step to ensure variability across steps
 
         state.metrics.update(
             # bonus=rwd_dict['bonus'],
@@ -453,13 +405,14 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
     def get_obs_vec(self, data, info):
         obs_dict = self.get_obs_dict(data, info)
         obs = self.obsdict2obsvec(obs_dict)
-        return obs
+        _updated_info = self.update_info(info, obs_dict)
+        return obs, _updated_info
 
     def get_obs_dict(self, data, info):
         rng = info['rng']
 
         obs_dict = {}
-        obs_dict['time'] = jp.array([data.time])
+        obs_dict['time'] = jp.array(data.time)
         
         # Normalise qpos
         jnt_range = self.sys.mj_model.jnt_range[self._independent_joints]
@@ -475,48 +428,37 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         # Normalise act
         if self._na > 0:
             obs_dict['act']  = (data.act - 0.5) * 2
-        obs_dict['last_ctrl'] = self.last_ctrl
+        obs_dict['last_ctrl'] = info['last_ctrl']
 
-        # Smoothed average of motor actuation (only for motor actuators); normalise
-        obs_dict['motor_act'] = (self._motor_act.copy() - 0.5) * 2
+        # Smoothed average of motor actuation (only for motor actuators)  #; normalise
+        obs_dict['motor_act'] = info['motor_act']  #(self._motor_act.copy() - 0.5) * 2
 
         # End-effector and target position
         obs_dict['ee_pos'] = jp.vstack([data.site_xpos[self.tip_sids[isite]].copy() for isite in range(len(self.tip_sids))])
-        # obs_dict['target_pos'] = jp.vstack([data.site_xpos[self.target_sids[isite]].copy() for isite in range(len(self.tip_sids))])
-        obs_dict['target_pos'] = info['target_pos']  #jp.vstack([info[site + '_target'].copy() for site in self.target_pos_range.keys()])
+        obs_dict['target_pos'] = info['target_pos']  #jp.vstack([data.site_xpos[self.target_sids[isite]].copy() for isite in range(len(self.tip_sids))])
 
         # Distance to target (used for rewards later)
         obs_dict['reach_dist'] = jp.linalg.norm(jp.array(obs_dict['target_pos']) - jp.array(obs_dict['ee_pos']), axis=-1)
 
         # Target radius
-        obs_dict['target_radius'] = jp.array([self.sys.mj_model.site_size[self.target_sids[isite]][0] for isite in range(len(self.tip_sids))])
-        obs_dict['inside_target'] = obs_dict['reach_dist'] < obs_dict['target_radius']
+        obs_dict['target_radius'] = info['target_radius']   #jp.array([self.sys.mj_model.site_size[self.target_sids[isite]][0] for isite in range(len(self.tip_sids))])
+        # jax.debug.print(f"STEP-Obs: {obs_dict['target_radius']}")
+        obs_dict['inside_target'] = jp.squeeze(obs_dict['reach_dist'] < obs_dict['target_radius'])
         # print(obs_dict['inside_target'], jp.ones(1))
 
-        # Task progress/success metrics
         ## we require all end-effector--target pairs to have distance below the respective target radius
         # obs_dict['steps_inside_target'] = (info['steps_inside_target'] + jp.select(obs_dict['inside_target'], jp.ones(1))) * jp.select(obs_dict['inside_target'], jp.ones(1))
         # print(info['steps_inside_target'], jp.select(obs_dict['inside_target'], jp.ones(1)), (info['steps_inside_target'] + jp.select(obs_dict['inside_target'], jp.ones(1))), obs_dict['steps_inside_target'])
-        obs_dict['steps_inside_target'] = jp.select(obs_dict['inside_target'], info['steps_inside_target'] + jp.ones(1), jp.zeros(1)).squeeze(axis=-1)
+        _steps_inside_target = jp.select([obs_dict['inside_target']], [info['steps_inside_target'] + 1], 0)
+        _target_timeout = info['steps_since_last_hit'] >= self._max_steps_without_hit
         # print("steps_inside_target", obs_dict['steps_inside_target'])
-        obs_dict['target_success'] = obs_dict['steps_inside_target'] >= self.dwell_threshold
-        # print("target_success", obs_dict['target_success'])
-        # print(obs_dict['target_success'])
-        # print("....////")
-        # obs_dict['steps_inside_target'] = jp.select([jp.all(obs_dict['reach_dist'] < obs_dict['target_radius'])], [obs_dict['steps_inside_target'] + 1], 0)
-        # obs_dict['target_hit'] = jp.array([obs_dict['steps_inside_target'] >= self.dwell_threshold])
-        obs_dict['trial_idx'] = info['trial_idx'].copy() + jp.select([obs_dict['target_success']], jp.ones(1))
-        # print("trial_idx", obs_dict['trial_idx'])
-
-        _steps_since_last_hit = jp.select([obs_dict['target_success']], jp.zeros(1), info['steps_since_last_hit'] + 1)
-        # print(info['steps_since_last_hit'], info['steps_since_last_hit'] + 1, obs_dict['steps_since_last_hit'])
-        # print("....////")
-        _target_timeout = jp.array(_steps_since_last_hit >= self._max_steps_without_hit)
+        obs_dict['target_success'] = _steps_inside_target >= self.dwell_threshold
         obs_dict['target_fail'] = ~obs_dict['target_success'] & _target_timeout
-        # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_fail']], jp.zeros(1), _steps_since_last_hit)
-        # print("steps_since_last_hit", obs_dict['steps_since_last_hit'])
         
+        obs_dict['steps_inside_target'] = jp.select([obs_dict['target_success']], [0], _steps_inside_target)
+        obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [0], info['steps_since_last_hit'])
+        obs_dict['trial_idx'] = info['trial_idx'] + jp.select([obs_dict['target_success'] | obs_dict['target_fail']], jp.ones(1))
+        # print("trial_idx", obs_dict['trial_idx'])
         obs_dict['task_completed'] = obs_dict['trial_idx'] >= self.max_trials
 
         return obs_dict
@@ -528,6 +470,21 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         obsvec = jp.concatenate(obs_list)
 
         return obsvec
+    
+    def update_info(self, info, obs_dict):
+        ## Update state info of internal variables at the end of each env step
+        info['last_ctrl'] = obs_dict['last_ctrl']
+        info['motor_act'] = obs_dict['motor_act']
+        info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
+        info['steps_inside_target'] = obs_dict['steps_inside_target']
+        info['trial_idx'] = obs_dict['trial_idx'].copy()
+
+        # Also store variables useful for evaluation
+        info['target_success'] = obs_dict['target_success']
+        info['target_fail'] = obs_dict['target_fail']
+        info['task_completed'] = obs_dict['task_completed']
+
+        return info
 
     def get_reward_dict(self, obs_dict):
         reach_dist = obs_dict['reach_dist']
@@ -556,42 +513,72 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         # print(rwd_dict.items())
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.rwd_keys_wt.items()]), axis=0)
         return rwd_dict
+    
+    def get_env_infos(self, state: State, data: mjx.Data):
+        """
+        Get information about the environment.
+        """
+        ## TODO: update this function!!
+
+        # # resolve if current visuals are available
+        # if self.visual_dict and "time" in self.visual_dict.keys() and self.visual_dict['time']==self.obs_dict['time']:
+        #     visual_dict = self.visual_dict
+        # else:
+        #     visual_dict = {}
+
+        env_info = {
+            'time': self.obs_dict['time'][()],          # MDP(t)
+            'rwd_dense': self.rwd_dict['dense'][()],    # MDP(t)
+            'rwd_sparse': self.rwd_dict['sparse'][()],  # MDP(t)
+            'solved': self.rwd_dict['solved'][()],      # MDP(t)
+            'done': self.rwd_dict['done'][()],          # MDP(t)
+            'obs_dict': self.obs_dict,                  # MDP(t)
+            # 'visual_dict': visual_dict,                 # MDP(t), will be {} if user hasn't explicitly updated self.visual_dict at the current time
+            # 'proprio_dict': self.proprio_dict,          # MDP(t)
+            'rwd_dict': self.rwd_dict,                  # MDP(t)
+            'state': state.pipeline_state,              # MDP(t)
+        }
+
+        return env_info
 
     # generate a valid target
-    def reset_target(self, rng):
+    def generate_target_pos(self, rng, target_pos=None):
+        # jax.debug.print(f"Generate new target (target area scale={target_area_dynamic_width_scale})")
 
         # Set target location
-        ##TODO: improve code efficiency (remove for-loop)
+        ##TODO: implement _new_target_distance_threshold constraint with rejection sampling!; improve code efficiency (remove for-loop)
+        if target_pos is None:
+            target_pos = jp.array([])
+            # Sample target position
+            rng, *rngs = jax.random.split(rng, len(self.target_pos_range)+1)
+            for (site, span), _rng in zip(self.target_pos_range.items(), rngs):
+                # sid = mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
+                new_position = self.target_coordinates_origin + jax.random.uniform(_rng, shape=self.target_coordinates_origin.shape, minval=span[0], maxval=span[1])
+                target_pos = jp.append(target_pos, new_position.copy())
+                # self.sys.mj_model.site_pos.at[sid].set(new_position)
 
-        target_pos = jp.array([])
-        rng, *rngs = jax.random.split(rng, len(self.target_pos_range)+1)
-        for (site, span), _rng in zip(self.target_pos_range.items(), rngs):
-            # span = self.target_pos_range[site]
-            span = jp.mean(self.target_pos_range[site], axis=0)
-            # sid = mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
-            new_position = self.target_coordinates_origin + jax.random.uniform(_rng, shape=self.target_coordinates_origin.shape, minval=span[0], maxval=span[1])
-            # For efficiency, we use info dict to update the target position, instead of setting it in the MuJoCo model/data object; to model target updates in MuJoCo (e.g., for visual observations), use the DomainRandomizationVmapWrapper to ensure each instance uses a separate MuJoCo model (self.sys)
-            target_pos = jp.append(target_pos, new_position.copy())
-    
-        # # Set target size
-        # ##TODO: improve code efficiency (remove for-loop)
-        # if new_radii is None:
-        #     # Sample target radius
-        #     rng, *rngs = jax.random.split(rng, len(self.target_pos_range)+1)
-        #     for (site, span), _rng in zip(self.target_radius_range.items(), rngs):
-        #         sid = mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
-        #         new_radius = jax.random.uniform(_rng, minval=span[0], maxval=span[1])
-        #         self.sys.mj_model.site_size[sid][0] = new_radius
-
-        # data = mjx.forward(self.sys, data)
-        
         # self._steps_inside_target = jp.zeros(1)
 
-        return target_pos  #we need to return some object to be able to call this function via jp.select
+        return target_pos
+    
+    def generate_target_size(self, rng, target_radius=None):
+        # jax.debug.print(f"Generate new target (target area scale={target_area_dynamic_width_scale})")
 
-    # def get_current_target_pos_range(self, span, target_area_dynamic_width_scale):
-    #     print(span, span.shape)
-    #     return target_area_dynamic_width_scale*(span - jp.mean(span, axis=0)) + jp.mean(span, axis=0)
+        # Set target size
+        ##TODO: improve code efficiency (remove for-loop)
+        if target_radius is None:
+            target_radius = jp.array([])
+            # Sample target radius
+            rng, *rngs = jax.random.split(rng, len(self.target_radius_range)+1)
+            for (site, span), _rng in zip(self.target_radius_range.items(), rngs):
+                # sid = mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
+                new_radius = jax.random.uniform(_rng, minval=span[0], maxval=span[1])
+                target_radius = jp.append(target_radius, new_radius.copy())
+                # self.sys.mj_model.site_size[sid][0] = new_radius
+
+        # self._steps_inside_target = jp.zeros(1)
+
+        return target_radius
     
     # def update_adaptive_target_area_width(self, info, obs_dict, success_rate):
     #     # if self.adaptive_change_trial_buffer_length is not None:
@@ -642,12 +629,14 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
     def reset(self, rng, **kwargs):
         # jax.debug.print(f"RESET INIT")
 
+        _, rng = jax.random.split(rng, 2)
+
         # Reset counters
         steps_since_last_hit, steps_inside_target, trial_idx = jp.zeros(3)
-        self._target_success = jp.array(False)
+        # self._target_success = jp.array(False)
         
         # Reset last control (used for observations only)
-        self.last_ctrl = jp.zeros(self._nu)
+        last_ctrl = jp.zeros(self._nu)
 
         # self.robot.sync_sims(self.sim, self.sim_obsd)
 
@@ -657,29 +646,36 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
             reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng)
         elif self.reset_type == "range_uniform":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
-            data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
+            data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act, ctrl=last_ctrl)
             reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng, data)
         else:
             reset_qpos, reset_qvel, reset_act = None, None, None
 
-        data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
+        data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act, ctrl=last_ctrl)
         
         self._reset_bm_model(rng)
 
-        # _init_target_pos = jp.vstack([data.site_xpos[self.target_sids[isite]].copy() for isite in range(len(self.tip_sids))])
-        info = {'steps_since_last_hit': steps_since_last_hit,
+        info = {'last_ctrl': last_ctrl,
+                'motor_act': self._motor_act,
+                'steps_since_last_hit': steps_since_last_hit,
                 'steps_inside_target': steps_inside_target,
                 'trial_idx': trial_idx,
                 'rng': rng,
-                # 'target_pos': _init_target_pos
+                'target_success': jp.array(False),
+                'target_fail': jp.array(False),
+                'task_completed': jp.array(False),
                 }
-        info['target_pos'] = self.reset_target(rng)
-        # obs = self.get_obs_vec(data, info)
-        obs_dict = self.get_obs_dict(data, info)
-        obs = self.obsdict2obsvec(obs_dict)
+        info['target_pos'] = self.generate_target_pos(rng, target_pos=kwargs.get("target_pos", None))
+        info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
+        obs, info = self.get_obs_vec(data, info)  #update info from observation made
+        # obs_dict = self.get_obs_dict(data, info)
+        # obs = self.obsdict2obsvec(obs_dict)
+
+        # self.generate_target(rng, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {}  #'bonus': zero}
+        metrics = {
+                }  #'bonus': zero}
         
         return State(data, obs, reward, done, metrics, info)
     
@@ -756,7 +752,7 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         # reset_qpos[self._dependent_qpos] = 0
         reset_qvel = reset_qvel.at[self._independent_dofs].set(qvel)
         # reset_qvel[self._dependent_dofs] = 0
-        reset_qpos = reset_qpos.at[:].set(self.ensure_dependent_joint_angles(reset_qpos, data))
+        self.ensure_dependent_joint_angles(data)
         
         # # Randomly sample act within unit interval
         # act = self.np_random.uniform(low=np.zeros((self._na,)), high=np.ones((self._na,)))
@@ -764,24 +760,24 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
 
         return reset_qpos, reset_qvel, reset_act
 
-    def ensure_dependent_joint_angles(self, reset_qpos, data):
+    def ensure_dependent_joint_angles(self, data):
         """ Adjusts virtual joints according to active joint constraints. """
 
         _joint_constraints = self.sys.mj_model.eq_type == 2
         _active_eq_constraints = data.eq_active == 1
- 
-        new_qpos = reset_qpos.copy()  #TODO: copy required?
+
         for (virtual_joint_id, physical_joint_id, poly_coefs) in zip(
                 self.sys.mj_model.eq_obj1id[_joint_constraints & _active_eq_constraints],
                 self.sys.mj_model.eq_obj2id[_joint_constraints & _active_eq_constraints],
                 self.sys.mj_model.eq_data[_joint_constraints & _active_eq_constraints, 4::-1]):
             if physical_joint_id >= 0:
-                new_qpos = new_qpos.at[virtual_joint_id].set(jp.polyval(poly_coefs, reset_qpos[physical_joint_id]))  #TODO: check mapping between joints (njnt) and dofs (nq/nv)
-                # data.replace(qpos=new_qpos)
-        
-        return new_qpos
+                new_qpos = data.qpos  #TODO: copy required?
+                new_qpos = new_qpos.at[virtual_joint_id].set(jp.polyval(poly_coefs, data.qpos[physical_joint_id]))  #TODO: check mapping between joints (njnt) and dofs (nq/nv)
+                data.replace(qpos=new_qpos)
 
     def _reset_bm_model(self, rng):
+        #TODO: do not store anything in self in this function, as its values should mostly be discarded after it is called (no permanent env changes!)
+
         # Sample random initial values for motor activation
         rng, rng1 = jax.random.split(rng, 2)
         self._motor_act = jax.random.uniform(rng1, shape=(self._nm,), minval=jp.zeros((self._nm,)), maxval=jp.ones((self._nm,)))
@@ -794,21 +790,33 @@ class LLCEEPosDirectCtrlEnvMJXV0(PipelineEnv):
         self._constantnoise_acc = zero
     
 
-class LLCEEPosEnvMJXV0(LLCEEPosDirectCtrlEnvMJXV0):
-    # # step the simulation forward (overrides BaseV0.step; --> use control smoothening instead of normalisation; also, enable signal-dependent and/or constant motor noise)
-    def step(self, state: State, action: jp.ndarray) -> State:
-        """Runs one timestep of the environment's dynamics."""
-        rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
+    def render(
+        self,
+        trajectory: List[base.State],
+        target_pos: Optional[jp.ndarray] = None,
+        height: int = 240,
+        width: int = 320,
+        camera: Optional[str] = None,
+    ) -> Sequence[np.ndarray]:
+        """Sets target positions and then renders a trajectory using the MuJoCo renderer."""
+        if target_pos is not None:
+            for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
+                self.sys.mj_model.site(_target_sid).pos = _target_pos
+                # self.sys = self.sys.tree_replace({'site_pos': self.sys.mj_model.site_pos})
+                # print(self.sys.site_pos[_target_sid])#.set(new_position)
 
-        data0 = state.pipeline_state
+        return super().render(trajectory, height, width, camera)
+
+class LLCEEPosEnvMJXV0(LLCEEPosDirectCtrlEnvMJXV0):
+    def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
 
-        # jax.debug.print(f"motor act {self._motor_act}")
-
-        # input((self._motor_act, action[:self._nm]))
-        # input((self._motor_act + action[:self._nm]))
-        _selected_motor_control = jp.clip(self._motor_act + action[:self._nm], 0, 1)
+        data0 = state.pipeline_state
+        _selected_motor_control = jp.clip(state.info['motor_act'] + action[:self._nm], 0, 1)
         _selected_muscle_control = jp.clip(data0.act[self._muscle_actuators] + action[self._nm:], 0, 1)
+
+        _selected_motor_control = jp.clip(action[:self._nm], 0, 1)
+        _selected_muscle_control = jp.clip(action[self._nm:], 0, 1)
 
         if self.sigdepnoise_type is not None:
             rng, rng1 = jax.random.split(rng, 2)
@@ -838,17 +846,14 @@ class LLCEEPosEnvMJXV0(LLCEEPosDirectCtrlEnvMJXV0):
                 raise NotImplementedError(f"{self.constantnoise_type}")
 
         # Update smoothed online estimate of motor actuation
-        self._motor_act = (1 - self._motor_alpha) * self._motor_act \
+        self._motor_act = (1 - self._motor_alpha) * state.info['motor_act'] \
                                 + self._motor_alpha * jp.clip(_selected_motor_control, 0, 1)
 
-        new_ctrl[self._motor_actuators] = self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0])
-        new_ctrl[self._muscle_actuators] = jp.clip(_selected_muscle_control, 0, 1)
+        new_ctrl = new_ctrl.at[self._motor_actuators].set(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
+        new_ctrl = new_ctrl.at[self._muscle_actuators].set(jp.clip(_selected_muscle_control, 0, 1))
 
         isNormalized = False  #TODO: check whether we can integrate the default normalization from BaseV0.step
         
-
-        ##### rest is re-implemented from BaseV0.step
-
         # implement abnormalities
         if self.muscle_condition == "fatigue":
             # import ipdb; ipdb.set_trace()
@@ -860,190 +865,60 @@ class LLCEEPosEnvMJXV0(LLCEEPosDirectCtrlEnvMJXV0):
             # redirect EIP --> EPL
             new_ctrl = new_ctrl.at[self.EPLpos].set(new_ctrl[self.EIPpos].copy())
             # Set EIP to 0
-            new_ctrl = new_ctrl.at[self.EIPpos].set(jp.zeros(1))
-        
-        # step forward
-        # self.last_ctrl = self.robot.step(
-        #     ctrl_desired=new_ctrl,
-        #     ctrl_normalized=isNormalized,
-        #     step_duration=self.dt,
-        #     realTimeSim=self.mujoco_render_frames,
-        #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
-        # )
-        self.last_ctrl = new_ctrl  #TODO: is this required?
-        data = self.pipeline_step(data0, new_ctrl)
+            new_ctrl = new_ctrl.at[self.EIPpos].set(0)
 
-        # collect observations and reward
-        # obs = self.get_obs_vec(data, state.info)
-        obs_dict = self.get_obs_dict(data, state.info)
-        obs = self.obsdict2obsvec(obs_dict)
-        rwd_dict = self.get_reward_dict(obs_dict)
-
-        ## Update state info of internal variables at the end of each env step
-        state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
-        state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
-
-        
-        # Generate new target
-        rng, rng1 = jax.random.split(rng, 2)
-        # obs_dict['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.reset_target(rng1)], obs_dict['target_pos'])
-        state.info['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.reset_target(rng1)], obs_dict['target_pos'])  #delay effect of target reset until next timestep
-        # state.info.update(info_targets)
-        # site_xpos.at[-1].set(jp.array([9.87, 9.87, 9.87]))
-        # data.replace(site_xpos=site_xpos)
-        # data = mjx.forward(self.sys, data)  #TODO: update data.x and data.xd arguments manually? (see brax.jax.pipeline init() and step())
-        # print(obs_dict)
-
-        # # finalize step
-        # env_info = self.get_env_infos(state, data)
-        
-        # # update internal episode variables
-        # # self._steps_inside_target = obs_dict['steps_inside_target']
-        # # self._trial_idx += jp.select([obs_dict['target_success']], jp.ones(1))
-        # # self._targets_hit += jp.select([obs_dict['target_success']], jp.ones(1))
-        
-        # # self._trial_success_log.at[self._trial_success_log_pointer_index] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(self._trial_success_log_pointer_index + 1) % self.success_log_buffer_length], self._trial_success_log_pointer_index)
-        # # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        # # self._trial_success_log = jp.where(obs_dict['target_fail'], jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        
-        # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # # self._steps_inside_target = jp.where(self._target_success, jp.zeros(1), self._steps_inside_target)
-        # jp.select([obs_dict['target_success']], self.generate_target(rng, obs_dict))
-
-        # _target_timeout = jp.array(obs_dict['steps_since_last_hit'] >= self._max_steps_without_hit)
-        # _failure_condition = ~obs_dict['target_success'] & _target_timeout
-        # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        # self._trial_success_log = jp.where(_failure_condition, jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # jp.select([obs_dict['target_fail']], self.generate_target(rng, obs_dict))
-
-        ## see JAX reimplementation above
-        # if self._target_success:
-        #     self._trial_idx += 1
-        #     self._targets_hit += 1
-        #     self._trial_success_log = jp.append(self._trial_success_log, [1])
-        #     self._steps_since_last_hit = jp.zeros(1)
-        #     self._steps_inside_target = jp.zeros(1)
-        #     self.generate_target(rng)
-        #     data = mjx.forward(self.sys, data)
-        #     ##TODO: required??
-        #     # data = _reformat_contact(self.sys, data)
-        # else:
-        #     self._steps_since_last_hit += 1
-            
-        #     if self._steps_since_last_hit >= self._max_steps_without_hit:
-        #         self._trial_success_log = jp.append(self._trial_success_log, [0])
-        #         # Spawn a new target
-        #         self._steps_since_last_hit = jp.zeros(1)
-        #         self._trial_idx += 1
-        #         self.generate_target(rng)
-        #         data = mjx.forward(self.sys, data)
-        #         ##TODO: required??
-        #         # data = _reformat_contact(self.sys, data)
-        
-        # env_info_additional = {
-        #     'target_area_dynamic_width_scale': self.target_area_dynamic_width_scale,
-        #     'success_rate': self.success_rate,
-        # }
-
-        # env_info.update(env_info_additional)
-
-        state.metrics.update(
-            # bonus=rwd_dict['bonus'],
-        )
-
-        # return self.forward(**kwargs)
-        return state.replace(
-            pipeline_state=data, obs=obs, reward=rwd_dict['dense'], done=rwd_dict['done']
-        )
-    
-    # # updates executed at each step, after MuJoCo step (see BaseV0.step) but before MyoSuite returns observations, reward and infos (see MujocoEnv.forward)
-    # def _forward(self, **kwargs):
-    #     pass
-        
-    #     # continue with default forward step
-    #     super()._forward(**kwargs)
-
-class AdaptiveTargetWrapper(Wrapper):
-  """Automatically resets Brax envs that are done."""
-
-  def reset(self, rng: jax.Array) -> State:
-    state = self.env.reset(rng)
-    state.info['first_pipeline_state'] = state.pipeline_state
-    state.info['first_obs'] = state.obs
-    return state
-
-  def step(self, state: State, action: jax.Array) -> State:
-    if 'steps' in state.info:
-      steps = state.info['steps']
-      steps = jp.where(state.done, jp.zeros_like(steps), steps)
-      state.info.update(steps=steps)
-    state = state.replace(done=jp.zeros_like(state.done))
-    state = self.env.step(state, action)
-
-    def where_done(x, y):
-      done = state.done
-      if done.shape:
-        done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
-      return jp.where(done, x, y)
-
-    pipeline_state = jax.tree.map(
-        where_done, state.info['first_pipeline_state'], state.pipeline_state
-    )
-    obs = jax.tree.map(where_done, state.info['first_obs'], state.obs)
-    return state.replace(pipeline_state=pipeline_state, obs=obs)
+        return new_ctrl
 
 
-class EpisodeWrapper(Wrapper):
-  """Maintains episode step count and sets done at episode end."""
+# class EpisodeWrapper(Wrapper):
+#   """Maintains episode step count and sets done at episode end."""
 
-  def __init__(self, env: Env, episode_length: int, action_repeat: int):
-    super().__init__(env)
-    self.episode_length = episode_length
-    self.action_repeat = action_repeat
+#   def __init__(self, env: Env, episode_length: int, action_repeat: int):
+#     super().__init__(env)
+#     self.episode_length = episode_length
+#     self.action_repeat = action_repeat
 
-  def reset(self, rng: jax.Array) -> State:
-    state = self.env.reset(rng)
-    state.info['steps'] = jp.zeros(rng.shape[:-1])
-    state.info['truncation'] = jp.zeros(rng.shape[:-1])
-    # Keep separate record of episode done as state.info['done'] can be erased
-    # by AutoResetWrapper
-    state.info['episode_done'] = jp.zeros(rng.shape[:-1])
-    episode_metrics = dict()
-    episode_metrics['sum_reward'] = jp.zeros(rng.shape[:-1])
-    episode_metrics['length'] = jp.zeros(rng.shape[:-1])
-    for metric_name in state.metrics.keys():
-      episode_metrics[metric_name] = jp.zeros(rng.shape[:-1])
-    state.info['episode_metrics'] = episode_metrics
-    return state
+#   def reset(self, rng: jax.Array) -> State:
+#     state = self.env.reset(rng)
+#     state.info['steps'] = jp.zeros(rng.shape[:-1])
+#     state.info['truncation'] = jp.zeros(rng.shape[:-1])
+#     # Keep separate record of episode done as state.info['done'] can be erased
+#     # by AutoResetWrapper
+#     state.info['episode_done'] = jp.zeros(rng.shape[:-1])
+#     episode_metrics = dict()
+#     episode_metrics['sum_reward'] = jp.zeros(rng.shape[:-1])
+#     episode_metrics['length'] = jp.zeros(rng.shape[:-1])
+#     for metric_name in state.metrics.keys():
+#       episode_metrics[metric_name] = jp.zeros(rng.shape[:-1])
+#     state.info['episode_metrics'] = episode_metrics
+#     return state
 
-  def step(self, state: State, action: jax.Array) -> State:
-    def f(state, _):
-      nstate = self.env.step(state, action)
-      return nstate, nstate.reward
+#   def step(self, state: State, action: jax.Array) -> State:
+#     def f(state, _):
+#       nstate = self.env.step(state, action)
+#       return nstate, nstate.reward
 
-    state, rewards = jax.lax.scan(f, state, (), self.action_repeat)
-    state = state.replace(reward=jp.sum(rewards, axis=0))
-    steps = state.info['steps'] + self.action_repeat
-    one = jp.ones_like(state.done)
-    zero = jp.zeros_like(state.done)
-    episode_length = jp.array(self.episode_length, dtype=jp.int32)
-    done = jp.where(steps >= episode_length, one, state.done)
-    state.info['truncation'] = jp.where(
-        steps >= episode_length, 1 - state.done, zero
-    )
-    state.info['steps'] = steps
+#     state, rewards = jax.lax.scan(f, state, (), self.action_repeat)
+#     state = state.replace(reward=jp.sum(rewards, axis=0))
+#     steps = state.info['steps'] + self.action_repeat
+#     one = jp.ones_like(state.done)
+#     zero = jp.zeros_like(state.done)
+#     episode_length = jp.array(self.episode_length, dtype=jp.int32)
+#     done = jp.where(steps >= episode_length, one, state.done)
+#     state.info['truncation'] = jp.where(
+#         steps >= episode_length, 1 - state.done, zero
+#     )
+#     state.info['steps'] = steps
 
-    # Aggregate state metrics into episode metrics
-    prev_done = state.info['episode_done']
-    state.info['episode_metrics']['sum_reward'] += jp.sum(rewards, axis=0)
-    state.info['episode_metrics']['sum_reward'] *= (1 - prev_done)
-    state.info['episode_metrics']['length'] += self.action_repeat
-    state.info['episode_metrics']['length'] *= (1 - prev_done)
-    for metric_name in state.metrics.keys():
-      if metric_name != 'reward':
-        state.info['episode_metrics'][metric_name] += state.metrics[metric_name]
-        state.info['episode_metrics'][metric_name] *= (1 - prev_done)
-    state.info['episode_done'] = done
-    return state.replace(done=done)
+#     # Aggregate state metrics into episode metrics
+#     prev_done = state.info['episode_done']
+#     state.info['episode_metrics']['sum_reward'] += jp.sum(rewards, axis=0)
+#     state.info['episode_metrics']['sum_reward'] *= (1 - prev_done)
+#     state.info['episode_metrics']['length'] += self.action_repeat
+#     state.info['episode_metrics']['length'] *= (1 - prev_done)
+#     for metric_name in state.metrics.keys():
+#       if metric_name != 'reward':
+#         state.info['episode_metrics'][metric_name] += state.metrics[metric_name]
+#         state.info['episode_metrics'][metric_name] *= (1 - prev_done)
+#     state.info['episode_done'] = done
+#     return state.replace(done=done)
