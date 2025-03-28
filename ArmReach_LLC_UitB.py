@@ -162,6 +162,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
           # print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
           # task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
           # episode length: {metrics['eval/avg_episode_length']}")
+      times.append(datetime.now())
       x_data_train.append(num_steps)
       y_data_train.append(metrics['episode/sum_reward'])
       y_data_train_length.append(metrics['episode/length'])
@@ -230,13 +231,15 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       plt.show()
 
       fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_curriculum.png')
-      plt.savefig(fig_path)
-
+      try:
+        plt.savefig(fig_path)
+      except:
+        pass
 
   ## TRAINING
   make_inference_fn, params, metrics = train_fn(environment=env, progress_fn=progress)
 
-  if n_train_steps > 0:
+  if n_train_steps > 0 and len(times) > 2:
     print(f'time to jit: {times[1] - times[0]}')
     print(f'time to train: {times[-1] - times[1]}')
 
@@ -246,6 +249,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   param_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_params')
   if n_train_steps > 0:
     model.save_params(param_path, params)
+
+  # TODO: store metrics as well
+  print(metrics)
 
   ## EVALUATION
   ##TODO: load internal env state ('target_area_dynamic_width_scale')
@@ -360,11 +366,11 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'mobl_llc_eepos_v0.1.1b'
-  n_train_steps = 80_000_000
+  experiment_id = 'mobl_llc_eepos_v0.1.1c'
+  n_train_steps = 100_000_000
   n_eval_eps = 10
 
-  restore_params_path = "myosuite-mjx-policies/mobl_llc_eepos_v0.1.1_params"
+  restore_params_path = "myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
   init_target_area_width_scale = 0.25  #TODO: load from file
 
   main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
