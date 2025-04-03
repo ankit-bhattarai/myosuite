@@ -367,12 +367,12 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'mobl_llc_eepos_v0.1.1c'
+  experiment_id = 'mobl_llc_eepos_v0.1.2'
   n_train_steps = 100_000_000
   n_eval_eps = 1
 
-  restore_params_path = "myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
-  init_target_area_width_scale = 1.0  #TODO: load from file
+  restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
+  init_target_area_width_scale = 0.  #1.0  #TODO: load from file
 
   main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
        restore_params_path=restore_params_path, init_target_area_width_scale=init_target_area_width_scale)
