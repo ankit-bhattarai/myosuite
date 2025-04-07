@@ -26,6 +26,7 @@ from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
+import argparse
 
 from matplotlib import pyplot as plt
 import mediapy as media
@@ -365,14 +366,14 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 
 
 if __name__ == '__main__':
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--experiment_id', type=str, default='mobl_llc_eepos_v0.1.2')
+  parser.add_argument('--n_train_steps', type=int, default=100_000_000)
+  parser.add_argument('--n_eval_eps', type=int, default=1)
+  parser.add_argument('--restore_params_path', type=str, default=None)
+  parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
+  args = parser.parse_args()
   # jax.config.update('jax_default_matmul_precision', 'highest')
-
-  experiment_id = 'mobl_llc_eepos_v0.1.2'
-  n_train_steps = 100_000_000
-  n_eval_eps = 1
-
-  restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
-  init_target_area_width_scale = 0.  #1.0  #TODO: load from file
-
-  main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
-       restore_params_path=restore_params_path, init_target_area_width_scale=init_target_area_width_scale)
+  main(experiment_id=args.experiment_id, n_train_steps=args.n_train_steps, n_eval_eps=args.n_eval_eps, 
+       restore_params_path=args.restore_params_path, init_target_area_width_scale=args.init_target_area_width_scale)
+  
