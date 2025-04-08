@@ -266,7 +266,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   times = [datetime.now()]
 
   render_fn = _create_render(env)
-  rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn)
+  rollouts = evaluate(eval_env, experiment_id, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn)
 
   _render(rollouts, experiment_id=experiment_id)
 
@@ -301,7 +301,7 @@ def wrap_curriculum_training(
 
     return env
 
-def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single'):
+def evaluate(env, experiment_id, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single'):
   if rng is None:
     rng = jax.random.PRNGKey(seed=0)
   
