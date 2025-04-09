@@ -31,6 +31,44 @@ import argparse
 from matplotlib import pyplot as plt
 import mediapy as media
 
+def _render(env, cwd, rollouts, experiment_id='ArmReach', video_type='single', height=480, width=640, camera='for_testing'):
+
+    front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
+    front_view_pos[1] = -2
+    front_view_pos[2] = 0.65
+    env.sys.mj_model.camera(camera).poscom0 = front_view_pos
+
+    videos = []
+    for rollout in rollouts:
+      
+      # change the target position of the environment for rendering
+      ## TODO: generate new target for each rollout
+      # env.sys.mj_model.site_pos[env._target_sids] = rollout['wrist_target']
+
+      if video_type == 'single':
+        videos += env.render(rollout['states'], height=height, width=width, camera=camera)
+      elif video_type == 'multiple':
+        videos.append(env.render(rollout['states'], height=height, width=width, camera=camera))
+
+    os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
+    eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
+
+    if video_type == 'single':
+      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
+    elif video_type == 'multiple':
+      for i, video in enumerate(videos):
+        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
+
+    return None
+
+def _create_render(env, height=480, width=640, camera='for_testing'):
+  front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
+  front_view_pos[1] = -2
+  front_view_pos[2] = 0.65
+  env.sys.mj_model.camera(camera).poscom0 = front_view_pos
+
+  return functools.partial(env.render, height=height, width=width, camera=camera)
+
 def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
          restore_params_path=None, init_target_area_width_scale=0.):
 
@@ -64,45 +102,6 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
     restore_params = model.load_params(cwd + '/' + restore_params_path)
   else:
     restore_params = None
-
-
-  def _render(rollouts, experiment_id='ArmReach', video_type='single', height=480, width=640, camera='for_testing'):
-
-    front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
-    front_view_pos[1] = -2
-    front_view_pos[2] = 0.65
-    env.sys.mj_model.camera(camera).poscom0 = front_view_pos
-
-    videos = []
-    for rollout in rollouts:
-      
-      # change the target position of the environment for rendering
-      ## TODO: generate new target for each rollout
-      # env.sys.mj_model.site_pos[env._target_sids] = rollout['wrist_target']
-
-      if video_type == 'single':
-        videos += env.render(rollout['states'], height=height, width=width, camera=camera)
-      elif video_type == 'multiple':
-        videos.append(env.render(rollout['states'], height=height, width=width, camera=camera))
-
-    os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
-    eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
-
-    if video_type == 'single':
-      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
-    elif video_type == 'multiple':
-      for i, video in enumerate(videos):
-        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
-
-    return None
-  
-  def _create_render(env, height=480, width=640, camera='for_testing'):
-    front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
-    front_view_pos[1] = -2
-    front_view_pos[2] = 0.65
-    env.sys.mj_model.camera(camera).poscom0 = front_view_pos
-
-    return functools.partial(env.render, height=height, width=width, camera=camera)
   
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
@@ -268,7 +267,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   render_fn = _create_render(env)
   rollouts = evaluate(eval_env, experiment_id, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn)
 
-  _render(rollouts, experiment_id=experiment_id)
+  _render(env, cwd, rollouts, experiment_id=experiment_id)
 
 def wrap_curriculum_training(
     env: Env,
