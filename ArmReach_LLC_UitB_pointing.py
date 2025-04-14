@@ -42,8 +42,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   #TODO: load kwargs from config file/registration
   kwargs = {
             'frame_skip': 25,
-            'target_pos_range': {'fingertip': jp.array([[0.225, -0.3, -0.3], [0.35, 0.1, 0.4]]),},
-            'target_radius_range': {'fingertip': jp.array([0.01, 0.15]),},
+            'target_pos_range': {'fingertip': jp.array([[0.55, -0.4, -0.3], [0.55, 0.2, 0.3]]),},
+            'target_radius_range': {'fingertip': jp.array([0.05, 0.15]),},
             'ref_site': 'humphant',
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
