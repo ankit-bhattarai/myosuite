@@ -20,7 +20,7 @@ from brax.base import Base, Motion, Transform, System
 from brax.base import State as PipelineState
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
 from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
-from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
+from myosuite_florian.myosuite.envs.myo.myouser._llc_eepos_adaptive_mjx_v0 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks

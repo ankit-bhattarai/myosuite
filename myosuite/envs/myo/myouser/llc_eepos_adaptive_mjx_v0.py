@@ -5,6 +5,7 @@ Authors  :: Florian Fischer (fjf33@cam.ac.uk); Vikash Kumar (vikashplus@gmail.co
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import collections
+import functools
 
 from myosuite.utils import gym
 import mujoco
@@ -21,6 +22,7 @@ from mujoco import mjx
 from brax import base
 # from brax.base import State as PipelineState
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
+from brax.envs.wrappers.training import VmapWrapper
 # from brax.mjx.pipeline import _reformat_contact
 from brax.io import html, mjcf, model
 
@@ -225,7 +227,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             self.init_target_area_width_scale = init_target_area_width_scale  #scale factor for target area width (between 0 and 1), i.e., the percentage of the target limit range defined above that is currently used when spawning targets
             self.adaptive_increase_success_rate = adaptive_increase_success_rate  #success rate above which target area width is increased
             self.adaptive_decrease_success_rate = adaptive_decrease_success_rate  #success rate below which target area width is decreased
-            self.adaptive_change_step_size = adaptive_change_step_size  #increase of target area width per adjustment (in meter)
+            self.adaptive_change_step_size = adaptive_change_step_size  #increase of target area width per adjustment (in percent of total range)
             self.adaptive_change_min_trials = adaptive_change_min_trials  #minimum number of trials with the latest target area width required before the next adjustment; should be chosen considerably larger than self.max_trials
             self.success_log_buffer_length = success_log_buffer_length #maximum number of trials (since last adjustment) to consider for success rate calculation (default: consider all values since last adjustment)
             assert self.adaptive_change_min_trials >= 1, f"At least one trial is required to assess the success rate for adaptively adjusting the target area width. Set 'adaptive_change_min_trials' >= 1 (current value: {self.adaptive_change_min_trials})."
@@ -373,6 +375,14 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # increase step counter
         state.info['steps_since_last_hit'] = state.info['steps_since_last_hit'] + 1
 
+        # Generate new target
+        ##TODO: update data0 when target is updated?
+        rng, rng1, rng2 = jax.random.split(rng, 3)
+        state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1, state.info['target_area_dynamic_width_scale'])], state.info['target_pos'])
+        state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
+        # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
+        # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
+
         data0 = state.pipeline_state
         rng, rng_ctrl = jax.random.split(rng, 2)
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
@@ -394,41 +404,28 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
 
-        ####################################################################################
-        ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
-        ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
-        def where_done(x, y):
-            done = rwd_dict['done'].copy()  #state.done
-            if done.shape:
-                done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
-            return jp.where(done, x, y)
+        _updated_info = self.update_info(state.info, obs_dict)
+        state.replace(info=_updated_info)
 
-        rng, rng1 = jax.random.split(rng, 2)
-        obs_dict_after_reset, state_after_reset = self.reset_with_curriculum(rng1, obs_dict)
-        data = jax.tree.map(
-            where_done, state_after_reset.pipeline_state, data  #state.pipeline_state
-        )
-        obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
-        obs = jax.tree.map(where_done, state_after_reset.obs, obs)  #state.obs)
-        # info = jax.tree.map(where_done, state_after_reset.info, state.info)
-        # state.replace(info=info)
-        ####################################################################################
+        # ####################################################################################
+        # ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
+        # ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
+        # def where_done(x, y):
+        #     done = rwd_dict['done'].copy()  #state.done
+        #     if done.shape:
+        #         done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+        #     return jp.where(done, x, y)
 
-        ## Update state info of internal variables at the end of each env step
-        state.info['last_ctrl'] = obs_dict['last_ctrl']
-        state.info['motor_act'] = obs_dict['motor_act']
-        state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
-        state.info['steps_inside_target'] = obs_dict['steps_inside_target']
-        state.info['trial_idx'] = obs_dict['trial_idx'].copy()
-        if self.adaptive_task:
-            state.info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index']
-            state.info['trial_success_log'] = obs_dict['trial_success_log']
-        state.info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale']
-
-        # Also store variables useful for evaluation
-        state.info['target_success'] = obs_dict['target_success']
-        state.info['target_fail'] = obs_dict['target_fail']
-        state.info['task_completed'] = obs_dict['task_completed']
+        # rng, rng1 = jax.random.split(rng, 2)
+        # obs_dict_after_reset, state_after_reset = self.reset_with_curriculum(rng1, obs_dict)
+        # data = jax.tree.map(
+        #     where_done, state_after_reset.pipeline_state, data  #state.pipeline_state
+        # )
+        # obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
+        # obs = jax.tree.map(where_done, state_after_reset.obs, obs)  #state.obs)
+        # # info = jax.tree.map(where_done, state_after_reset.info, state.info)
+        # # state.replace(info=info)
+        # ####################################################################################
 
         # # finalize step
         # env_info = self.get_env_infos(state, data)
@@ -443,15 +440,14 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
         # # self._trial_success_log = jp.where(obs_dict['target_fail'], jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
 
-        # Generate new target
-        rng, rng1, rng2 = jax.random.split(rng, 3)
-        state.info['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.generate_target_pos(rng1, obs_dict['target_area_dynamic_width_scale'])], obs_dict['target_pos'])
-        state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.generate_target_size(rng2)], obs_dict['target_radius'])
-        # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
-        # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
+        # # Generate new target  #NOTE: moved to the very top of step function
+        # rng, rng1, rng2 = jax.random.split(rng, 3)
+        # state.info['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.generate_target_pos(rng1, obs_dict['target_area_dynamic_width_scale'])], obs_dict['target_pos'])
+        # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.generate_target_size(rng2)], obs_dict['target_radius'])
+        # # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
+        # # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
 
         # print(obs_dict)
-
         # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
         # # self._steps_inside_target = jp.where(self._target_success, jp.zeros(1), self._steps_inside_target)
         # jp.select([obs_dict['target_success']], self.generate_target(rng, obs_dict))
@@ -496,14 +492,14 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         _, state.info['rng'] = jax.random.split(rng, 2)  #update rng after each step to ensure variability across steps
 
         state.metrics.update(
-            target_area_dynamic_width_scale=state.info['target_area_dynamic_width_scale'],
-            success_rate=obs_dict['success_rate'],
+            target_area_dynamic_width_scale=obs_dict['task_completed']*obs_dict['target_area_dynamic_width_scale'],
+            success_rate=obs_dict['task_completed']*obs_dict['success_rate'],
             # bonus=rwd_dict['bonus'],
         )
 
         # return self.forward(**kwargs)
         return state.replace(
-            pipeline_state=data, obs=obs, reward=rwd_dict['dense']  #, done=rwd_dict['done']
+            pipeline_state=data, obs=obs, reward=rwd_dict['dense'], done=rwd_dict['done']
         )
     
     # # updates executed at each step, after MuJoCo step (see BaseV0.step) but before MyoSuite returns observations, reward and infos (see MujocoEnv.forward)
@@ -516,7 +512,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     def get_obs_vec(self, data, info):
         obs_dict = self.get_obs_dict(data, info)
         obs = self.obsdict2obsvec(obs_dict)
-        return obs
+        _updated_info = self.update_info(info, obs_dict)
+        return obs, _updated_info
 
     def get_obs_dict(self, data, info):
         rng = info['rng']
@@ -556,31 +553,19 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obs_dict['inside_target'] = jp.squeeze(obs_dict['reach_dist'] < obs_dict['target_radius'])
         # print(obs_dict['inside_target'], jp.ones(1))
 
-        # Task progress/success metrics
         ## we require all end-effector--target pairs to have distance below the respective target radius
         # obs_dict['steps_inside_target'] = (info['steps_inside_target'] + jp.select(obs_dict['inside_target'], jp.ones(1))) * jp.select(obs_dict['inside_target'], jp.ones(1))
         # print(info['steps_inside_target'], jp.select(obs_dict['inside_target'], jp.ones(1)), (info['steps_inside_target'] + jp.select(obs_dict['inside_target'], jp.ones(1))), obs_dict['steps_inside_target'])
-        obs_dict['steps_inside_target'] = jp.select([obs_dict['inside_target']], [info['steps_inside_target'] + 1], 0)
-        # print("steps_inside_target", obs_dict['steps_inside_target'])
-        obs_dict['target_success'] = obs_dict['steps_inside_target'] >= self.dwell_threshold
-        obs_dict['steps_inside_target'] = jp.select([obs_dict['target_success']], [0], obs_dict['steps_inside_target'])
-        # print("target_success", obs_dict['target_success'])
-        # print(obs_dict['target_success'])
-        # print("....////")
-        # obs_dict['steps_inside_target'] = jp.select([jp.all(obs_dict['reach_dist'] < obs_dict['target_radius'])], [obs_dict['steps_inside_target'] + 1], 0)
-        # obs_dict['target_hit'] = jp.array([obs_dict['steps_inside_target'] >= self.dwell_threshold])
-        obs_dict['trial_idx'] = info['trial_idx'].copy() + jp.select([obs_dict['target_success']], jp.ones(1))
-        # print("trial_idx", obs_dict['trial_idx'])
-
-        # _steps_since_last_hit = jp.select([obs_dict['target_success']], jp.zeros(1), info['steps_since_last_hit'] + 1)
-        # _target_timeout = jp.array(_steps_since_last_hit >= self._max_steps_without_hit)
-        # obs_dict['target_fail'] = ~obs_dict['target_success'] & _target_timeout
-        # obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_fail']], jp.zeros(1), _steps_since_last_hit)
-
+        _steps_inside_target = jp.select([obs_dict['inside_target']], [info['steps_inside_target'] + 1], 0)
         _target_timeout = info['steps_since_last_hit'] >= self._max_steps_without_hit
+        # print("steps_inside_target", obs_dict['steps_inside_target'])
+        obs_dict['target_success'] = _steps_inside_target >= self.dwell_threshold
         obs_dict['target_fail'] = ~obs_dict['target_success'] & _target_timeout
+        
+        obs_dict['steps_inside_target'] = jp.select([obs_dict['target_success']], [0], _steps_inside_target)
         obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [0], info['steps_since_last_hit'])
-
+        obs_dict['trial_idx'] = info['trial_idx'] + jp.select([obs_dict['target_success'] | obs_dict['target_fail']], jp.ones(1))
+        # print("trial_idx", obs_dict['trial_idx'])
         obs_dict['task_completed'] = obs_dict['trial_idx'] >= self.max_trials
 
         if self.adaptive_task:
@@ -613,13 +598,16 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             ##TODO: check dimensions of arguments in above conditional function call
             # obs_dict = jp.select([n_targets_adj >= self.adaptive_change_min_trials], [self.update_adaptive_target_area_width(info, obs_dict, success_rate)], obs_dict)
             
+            ## Erase previous success rates when target curriculum state switches
             zero = jp.zeros(1)
             # obs_dict['trial_success_log'].at[:].set(-1) #= jp.zeros([self.success_log_buffer_length], dtype=jp.int32)
             # obs_dict['trial_success_log_pointer_index'] = zero  #jp.array([], dtype=jp.int32)
             obs_dict['trial_success_log'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
                                 (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
-                                [jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"]),
-                                 jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"])],
+                                # [jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"]),
+                                #  jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"])],
+                                [-1*jp.ones_like(obs_dict["trial_success_log"], dtype=jp.int32),
+                                 -1*jp.ones_like(obs_dict["trial_success_log"], dtype=jp.int32)],
                                 obs_dict["trial_success_log"])
             obs_dict['trial_success_log_pointer_index'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
                                 (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
@@ -639,6 +627,25 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obsvec = jp.concatenate(obs_list)
 
         return obsvec
+    
+    def update_info(self, info, obs_dict):
+        ## Update state info of internal variables at the end of each env step
+        info['last_ctrl'] = obs_dict['last_ctrl']
+        info['motor_act'] = obs_dict['motor_act']
+        info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
+        info['steps_inside_target'] = obs_dict['steps_inside_target']
+        info['trial_idx'] = obs_dict['trial_idx'].copy()
+        if self.adaptive_task:
+            info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index']
+            info['trial_success_log'] = obs_dict['trial_success_log']
+        info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale']
+
+        # Also store variables useful for evaluation
+        info['target_success'] = obs_dict['target_success']
+        info['target_fail'] = obs_dict['target_fail']
+        info['task_completed'] = obs_dict['task_completed']
+
+        return info
 
     def get_reward_dict(self, obs_dict):
         reach_dist = obs_dict['reach_dist']
@@ -788,6 +795,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     def reset(self, rng, **kwargs):
         # jax.debug.print(f"RESET INIT")
 
+        _, rng = jax.random.split(rng, 2)
+
         # Reset counters
         steps_since_last_hit, steps_inside_target, trial_idx = jp.zeros(3)
         if self.adaptive_task:
@@ -833,21 +842,23 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
-        # obs = self.get_obs_vec(data, info)
-        obs_dict = self.get_obs_dict(data, info)
-        obs = self.obsdict2obsvec(obs_dict)
+        obs, info = self.get_obs_vec(data, info)  #update info from observation made
+        # obs_dict = self.get_obs_dict(data, info)
+        # obs = self.obsdict2obsvec(obs_dict)
 
         # self.generate_target(rng, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {'target_area_dynamic_width_scale': info['target_area_dynamic_width_scale'],
-                    'success_rate': obs_dict['success_rate'],
+        metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
+                    'success_rate': 0., #obs_dict['success_rate'],
                 }  #'bonus': zero}
         
         return State(data, obs, reward, done, metrics, info)
     
-    def reset_with_curriculum(self, rng, obs_dict_before_reset, **kwargs):
+    def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
+
+        rng, rng_reset = jax.random.split(rng, 2)
 
         # Reset counters
         steps_since_last_hit, steps_inside_target, trial_idx = jp.zeros(3)
@@ -861,19 +872,19 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # self.robot.sync_sims(self.sim, self.sim_obsd)
 
         if self.reset_type == "zero":
-            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
+            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng_reset)
         elif self.reset_type == "epsilon_uniform":
-            reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng)
+            reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng_reset)
         elif self.reset_type == "range_uniform":
-            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
+            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng_reset)
             data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
-            reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng, data)
+            reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng_reset, data)
         else:
             reset_qpos, reset_qvel, reset_act = None, None, None
 
         data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
         
-        self._reset_bm_model(rng)
+        self._reset_bm_model(rng_reset)
 
         info = {'last_ctrl': last_ctrl,
                 'motor_act': self._motor_act,
@@ -882,31 +893,31 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 'trial_idx': trial_idx,
                 # 'trial_success_log_pointer_index': obs_dict_before_reset["trial_success_log_pointer_index"],  #TODO: do not reset to initial value at the beginning of each episode!!!
                 # 'trial_success_log': obs_dict_before_reset["trial_success_log"],  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'target_area_dynamic_width_scale': obs_dict_before_reset["target_area_dynamic_width_scale"].copy(),  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'rng': rng,
+                'target_area_dynamic_width_scale': info_before_reset["target_area_dynamic_width_scale"].copy(),  #TODO: do not reset to initial value at the beginning of each episode!!!
+                'rng': rng_reset,
                 'target_success': jp.array(False),
                 'target_fail': jp.array(False),
                 'task_completed': jp.array(False),
                 }
         if self.adaptive_task:
-            info['trial_success_log_pointer_index'] = obs_dict_before_reset["trial_success_log_pointer_index"].copy()
-            info['trial_success_log'] = obs_dict_before_reset["trial_success_log"].copy()
-        info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
-        info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
-        # obs = self.get_obs_vec(data, info)
-        obs_dict = self.get_obs_dict(data, info)
-        obs = self.obsdict2obsvec(obs_dict)
+            info['trial_success_log_pointer_index'] = info_before_reset["trial_success_log_pointer_index"].copy()
+            info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
+        info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
+        info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
+        obs, info = self.get_obs_vec(data, info)  #update info from observation made
+        # obs_dict = self.get_obs_dict(data, info)
+        # obs = self.obsdict2obsvec(obs_dict)
 
         # jax.debug.print(f"obs: {obs}; info-target_radius: {info['target_radius']}")
 
         # self.generate_target(rng1, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {'target_area_dynamic_width_scale': info['target_area_dynamic_width_scale'],
-                    'success_rate': obs_dict['success_rate'],
+        metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
+                    'success_rate': 0., #obs_dict['success_rate'],
                    }  #'bonus': zero}
         
-        return obs_dict, State(data, obs, reward, done, metrics, info)
+        return State(data, obs, reward, done, metrics, info)
     
     def _reset_zero(self, rng):
         """ Resets the biomechanical model. """
@@ -1099,84 +1110,148 @@ class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
         return new_ctrl
 
 class AdaptiveTargetWrapper(Wrapper):
-  """Automatically resets Brax envs that are done."""
+  """Automatically "resets" Brax envs that are done, without clearing curriculum state."""
+  ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
+  ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
+    
+#   def step(self, state: State, action: jax.Array) -> State:
+#     if 'steps' in state.info:
+#       steps = state.info['steps']
+#       steps = jp.where(state.done, jp.zeros_like(steps), steps)
+#       state.info.update(steps=steps)
+#     state = state.replace(done=jp.zeros_like(state.done))
+#     state = self.env.step(state, action)
 
-  def reset(self, rng: jax.Array) -> State:
-    state = self.env.reset(rng)
-    state.info['first_pipeline_state'] = state.pipeline_state
-    state.info['first_obs'] = state.obs
-    return state
+#     def where_done(x, y):
+#       done = state.done
+#       if done.shape:
+#         done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+#       return jp.where(done, x, y)
 
-  def step(self, state: State, action: jax.Array) -> State:
-    if 'steps' in state.info:
-      steps = state.info['steps']
-      steps = jp.where(state.done, jp.zeros_like(steps), steps)
-      state.info.update(steps=steps)
-    state = state.replace(done=jp.zeros_like(state.done))
-    state = self.env.step(state, action)
+#     pipeline_state = jax.tree.map(
+#         where_done, state.info['first_pipeline_state'], state.pipeline_state
+#     )
+#     obs = jax.tree.map(where_done, state.info['first_obs'], state.obs)
+#     return state.replace(pipeline_state=pipeline_state, obs=obs)
+  
+  def step(self, state: State, action: jax.Array):
+        if 'steps' in state.info:
+            steps = state.info['steps']
+            steps = jp.where(state.done, jp.zeros_like(steps), steps)
+            state.info.update(steps=steps)
+        state = state.replace(done=jp.zeros_like(state.done))
+        state = self.env.step(state, action)
 
-    def where_done(x, y):
-      done = state.done
-      if done.shape:
-        done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
-      return jp.where(done, x, y)
+        # ####################################################################################
+        rng = state.info['rng']
 
-    pipeline_state = jax.tree.map(
-        where_done, state.info['first_pipeline_state'], state.pipeline_state
-    )
-    obs = jax.tree.map(where_done, state.info['first_obs'], state.obs)
-    return state.replace(pipeline_state=pipeline_state, obs=obs)
+        def where_done(x, y):
+            done = state.done
+            if done.shape:
+                done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+            return jp.where(done, x, y)
+
+        # obs_dict = self.get_obs_dict(state.pipeline_state, state.info)
+        ## if isinstance(self.env, VmapWrapper) else functools.partial(self.env.reset_with_curriculum, rng=rng, info_before_reset=state.info)
+        if hasattr(self, 'batch_size'):  #if VmapWrapper is used (training mode)
+            if self.batch_size is not None:
+                rng = jax.random.split(rng, self.batch_size)
+            state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
+        else:
+            state_after_reset = self.env.reset_with_curriculum(rng, state.info)
+        # fill state_after_reset.info with entries only in state.info (i.e. entries created by wrappers)
+        for k in state.info:
+            state_after_reset.info[k] = state_after_reset.info.get(k, state.info[k])
+
+        pipeline_state = jax.tree.map(
+            where_done, state_after_reset.pipeline_state, state.pipeline_state  #state.pipeline_state
+        )
+        # obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
+        obs = jax.tree.map(where_done, state_after_reset.obs, state.obs)  #state.obs)
+        info = jax.tree.map(where_done, state_after_reset.info, state.info)
+        # ####################################################################################
+
+        # ## Update state info of internal variables at the end of each env step
+        # state.info['last_ctrl'] = obs_dict['last_ctrl']
+        # state.info['motor_act'] = obs_dict['motor_act']
+        # state.info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
+        # state.info['steps_inside_target'] = obs_dict['steps_inside_target']
+        # state.info['trial_idx'] = obs_dict['trial_idx'].copy()
+        # if self.env.adaptive_task:
+        #     state.info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index']
+        #     state.info['trial_success_log'] = obs_dict['trial_success_log']
+        # state.info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale']
+
+        # # Also store variables useful for evaluation
+        # state.info['target_success'] = obs_dict['target_success']
+        # state.info['target_fail'] = obs_dict['target_fail']
+        # state.info['task_completed'] = obs_dict['task_completed']
+
+        # # finalize step
+        # env_info = self.get_env_infos(state, data)
+        
+        # # update internal episode variables
+        # # self._steps_inside_target = obs_dict['steps_inside_target']
+        # # self._trial_idx += jp.select([obs_dict['target_success']], jp.ones(1))
+        # # self._targets_hit += jp.select([obs_dict['target_success']], jp.ones(1))
+        
+        # # self._trial_success_log.at[self._trial_success_log_pointer_index] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(self._trial_success_log_pointer_index + 1) % self.success_log_buffer_length], self._trial_success_log_pointer_index)
+        # # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
+        # # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
+        # # self._trial_success_log = jp.where(obs_dict['target_fail'], jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
+
+        return state.replace(pipeline_state=pipeline_state, obs=obs, info=info)
 
 
-class EpisodeWrapper(Wrapper):
-  """Maintains episode step count and sets done at episode end."""
+# class EpisodeWrapper(Wrapper):
+#   """Maintains episode step count and sets done at episode end."""
 
-  def __init__(self, env: Env, episode_length: int, action_repeat: int):
-    super().__init__(env)
-    self.episode_length = episode_length
-    self.action_repeat = action_repeat
+#   def __init__(self, env: Env, episode_length: int, action_repeat: int):
+#     super().__init__(env)
+#     self.episode_length = episode_length
+#     self.action_repeat = action_repeat
 
-  def reset(self, rng: jax.Array) -> State:
-    state = self.env.reset(rng)
-    state.info['steps'] = jp.zeros(rng.shape[:-1])
-    state.info['truncation'] = jp.zeros(rng.shape[:-1])
-    # Keep separate record of episode done as state.info['done'] can be erased
-    # by AutoResetWrapper
-    state.info['episode_done'] = jp.zeros(rng.shape[:-1])
-    episode_metrics = dict()
-    episode_metrics['sum_reward'] = jp.zeros(rng.shape[:-1])
-    episode_metrics['length'] = jp.zeros(rng.shape[:-1])
-    for metric_name in state.metrics.keys():
-      episode_metrics[metric_name] = jp.zeros(rng.shape[:-1])
-    state.info['episode_metrics'] = episode_metrics
-    return state
+#   def reset(self, rng: jax.Array) -> State:
+#     state = self.env.reset(rng)
+#     state.info['steps'] = jp.zeros(rng.shape[:-1])
+#     state.info['truncation'] = jp.zeros(rng.shape[:-1])
+#     # Keep separate record of episode done as state.info['done'] can be erased
+#     # by AutoResetWrapper
+#     state.info['episode_done'] = jp.zeros(rng.shape[:-1])
+#     episode_metrics = dict()
+#     episode_metrics['sum_reward'] = jp.zeros(rng.shape[:-1])
+#     episode_metrics['length'] = jp.zeros(rng.shape[:-1])
+#     for metric_name in state.metrics.keys():
+#       episode_metrics[metric_name] = jp.zeros(rng.shape[:-1])
+#     state.info['episode_metrics'] = episode_metrics
+#     return state
 
-  def step(self, state: State, action: jax.Array) -> State:
-    def f(state, _):
-      nstate = self.env.step(state, action)
-      return nstate, nstate.reward
+#   def step(self, state: State, action: jax.Array) -> State:
+#     def f(state, _):
+#       nstate = self.env.step(state, action)
+#       return nstate, nstate.reward
 
-    state, rewards = jax.lax.scan(f, state, (), self.action_repeat)
-    state = state.replace(reward=jp.sum(rewards, axis=0))
-    steps = state.info['steps'] + self.action_repeat
-    one = jp.ones_like(state.done)
-    zero = jp.zeros_like(state.done)
-    episode_length = jp.array(self.episode_length, dtype=jp.int32)
-    done = jp.where(steps >= episode_length, one, state.done)
-    state.info['truncation'] = jp.where(
-        steps >= episode_length, 1 - state.done, zero
-    )
-    state.info['steps'] = steps
+#     state, rewards = jax.lax.scan(f, state, (), self.action_repeat)
+#     state = state.replace(reward=jp.sum(rewards, axis=0))
+#     steps = state.info['steps'] + self.action_repeat
+#     one = jp.ones_like(state.done)
+#     zero = jp.zeros_like(state.done)
+#     episode_length = jp.array(self.episode_length, dtype=jp.int32)
+#     done = jp.where(steps >= episode_length, one, state.done)
+#     state.info['truncation'] = jp.where(
+#         steps >= episode_length, 1 - state.done, zero
+#     )
+#     state.info['steps'] = steps
 
-    # Aggregate state metrics into episode metrics
-    prev_done = state.info['episode_done']
-    state.info['episode_metrics']['sum_reward'] += jp.sum(rewards, axis=0)
-    state.info['episode_metrics']['sum_reward'] *= (1 - prev_done)
-    state.info['episode_metrics']['length'] += self.action_repeat
-    state.info['episode_metrics']['length'] *= (1 - prev_done)
-    for metric_name in state.metrics.keys():
-      if metric_name != 'reward':
-        state.info['episode_metrics'][metric_name] += state.metrics[metric_name]
-        state.info['episode_metrics'][metric_name] *= (1 - prev_done)
-    state.info['episode_done'] = done
-    return state.replace(done=done)
+#     # Aggregate state metrics into episode metrics
+#     prev_done = state.info['episode_done']
+#     state.info['episode_metrics']['sum_reward'] += jp.sum(rewards, axis=0)
+#     state.info['episode_metrics']['sum_reward'] *= (1 - prev_done)
+#     state.info['episode_metrics']['length'] += self.action_repeat
+#     state.info['episode_metrics']['length'] *= (1 - prev_done)
+#     for metric_name in state.metrics.keys():
+#       if metric_name != 'reward':
+#         state.info['episode_metrics'][metric_name] += state.metrics[metric_name]
+#         state.info['episode_metrics'][metric_name] *= (1 - prev_done)
+#     state.info['episode_done'] = done
+#     return state.replace(done=done)
