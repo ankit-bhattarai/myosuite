@@ -94,7 +94,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._prepare_env(**kwargs)
         self.vision = False
         if 'vision' in kwargs:
-            breakpoint()
+            print(f"kwargs['vision']: {kwargs['vision']}")
             self.vision = True
             from madrona_mjx.renderer import BatchRenderer
             self.batch_renderer = BatchRenderer(m = self.sys,
