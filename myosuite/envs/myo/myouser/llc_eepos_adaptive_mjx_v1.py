@@ -26,7 +26,6 @@ from brax.envs.wrappers.training import VmapWrapper
 # from brax.mjx.pipeline import _reformat_contact
 from brax.io import html, mjcf, model
 
-
 class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
     # DEFAULT_OBS_KEYS = ['reach_dist', 'inside_target', 'steps_inside_target', 'target_success',    'qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']  #TODO: exclude 'reach_dist' etc.
@@ -93,6 +92,22 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # data = mjx.make_data(sys)  #this is done by self.reset called in self._prepare_env
 
         self._prepare_env(**kwargs)
+        self.vision = False
+        if 'vision' in kwargs:
+            breakpoint()
+            self.vision = True
+            from madrona_mjx.renderer import BatchRenderer
+            self.batch_renderer = BatchRenderer(m = self.sys,
+                                                gpu_id = kwargs['vision']['gpu_id'],
+                                                num_worlds = kwargs['batch_size'],
+                                                batch_render_view_width = kwargs['vision']['render_width'],
+                                                batch_render_view_height = kwargs['vision']['render_height'],
+                                                enabled_geom_groups = np.asarray(kwargs['vision']['enabled_geom_groups']),
+                                                enabled_cameras = np.asarray([0]),
+                                                add_cam_debug_geo = False,
+                                                use_rasterizer = kwargs['vision']['use_rasterizer'],
+                                                viz_gpu_hdls = None,
+                                                )
     
     def _prepare_env(self, **kwargs):
         self._prepare_bm_model()
@@ -370,6 +385,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
         # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
+        breakpoint()
         rng = state.info['rng']
 
         # increase step counter
@@ -911,6 +927,16 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # jax.debug.print(f"obs: {obs}; info-target_radius: {info['target_radius']}")
 
         # self.generate_target(rng1, obs_dict)
+        if self.vision:
+            render_token, rgb, _ = self.renderer.init(data, self._mjx_model)
+            info.update({"render_token": render_token})
+            print(rgb.shape)
+            #TODO: check the shape of rgb
+            obs = rgb[0].astype(jp.float32)
+            #TODO: check whether converting to grayscale is necessary or not!
+            obs_history = jp.tile(obs, (self.vision_config.history, 1, 1))
+            info.update({"obs_history": obs_history})
+            obs = {"pixels/view_0": obs_history.transpose(1, 2, 0)}
 
         reward, done = jp.zeros(2)
         metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
