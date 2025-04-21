@@ -385,7 +385,6 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
         # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
-        breakpoint()
         rng = state.info['rng']
 
         # increase step counter
