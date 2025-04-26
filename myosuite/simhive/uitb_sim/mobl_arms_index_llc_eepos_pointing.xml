@@ -54,7 +54,8 @@
   </asset>
 
   <worldbody>
-    <camera name="for_testing" pos="-0.8 -0.6 1.5" quat="0.718027 0.437104 -0.31987 -0.437104"/>
+    <!-- <camera name="for_testing" pos="-0.8 -0.6 1.5" quat="0.718027 0.437104 -0.31987 -0.437104"/> -->
+    <camera name="eye" pos="0 0 1.2" quat="0.583833 0.399104 -0.399421 -0.583368"/>
     <light name="scene_directional_light" pos="0.9 0.3 2.5" dir="0 0 -1" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0"/>
     <!-- <body name="target" pos="0.5 0 0.8"> -->
     <site name="fingertip_target" size="0.025" rgba="0.1 0.8 0.1 1" pos="0.5 0 0.8"/>
@@ -76,8 +77,8 @@
       <site name="LAT2-P5" pos="-0.07186 -0.18818 0.00815"/>
       <site name="LAT3-P4" pos="-0.11157 -0.19387 0.05532"/>
       <site name="LAT3-P5" pos="-0.07117 -0.24858 0.00907"/>
-      <light name="default" pos="0 0 4" dir="0 0 -1" mode="trackcom"/>
-      <light name="additional" pos="4 0.8 0" dir="-1 0 0" active="false" mode="trackcom"/>
+      <light name="default" pos="0 0 4" dir="0 0 -1" active="true" mode="trackcom"/>
+      <light name="additional" pos="4 0.8 0" dir="-1 0 0" active="true" mode="trackcom"/>
       <body name="clavicle" pos="0.006325 0.00693 0.025465">
         <inertial pos="-0.011096 0.0063723 0.054168" quat="0.906292 0.0334036 0.164622 -0.387838" mass="0.156" diaginertia="0.001 0.001 0.001"/>
         <joint name="sternoclavicular_r2" pos="0 0 0" axis="0.0153 0.989299 -0.1451" limited="false" range="-99999.9 99999.9"/>

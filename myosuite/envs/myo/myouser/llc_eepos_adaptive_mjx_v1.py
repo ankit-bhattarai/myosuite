@@ -102,10 +102,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                                                 num_worlds = kwargs['batch_size'],
                                                 batch_render_view_width = kwargs['vision']['render_width'],
                                                 batch_render_view_height = kwargs['vision']['render_height'],
-                                                enabled_geom_groups = np.asarray(kwargs['vision']['enabled_geom_groups']),
-                                                enabled_cameras = np.asarray([0]),
-                                                add_cam_debug_geo = False,
-                                                use_rasterizer = kwargs['vision']['use_rasterizer'],
+                                                enabled_geom_groups = np.asarray([0, 1, 2]),
+                                                enabled_cameras = np.asarray(kwargs['vision']['enabled_cameras']),
+                                                use_rasterizer = None,
                                                 viz_gpu_hdls = None,
                                                 )
     
@@ -304,7 +303,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     
     def initializeConditions(self):
         # for muscle weakness we assume that a weaker muscle has a
-        # reduced maximum force
+        # reduced maximum force 
         if self.muscle_condition == "sarcopenia":
             for mus_idx in range(self.sys.mj_model.actuator_gainprm.shape[0]):
                 self.sys.mj_model.actuator_gainprm[mus_idx, 2] = (
@@ -422,88 +421,6 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         _updated_info = self.update_info(state.info, obs_dict)
         state.replace(info=_updated_info)
 
-        # ####################################################################################
-        # ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
-        # ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
-        # def where_done(x, y):
-        #     done = rwd_dict['done'].copy()  #state.done
-        #     if done.shape:
-        #         done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
-        #     return jp.where(done, x, y)
-
-        # rng, rng1 = jax.random.split(rng, 2)
-        # obs_dict_after_reset, state_after_reset = self.reset_with_curriculum(rng1, obs_dict)
-        # data = jax.tree.map(
-        #     where_done, state_after_reset.pipeline_state, data  #state.pipeline_state
-        # )
-        # obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
-        # obs = jax.tree.map(where_done, state_after_reset.obs, obs)  #state.obs)
-        # # info = jax.tree.map(where_done, state_after_reset.info, state.info)
-        # # state.replace(info=info)
-        # ####################################################################################
-
-        # # finalize step
-        # env_info = self.get_env_infos(state, data)
-        
-        # # update internal episode variables
-        # # self._steps_inside_target = obs_dict['steps_inside_target']
-        # # self._trial_idx += jp.select([obs_dict['target_success']], jp.ones(1))
-        # # self._targets_hit += jp.select([obs_dict['target_success']], jp.ones(1))
-        
-        # # self._trial_success_log.at[self._trial_success_log_pointer_index] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(self._trial_success_log_pointer_index + 1) % self.success_log_buffer_length], self._trial_success_log_pointer_index)
-        # # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        # # self._trial_success_log = jp.where(obs_dict['target_fail'], jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-
-        # # Generate new target  #NOTE: moved to the very top of step function
-        # rng, rng1, rng2 = jax.random.split(rng, 3)
-        # state.info['target_pos'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.generate_target_pos(rng1, obs_dict['target_area_dynamic_width_scale'])], obs_dict['target_pos'])
-        # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [self.generate_target_size(rng2)], obs_dict['target_radius'])
-        # # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
-        # # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
-
-        # print(obs_dict)
-        # self._trial_success_log = jp.where(obs_dict['target_success'], jp.append(self._trial_success_log, 1), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # # self._steps_inside_target = jp.where(self._target_success, jp.zeros(1), self._steps_inside_target)
-        # jp.select([obs_dict['target_success']], self.generate_target(rng, obs_dict))
-
-        # _target_timeout = jp.array(obs_dict['steps_since_last_hit'] >= self._max_steps_without_hit)
-        # _failure_condition = ~obs_dict['target_success'] & _target_timeout
-        # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
-        # self._trial_success_log = jp.where(_failure_condition, jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
-        # jp.select([obs_dict['target_fail']], self.generate_target(rng, obs_dict))
-
-        ## see JAX reimplementation above
-        # if self._target_success:
-        #     self._trial_idx += 1
-        #     self._targets_hit += 1
-        #     self._trial_success_log = jp.append(self._trial_success_log, [1])
-        #     self._steps_since_last_hit = jp.zeros(1)
-        #     self._steps_inside_target = jp.zeros(1)
-        #     self.generate_target(rng)
-        #     data = mjx.forward(self.sys, data)
-        #     ##TODO: required??
-        #     # data = _reformat_contact(self.sys, data)
-        # else:
-        #     self._steps_since_last_hit += 1
-            
-        #     if self._steps_since_last_hit >= self._max_steps_without_hit:
-        #         self._trial_success_log = jp.append(self._trial_success_log, [0])
-        #         # Spawn a new target
-        #         self._steps_since_last_hit = jp.zeros(1)
-        #         self._trial_idx += 1
-        #         self.generate_target(rng)
-        #         data = mjx.forward(self.sys, data)
-        #         ##TODO: required??
-        #         # data = _reformat_contact(self.sys, data)
-        
-        # env_info_additional = {
-        #     'target_area_dynamic_width_scale': self.target_area_dynamic_width_scale,
-        #     'success_rate': self.success_rate,
-        # }
-
-        # env_info.update(env_info_additional)
-
         _, state.info['rng'] = jax.random.split(rng, 2)  #update rng after each step to ensure variability across steps
 
         state.metrics.update(
@@ -511,6 +428,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             success_rate=obs_dict['task_completed']*obs_dict['success_rate'],
             # bonus=rwd_dict['bonus'],
         )
+
+        if self.vision:
+            _, rgb, _ = self.batch_renderer.render(state.info['render_token'], data)
+            obs = {"pixels/view_0": rgb[0][..., :3].astype(jp.float32) / 255.0}
 
         # return self.forward(**kwargs)
         return state.replace(
@@ -632,6 +553,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         else:
             obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
             obs_dict['success_rate'] = -1.  #unknown ##TODO: measure success rate if adaptive is not enabled
+
+        # Add vision input if available
+        if self.vision and 'render_token' in info:
+            _, rgb, _ = self.batch_renderer.render(info['render_token'], data)
+            obs_dict['pixels/view_0'] = rgb[0][..., :3].astype(jp.float32) / 255.0
 
         return obs_dict
     
@@ -863,6 +789,13 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         # self.generate_target(rng, obs_dict)
 
+        if self.vision:
+            render_token, rgb, _ = self.batch_renderer.init(data, self.sys)
+            info.update({"render_token": render_token})
+            print(rgb.shape)
+            obs = rgb[0][..., :3].astype(jp.float32) / 255.0
+            obs = {"pixels/view_0": obs}
+
         reward, done = jp.zeros(2)
         metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
                     'success_rate': 0., #obs_dict['success_rate'],
@@ -926,16 +859,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # jax.debug.print(f"obs: {obs}; info-target_radius: {info['target_radius']}")
 
         # self.generate_target(rng1, obs_dict)
-        if self.vision:
-            render_token, rgb, _ = self.renderer.init(data, self._mjx_model)
-            info.update({"render_token": render_token})
-            print(rgb.shape)
-            #TODO: check the shape of rgb
-            obs = rgb[0].astype(jp.float32)
-            #TODO: check whether converting to grayscale is necessary or not!
-            obs_history = jp.tile(obs, (self.vision_config.history, 1, 1))
-            info.update({"obs_history": obs_history})
-            obs = {"pixels/view_0": obs_history.transpose(1, 2, 0)}
+        
 
         reward, done = jp.zeros(2)
         metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
