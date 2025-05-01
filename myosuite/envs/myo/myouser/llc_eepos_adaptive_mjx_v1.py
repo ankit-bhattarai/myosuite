@@ -96,6 +96,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         if 'vision' in kwargs:
             print(f"kwargs['vision']: {kwargs['vision']}")
             self.vision = True
+            self.obs_keys.append("pixels/view_0")
             from madrona_mjx.renderer import BatchRenderer
             self.batch_renderer = BatchRenderer(m = self.sys,
                                                 gpu_id = kwargs['vision']['gpu_id'],
@@ -414,6 +415,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
+        self.add_target_pos_to_sys(state.info['target_pos'])
+        if self.vision:
+            pixels_dict = self.generate_pixels(data, state.info['render_token'])
+            state.info.update(pixels_dict)
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
@@ -429,9 +434,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # bonus=rwd_dict['bonus'],
         )
 
-        if self.vision:
-            _, rgb, _ = self.batch_renderer.render(state.info['render_token'], data)
-            obs = {"pixels/view_0": rgb[0][..., :3].astype(jp.float32) / 255.0}
+        # if self.vision:
+        #     _, rgb, _ = self.batch_renderer.render(state.info['render_token'], data)
+        #     obs = {"pixels/view_0": rgb[0][..., :3].astype(jp.float32) / 255.0}
 
         # return self.forward(**kwargs)
         return state.replace(
@@ -554,10 +559,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
             obs_dict['success_rate'] = -1.  #unknown ##TODO: measure success rate if adaptive is not enabled
 
-        # Add vision input if available
-        if self.vision and 'render_token' in info:
-            _, rgb, _ = self.batch_renderer.render(info['render_token'], data)
-            obs_dict['pixels/view_0'] = rgb[0][..., :3].astype(jp.float32) / 255.0
+        if self.vision:
+            obs_dict['pixels/view_0'] = info['pixels/view_0']
 
         return obs_dict
     
@@ -565,6 +568,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obs_list = [jp.zeros(0)]
         for key in self.obs_keys:
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
+        #TODO: ensure that with vision, this is done properly
         obsvec = jp.concatenate(obs_list)
 
         return obsvec
@@ -733,6 +737,23 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
     #     self.target_area_dynamic_width_scale = new_target_area_width
 
+    def generate_pixels(self, data, render_token=None):
+        update_info = {}
+        if render_token is None: # Initialize renderer during reset
+            render_token, rgb, _ = self.batch_renderer.init(data, self.sys)
+            update_info.update({"render_token": render_token})
+        else: # Render during step
+            _, rgb, _ = self.batch_renderer.render(render_token, data)
+        pixels = rgb[0][..., :3].astype(jp.float32) / 255.0
+        update_info.update({"pixels/view_0": pixels})
+        return update_info
+    
+    def add_target_pos_to_sys(self, target_pos: Optional[jp.ndarray] = None):
+        pass
+        # if target_pos is not None:
+        #     for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
+        #         self.sys.mj_model.site(_target_sid).pos = _target_pos
+
     def reset(self, rng, **kwargs):
         # jax.debug.print(f"RESET INIT")
 
@@ -783,18 +804,16 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
+        self.add_target_pos_to_sys(info['target_pos'])
+        if self.vision:
+            info.update(self.generate_pixels(data))
+
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
 
         # self.generate_target(rng, obs_dict)
 
-        if self.vision:
-            render_token, rgb, _ = self.batch_renderer.init(data, self.sys)
-            info.update({"render_token": render_token})
-            print(rgb.shape)
-            obs = rgb[0][..., :3].astype(jp.float32) / 255.0
-            obs = {"pixels/view_0": obs}
 
         reward, done = jp.zeros(2)
         metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
@@ -852,6 +871,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
+        self.add_target_pos_to_sys(info['target_pos'])
+        if self.vision:
+            info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)

@@ -57,9 +57,10 @@
     <!-- <camera name="for_testing" pos="-0.8 -0.6 1.5" quat="0.718027 0.437104 -0.31987 -0.437104"/> -->
     <camera name="eye" pos="0 0 1.2" quat="0.583833 0.399104 -0.399421 -0.583368"/>
     <light name="scene_directional_light" pos="0.9 0.3 2.5" dir="0 0 -1" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0"/>
-    <!-- <body name="target" pos="0.5 0 0.8"> -->
-    <site name="fingertip_target" size="0.025" rgba="0.1 0.8 0.1 1" pos="0.5 0 0.8"/>
-    <!-- </body> -->
+    <body name="target" pos="0.5 0.14 1.1"> 
+      <geom name="target_sphere" type="sphere" size="0.025" rgba="0.1 0.8 0.1 1"/>
+      <!-- <site name="fingertip_target" size="0.025" rgba="0.1 0.8 0.1 1" pos="0.5 0 0.8"/> -->
+    </body>
     <body name="thorax" pos="0 0 1" quat="0.707107 0.707107 0 0">
       <inertial pos="-0.0194693 -0.124635 3.52071e-05" quat="0.982593 0.00053772 0.000250291 0.185769" mass="8.01418" diaginertia="0.0768128 0.0574863 0.0458735"/>
       <joint name="r_z" pos="0 0 0" axis="0 0 1" stiffness="0" range="-6.28319 6.28319" armature="0" damping="0"/>
