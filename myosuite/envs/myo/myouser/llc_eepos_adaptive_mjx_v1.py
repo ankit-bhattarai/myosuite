@@ -748,8 +748,20 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         update_info.update({"pixels/view_0": pixels})
         return update_info
     
-    def add_target_pos_to_sys(self, target_pos: Optional[jp.ndarray] = None):
-        pass
+    def add_target_pos_to_sys(self, data, target_pos: Optional[jp.ndarray] = None):
+        return data
+        # from brax.base import Transform, Motion
+        # from brax.mjx.pipeline import _reformat_contact
+        # q, qd = data.qpos, data.qvel
+        # xpos = data.xpos
+        # xpos = xpos.at[1].set(target_pos)
+        # data = data.replace(xpos=xpos)
+        # x = Transform(pos=data.xpos[1:], rot=data.xquat[1:])
+        # cvel = Motion(vel=data.cvel[1:, 3:], ang=data.cvel[1:, :3])
+        # offset = data.xpos[1:, :] - data.subtree_com[self.sys.body_rootid[1:]]
+        # offset = Transform.create(pos=offset)
+        # xd = offset.vmap().do(cvel)
+        # return data.replace(q=q, qd=qd, x=x, xd=xd)
         # if target_pos is not None:
         #     for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
         #         self.sys.mj_model.site(_target_sid).pos = _target_pos
@@ -804,7 +816,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
-        self.add_target_pos_to_sys(info['target_pos'])
+        data = self.add_target_pos_to_sys(data, info['target_pos'])
         if self.vision:
             info.update(self.generate_pixels(data))
 
