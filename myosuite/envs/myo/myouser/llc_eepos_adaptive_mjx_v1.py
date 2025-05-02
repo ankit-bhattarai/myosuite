@@ -666,7 +666,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 # self.sys.mj_model.site_pos.at[sid].set(new_position)
 
         # self._steps_inside_target = jp.zeros(1)
-
+        body_pos = self.sys.body_pos
+        body_pos = body_pos.at[1].set(target_pos)
+        self.sys = self.sys.replace(body_pos=body_pos)
         return target_pos
     
     def generate_target_size(self, rng, target_radius=None):
@@ -685,6 +687,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 # self.sys.mj_model.site_size[sid][0] = new_radius
 
         # self._steps_inside_target = jp.zeros(1)
+
+        geom_size = self.sys.geom_size
+        geom_size = geom_size.at[0, 0].set(target_radius.val[0][0])
+        #TODO: check whether this works with batched inputs or not!
+        self.sys = self.sys.replace(geom_size=geom_size)
 
         return target_radius
 
@@ -748,24 +755,6 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         update_info.update({"pixels/view_0": pixels})
         return update_info
     
-    def add_target_pos_to_sys(self, data, target_pos: Optional[jp.ndarray] = None):
-        return data
-        # from brax.base import Transform, Motion
-        # from brax.mjx.pipeline import _reformat_contact
-        # q, qd = data.qpos, data.qvel
-        # xpos = data.xpos
-        # xpos = xpos.at[1].set(target_pos)
-        # data = data.replace(xpos=xpos)
-        # x = Transform(pos=data.xpos[1:], rot=data.xquat[1:])
-        # cvel = Motion(vel=data.cvel[1:, 3:], ang=data.cvel[1:, :3])
-        # offset = data.xpos[1:, :] - data.subtree_com[self.sys.body_rootid[1:]]
-        # offset = Transform.create(pos=offset)
-        # xd = offset.vmap().do(cvel)
-        # return data.replace(q=q, qd=qd, x=x, xd=xd)
-        # if target_pos is not None:
-        #     for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
-        #         self.sys.mj_model.site(_target_sid).pos = _target_pos
-
     def reset(self, rng, **kwargs):
         # jax.debug.print(f"RESET INIT")
 
@@ -783,6 +772,21 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         # self.robot.sync_sims(self.sim, self.sim_obsd)
 
+        info = {
+            'last_ctrl': last_ctrl,
+            'steps_since_last_hit': steps_since_last_hit,
+            'steps_inside_target': steps_inside_target,
+            'trial_idx': trial_idx,
+            'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float64),  #TODO: do not reset to initial value at the beginning of each episode!!!
+            'rng': rng,
+            'target_success': jp.array(False),
+            'target_fail': jp.array(False),
+            'task_completed': jp.array(False),
+        }
+
+        info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
+        info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
+
         if self.reset_type == "zero":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
         elif self.reset_type == "epsilon_uniform":
@@ -798,25 +802,16 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         
         self._reset_bm_model(rng)
 
-        info = {'last_ctrl': last_ctrl,
-                'motor_act': self._motor_act,
-                'steps_since_last_hit': steps_since_last_hit,
-                'steps_inside_target': steps_inside_target,
-                'trial_idx': trial_idx,
-                # 'trial_success_log_pointer_index': trial_success_log_pointer_index,  #TODO: do not reset to initial value at the beginning of each episode!!!
-                # 'trial_success_log': trial_success_log,  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float64),  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'rng': rng,
-                'target_success': jp.array(False),
-                'target_fail': jp.array(False),
-                'task_completed': jp.array(False),
-                }
+        info['motor_act'] = self._motor_act
+
+        #TODO: sort these TODOs and then remove this section
+        # info.update({'motor_act': self._motor_act,
+        #         # 'trial_success_log_pointer_index': trial_success_log_pointer_index,  #TODO: do not reset to initial value at the beginning of each episode!!!
+        #         # 'trial_success_log': trial_success_log,  #TODO: do not reset to initial value at the beginning of each episode!!!
+        #         })
         if self.adaptive_task:
             info['trial_success_log_pointer_index'] = trial_success_log_pointer_index
             info['trial_success_log'] = trial_success_log
-        info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
-        info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
-        data = self.add_target_pos_to_sys(data, info['target_pos'])
         if self.vision:
             info.update(self.generate_pixels(data))
 
@@ -1117,6 +1112,8 @@ class AdaptiveTargetWrapper(Wrapper):
 #     obs = jax.tree.map(where_done, state.info['first_obs'], state.obs)
 #     return state.replace(pipeline_state=pipeline_state, obs=obs)
   
+  def reset(self, rng: jax.Array, **kwargs) -> State:
+      return self.env.reset(rng, **kwargs)
   def step(self, state: State, action: jax.Array):
         if 'steps' in state.info:
             steps = state.info['steps']
