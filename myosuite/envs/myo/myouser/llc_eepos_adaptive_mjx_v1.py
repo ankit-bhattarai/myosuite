@@ -96,11 +96,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         if 'vision' in kwargs:
             print(f"kwargs['vision']: {kwargs['vision']}")
             self.vision = True
-            self.obs_keys.append("pixels/view_0")
+            # self.obs_keys.append("pixels/view_0") #TODO: keep this disabled until vision is fully integrated into the pipeline
             from madrona_mjx.renderer import BatchRenderer
             self.batch_renderer = BatchRenderer(m = self.sys,
                                                 gpu_id = kwargs['vision']['gpu_id'],
-                                                num_worlds = kwargs['batch_size'],
+                                                num_worlds = kwargs['num_envs'],
                                                 batch_render_view_width = kwargs['vision']['render_width'],
                                                 batch_render_view_height = kwargs['vision']['render_height'],
                                                 enabled_geom_groups = np.asarray([0, 1, 2]),
@@ -396,8 +396,6 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1, state.info['target_area_dynamic_width_scale'])], state.info['target_pos'])
         state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
         # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
-        # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
-
         data0 = state.pipeline_state
         rng, rng_ctrl = jax.random.split(rng, 2)
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
@@ -412,10 +410,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # )
         # self.last_ctrl = new_ctrl  #TODO: is this required?
         data = self.pipeline_step(data0, new_ctrl)
-
+        data = self.add_target_pos_to_data(data, state.info['target_pos'])
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
-        self.add_target_pos_to_sys(state.info['target_pos'])
         if self.vision:
             pixels_dict = self.generate_pixels(data, state.info['render_token'])
             state.info.update(pixels_dict)
@@ -559,7 +556,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
             obs_dict['success_rate'] = -1.  #unknown ##TODO: measure success rate if adaptive is not enabled
 
-        if self.vision:
+        if self.vision: #TODO: keep this disabled until vision is fully integrated into the pipeline
             obs_dict['pixels/view_0'] = info['pixels/view_0']
 
         return obs_dict
@@ -570,8 +567,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         #TODO: ensure that with vision, this is done properly
         obsvec = jp.concatenate(obs_list)
-
-        return obsvec
+        if not self.vision:
+            return {"proprioception": obsvec}
+        return {"proprioception": obsvec, "pixels/view_0": obs_dict['pixels/view_0']}
     
     def update_info(self, info, obs_dict):
         ## Update state info of internal variables at the end of each env step
@@ -647,6 +645,33 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         return env_info
 
+    
+    def add_target_pos_to_data(self, data, target_pos):
+        # jax.debug.print("Updating the target pos to {target_pos}", target_pos=target_pos)
+        xpos = data.xpos
+        x_dot_pos = data.x.pos
+        geom_xpos = data.geom_xpos
+
+        #TODO: dont hard code these indices
+        old_x_dot_pos_0 = x_dot_pos[0]
+        # jax.debug.print("The old x_dot_pos[0] is {old_x_dot_pos_0}", old_x_dot_pos_0=old_x_dot_pos_0)
+        x_dot_pos = x_dot_pos.at[0].set(target_pos)
+        new_x_dot_pos_0 = x_dot_pos[0]
+        # jax.debug.print("The new x_dot_pos[0] is {new_x_dot_pos_0}", new_x_dot_pos_0=new_x_dot_pos_0)
+        old_xpos_1 = xpos[1]
+        # jax.debug.print("The old xpos[1] is {old_xpos_1}", old_xpos_1=old_xpos_1)
+        xpos = xpos.at[1].set(target_pos)
+        new_xpos_1 = xpos[1]
+        # jax.debug.print("The new xpos[1] is {new_xpos_1}", new_xpos_1=new_xpos_1)
+        x = data.x
+        x = x.replace(pos=x_dot_pos)
+        old_x_dot_pos_1 = x_dot_pos[1]
+        # jax.debug.print("The old x_dot_pos[1] is {old_x_dot_pos_1}", old_x_dot_pos_1=old_x_dot_pos_1)
+        geom_xpos = geom_xpos.at[0].set(target_pos)
+        new_geom_xpos_0 = geom_xpos[0]
+        # jax.debug.print("The new geom_xpos[0] is {new_geom_xpos_0}", new_geom_xpos_0=new_geom_xpos_0)
+        data = data.replace(xpos=xpos, x=x, geom_xpos=geom_xpos)
+        return data
     # generate a valid target
     def generate_target_pos(self, rng, target_area_dynamic_width_scale, target_pos=None):
         # jax.debug.print(f"Generate new target (target area scale={target_area_dynamic_width_scale})")
@@ -666,9 +691,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 # self.sys.mj_model.site_pos.at[sid].set(new_position)
 
         # self._steps_inside_target = jp.zeros(1)
-        body_pos = self.sys.body_pos
-        body_pos = body_pos.at[1].set(target_pos)
-        self.sys = self.sys.replace(body_pos=body_pos)
+        # body_pos = self.sys.body_pos
+        # body_pos = body_pos.at[1].set(target_pos)
+        # self.sys = self.sys.replace(body_pos=body_pos)
         return target_pos
     
     def generate_target_size(self, rng, target_radius=None):
@@ -688,12 +713,12 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         # self._steps_inside_target = jp.zeros(1)
 
-        geom_size = self.sys.geom_size
-        geom_size = geom_size.at[0, 0].set(target_radius.val[0][0])
-        #TODO: check whether this works with batched inputs or not!
-        self.sys = self.sys.replace(geom_size=geom_size)
-
-        return target_radius
+        # geom_size = self.sys.geom_size
+        # geom_size = geom_size.at[0, 0].set(target_radius.val[0][0])
+        # #TODO: check whether this works with batched inputs or not!
+        # self.sys = self.sys.replace(geom_size=geom_size)
+        return jp.array([0.025])
+        # return target_radius
 
     def get_current_target_pos_range(self, span, target_area_dynamic_width_scale):
         return target_area_dynamic_width_scale*(span - jp.mean(span, axis=0)) + jp.mean(span, axis=0)
@@ -799,7 +824,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             reset_qpos, reset_qvel, reset_act = None, None, None
 
         data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act, ctrl=last_ctrl)
-        
+        data = self.add_target_pos_to_data(data, info['target_pos'])
         self._reset_bm_model(rng)
 
         info['motor_act'] = self._motor_act
@@ -878,7 +903,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
-        self.add_target_pos_to_sys(info['target_pos'])
+        data = self.add_target_pos_to_data(data, info['target_pos'])
         if self.vision:
             info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
@@ -1017,9 +1042,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         camera: Optional[str] = None,
     ) -> Sequence[np.ndarray]:
         """Sets target positions and then renders a trajectory using the MuJoCo renderer."""
-        if target_pos is not None:
-            for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
-                self.sys.mj_model.site(_target_sid).pos = _target_pos
+        # if target_pos is not None:
+        #     for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
+                # self.sys.mj_model.site(_target_sid).pos = _target_pos
                 # self.sys = self.sys.tree_replace({'site_pos': self.sys.mj_model.site_pos})
                 # print(self.sys.site_pos[_target_sid])#.set(new_position)
 
