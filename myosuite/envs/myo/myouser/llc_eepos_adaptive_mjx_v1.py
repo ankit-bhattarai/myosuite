@@ -569,7 +569,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
             return {"proprioception": obsvec}
+        # return {"pixels/view_0": obs_dict['pixels/view_0']}
         return {"proprioception": obsvec, "pixels/view_0": obs_dict['pixels/view_0']}
+    
     
     def update_info(self, info, obs_dict):
         ## Update state info of internal variables at the end of each env step
@@ -779,6 +781,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         pixels = rgb[0][..., :3].astype(jp.float32) / 255.0
         update_info.update({"pixels/view_0": pixels})
         return update_info
+    
     
     def reset(self, rng, **kwargs):
         # jax.debug.print(f"RESET INIT")
