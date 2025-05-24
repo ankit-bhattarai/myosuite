@@ -448,7 +448,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
         # )
         # self.last_ctrl = new_ctrl  #TODO: is this required?
-        data = mjx_env.step(self._mjx_model, state.data, new_ctrl, 1)
+        data = mjx_env.step(self._mjx_model, state.data, new_ctrl, self._n_frames)
         data = self.add_target_pos_to_data(data, state.info['target_pos'])
 
         # collect observations and reward
