@@ -1,4 +1,13 @@
 import os
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# os.environ["MADRONA_MWGPU_KERNEL_CACHE"]= ??
+# os.environ["MADRONA_BVH_KERNEL_CACHE"]= ??
+os.environ["MUJOCO_GL"]="egl"
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
+
 from datetime import datetime
 from etils import epath
 import functools
@@ -24,12 +33,14 @@ from mujoco_playground._src.wrapper import MadronaWrapper
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 from brax.training.agents.ppo import train as ppo
-from brax.training.agents.ppo import networks as ppo_networks
+from brax.training.agents.ppo import networks_vision
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
 from mujoco_playground._src import mjx_env
+from mujoco_playground import wrapper
 from matplotlib import pyplot as plt
 import mediapy as media
+import wandb
 
 def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
          restore_params_path=None, init_target_area_width_scale=0.):
@@ -38,13 +49,13 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0, LLCEEPosAdaptiveDirectCtrlEnvMJXV0
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
   
-  model_path = 'simhive/uitb_sim/mobl_arms_index_llc_eepos_pointing.xml'
+  model_path = 'simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
   #TODO: load kwargs from config file/registration
   kwargs = {
             'frame_skip': 25,
-            'target_pos_range': {'fingertip': jp.array([[0.225, -0.3, -0.3], [0.35, 0.1, 0.4]]),},
-            'target_radius_range': {'fingertip': jp.array([0.01, 0.15]),},
+            'target_pos_range': {'fingertip': jp.array([[0.225, 0.02, -0.09], [0.35, 0.32, 0.25]]),},
+            'target_radius_range': {'fingertip': jp.array([0.025, 0.025]),},
             'ref_site': 'humphant',
             'adaptive_task': True,
             'init_target_area_width_scale': init_target_area_width_scale,
@@ -56,6 +67,15 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
+            'num_envs': 256, # down from 4096
+            'vision': {
+                'gpu_id': 0,
+                'render_width': 120,
+                'render_height': 120,
+                'enabled_cameras': [0],
+            },
+            'ctrl_dt': 0.01,
+            'sim_dt': 0.01,
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
@@ -104,15 +124,34 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
 
     return functools.partial(env.render, height=height, width=width, camera=camera)
   
+  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
+      return networks_vision.make_ppo_networks_vision(
+          observation_size={
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "proprioception": (48,)          # Vector state
+          }, 
+          action_size=action_size,
+          preprocess_observations_fn=preprocess_observations_fn,
+          policy_hidden_layer_sizes=(256, 256),  
+          value_hidden_layer_sizes=(256, 256),
+          policy_obs_key="proprioception",
+          value_obs_key="proprioception",
+          normalise_channels=True            # Normalize image channels
+      )
+
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
-      wrap_env_fn=wrap_curriculum_training, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
+      madrona_backend=True,
+      wrap_env=False, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
-      unroll_length=10, num_minibatches=24, num_updates_per_batch=8,
-      discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=3072,
-      batch_size=512, seed=0,
+      unroll_length=10, num_minibatches=8, num_updates_per_batch=4,
+      discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=kwargs['num_envs'],
+      num_eval_envs=kwargs['num_envs'],
+      batch_size=64, seed=0,
       log_training_metrics=True,
       restore_params=restore_params,
+      network_factory=custom_network_factory,
+      save_checkpoint_path=f'myosuite-mjx-policies-checkpoint/{experiment_id}_params'
       )
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
 
@@ -130,6 +169,10 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   max_y, min_y = 150, 0
   max_episode_length = 800
   def progress(num_steps, metrics):
+
+    if len(times) == 2:
+       print(f'time to jit: {times[1] - times[0]}')
+    wandb.log({'num_steps': num_steps, **metrics})
     
     # print(metrics)
 
@@ -239,7 +282,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
         pass
 
   ## TRAINING
-  make_inference_fn, params, metrics = train_fn(environment=env, progress_fn=progress)
+  wrapped_env = wrap_curriculum_training(env, vision=True, num_vision_envs=kwargs['num_envs'])
+  wandb.init(project='myosuite-mjx-policies', name=experiment_id, config=kwargs)
+  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
 
   if n_train_steps > 0 and len(times) > 2:
     print(f'time to jit: {times[1] - times[0]}')
@@ -272,7 +317,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
 
 def wrap_curriculum_training(
     env: mjx_env.MjxEnv,
-    vision: bool = False,
+    vision: bool = True,
     num_vision_envs: int = 1,
     episode_length: int = 1000,
     action_repeat: int = 1,
@@ -294,13 +339,15 @@ def wrap_curriculum_training(
       environment did not already have batch dimensions, it is additional Vmap
       wrapped.
     """
-    if vision:
-      env = MadronaWrapper(env, num_vision_envs, randomization_fn)
-    if randomization_fn is None:
-      env = VmapWrapper(env)
-    else:
-      env = DomainRandomizationVmapWrapper(env, randomization_fn)
-    env = EpisodeWrapper(env, episode_length, action_repeat)
+    # if vision:
+    #   env = MadronaWrapper(env, num_vision_envs, randomization_fn)
+    # if randomization_fn is None:
+    #   env = VmapWrapper(env)
+    # else:
+    #   env = DomainRandomizationVmapWrapper(env, randomization_fn)
+    # env = EpisodeWrapper(env, episode_length, action_repeat)
+    env = wrapper.wrap_for_brax_training(env, vision=vision, num_vision_envs=num_vision_envs, 
+                                         episode_length=episode_length, action_repeat=action_repeat, randomization_fn=randomization_fn)
     env = AdaptiveTargetWrapper(env)
 
     return env
