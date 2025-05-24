@@ -67,7 +67,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
-            'num_envs': 256, # down from 4096
+            'num_envs': 4096, # down from 4096
             'vision': {
                 'gpu_id': 0,
                 'render_width': 120,
@@ -144,14 +144,13 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       madrona_backend=True,
       wrap_env=False, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
-      unroll_length=10, num_minibatches=8, num_updates_per_batch=4,
+      unroll_length=10, num_minibatches=16, num_updates_per_batch=8,
       discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=kwargs['num_envs'],
       num_eval_envs=kwargs['num_envs'],
-      batch_size=64, seed=0,
+      batch_size=256, seed=0,
       log_training_metrics=True,
       restore_params=restore_params,
       network_factory=custom_network_factory,
-      save_checkpoint_path=f'myosuite-mjx-policies-checkpoint/{experiment_id}_params'
       )
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
 
