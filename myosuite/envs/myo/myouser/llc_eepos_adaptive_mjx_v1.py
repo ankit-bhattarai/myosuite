@@ -947,13 +947,12 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
             reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng_reset)
         elif self.reset_type == "range_uniform":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng_reset)
-            data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
+            data = mjx_env.init(self._mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
             reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng_reset, data)
         else:
             reset_qpos, reset_qvel, reset_act = None, None, None
 
-        data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
-        
+        data = mjx_env.init(self._mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
         self._reset_bm_model(rng_reset)
 
         info = {'last_ctrl': last_ctrl,
@@ -974,10 +973,12 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
+        info['render_token'] = info_before_reset['render_token']
         data = self.add_target_pos_to_data(data, info['target_pos'])
 
         if self.vision:
-            info.update(self.generate_pixels(data))
+            pixels_dict = self.generate_pixels(data, info['render_token'])
+            info.update(pixels_dict)
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
@@ -1227,13 +1228,20 @@ class AdaptiveTargetWrapper(Wrapper):
 
         # obs_dict = self.get_obs_dict(state.pipeline_state, state.info)
         ## if isinstance(self.env, VmapWrapper) else functools.partial(self.env.reset_with_curriculum, rng=rng, info_before_reset=state.info)
-        if hasattr(self, 'batch_size'):  #if VmapWrapper is used (training mode)
-            if self.batch_size is not None:
-                rng = jax.random.split(rng, self.batch_size)
-            state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
-        else:
-            state_after_reset = self.env.reset_with_curriculum(rng, state.info)
+        # if hasattr(self, 'batch_size'):  #if VmapWrapper is used (training mode)
+        #     if self.batch_size is not None:
+        #         jax.debug.print(f"rng: {rng.shape}")
+        #         print(f"rng: {rng.shape}")
+        #         rng = jax.random.split(rng, self.batch_size)
+        #         jax.debug.print(f"rng: {rng.shape}")
+        #         print(f"rng: {rng.shape}")
+        #     state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
+        # else:
+        #     print(f"rng: {rng.shape}")
+        #     state_after_reset = self.env.reset_with_curriculum(rng, state.info)
         # fill state_after_reset.info with entries only in state.info (i.e. entries created by wrappers)
+        state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
+
         for k in state.info:
             state_after_reset.info[k] = state_after_reset.info.get(k, state.info[k])
 
