@@ -977,7 +977,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         data = self.add_target_pos_to_data(data, info['target_pos'])
 
         if self.vision:
-            info.update(self.generate_pixels(data))
+            info['render_token'] = info_before_reset['render_token']
+            pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
+            info.update(pixels_dict)
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
