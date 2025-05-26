@@ -55,6 +55,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
+            'ctrl_dt': 0.002*25,
+            'sim_dt': 0.002*25,
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
@@ -367,7 +369,7 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'mobl_llc_eepos_v0.1.2'
+  experiment_id = 'schema_change_final'
   n_train_steps = 100_000_000
   n_eval_eps = 1
 
