@@ -418,7 +418,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
         # )
         # self.last_ctrl = new_ctrl  #TODO: is this required?
-        data = mjx_env.step(self._mjx_model, state.data, new_ctrl, 1)
+        data = mjx_env.step(self._mjx_model, state.data, new_ctrl, self._n_frames)
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
@@ -898,12 +898,12 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
             reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng_reset)
         elif self.reset_type == "range_uniform":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng_reset)
-            data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
+            data = mjx_env.init(self._mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
             reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng_reset, data)
         else:
             reset_qpos, reset_qvel, reset_act = None, None, None
 
-        data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act)
+        data = mjx_env.init(self._mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
         
         self._reset_bm_model(rng_reset)
 
