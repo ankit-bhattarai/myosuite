@@ -306,6 +306,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
                 self.tip_sids.append(mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site))
                 self.target_sids.append(mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target'))
         self._episode_length = episode_length
+        self.target_body_id = self._mj_model.body('target').id
+        self.target_geom_id = self._mj_model.geom('target_sphere').id
         # self._normalize_act = normalize_act
 
         #### Task-specific settings (data-dependent settings need to be defined in _prepare_after_init) ####
@@ -447,6 +449,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         # )
         # self.last_ctrl = new_ctrl  #TODO: is this required?
         data = mjx_env.step(self._mjx_model, state.data, new_ctrl, self._n_frames)
+        data = self.add_target_pos_to_data(data, state.info['target_pos'])
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
@@ -559,6 +562,15 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         
     #     # continue with default forward step
     #     super()._forward(**kwargs)
+
+    def add_target_pos_to_data(self, data, target_pos):
+        xpos = data.xpos
+        geom_xpos = data.geom_xpos
+
+        xpos = xpos.at[self.target_body_id].set(target_pos)
+        geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
+        data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
+        return data
 
     def get_obs_vec(self, data, info):
         obs_dict = self.get_obs_dict(data, info)
@@ -896,6 +908,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
+        data = self.add_target_pos_to_data(data, info['target_pos'])
         if self.vision:
             info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
@@ -961,6 +974,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
+        data = self.add_target_pos_to_data(data, info['target_pos'])
+
         if self.vision:
             info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
