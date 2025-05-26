@@ -25,9 +25,10 @@ from brax.envs.base import Env, PipelineEnv, State, Wrapper
 from brax.envs.wrappers.training import VmapWrapper
 # from brax.mjx.pipeline import _reformat_contact
 from brax.io import html, mjcf, model
+from mujoco_playground._src import mjx_env
+from ml_collections import config_dict
 
-
-class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
+class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
 
     # DEFAULT_OBS_KEYS = ['reach_dist', 'inside_target', 'steps_inside_target', 'target_success',    'qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']  #TODO: exclude 'reach_dist' etc.
     DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']
@@ -38,6 +39,22 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         "neural_effort": 0,  #1e-4,
     }
 
+    @property
+    def mjx_model(self) -> mjx.Model:
+        return self._mjx_model
+    
+    @property
+    def mj_model(self) -> mujoco.MjModel:
+        return self._mj_model
+    
+    @property
+    def action_size(self) -> int:
+        return self._nu
+    
+    @property
+    def xml_path(self) -> str:
+        return self.xml_model_path
+    
     def __init__(self, model_path=None, frame_skip=25, # aka physics_steps_per_control_step
             eval_mode=False,
             seed=123, **kwargs):
@@ -55,7 +72,14 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # # created in __init__ to complete the setup.
         # super().__init__(model_path=model_path, obsd_model_path=obsd_model_path, seed=seed, env_credits=None)
     
+        config = config_dict.create(model_path=model_path,
+                                    frame_skip=frame_skip,
+                                    eval_mode=eval_mode,
+                                    seed=seed,
+                                    **kwargs)
+        super().__init__(config)
         spec = mujoco.MjSpec.from_file(model_path)
+        self.xml_model_path = model_path
 
         # b_lunate = spec.body('lunate')
         # b_lunate_pos = b_lunate.pos.copy()
@@ -78,8 +102,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         mj_model.opt.ls_iterations = 50
         mj_model.opt.timestep = 0.002 # dt = mj_model.opt.timestep * frame_skip
 
-        sys = mjcf.load_model(mj_model)
-        super().__init__(sys) # **kwargs)
+        self._mj_model = mj_model
+        self._mjx_model = mjx.put_model(self._mj_model)
         
         self.seed = seed
         self._n_frames = kwargs.get('n_frames', frame_skip)  #TODO: check that this attribute is used by PipelineEnv
@@ -103,17 +127,17 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # rng_init = jax.random.PRNGKey(self.seed)
         # init_state = self.reset(rng_init, target_pos=jp.zeros(3))
         # _data = init_state.pipeline_state
-        _data = mujoco.MjData(self.sys.mj_model)
-        mujoco.mj_forward(self.sys.mj_model, _data)
+        _data = mujoco.MjData(self._mj_model)
+        mujoco.mj_forward(self._mj_model, _data)
 
         self._prepare_after_init(_data)
 
     def _prepare_bm_model(self):
         # Total number of actuators
-        self._nu = self.sys.nu
+        self._nu = self._mjx_model.nu
 
         # Number of muscle actuators
-        self._na = self.sys.na
+        self._na = self._mjx_model.na
 
         # Number of motor actuators
         self._nm = self._nu - self._na
@@ -121,8 +145,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._motor_alpha = 0.9*jp.ones(1)
 
         # Get actuator names (muscle and motor)
-        self._actuator_names = [mujoco.mj_id2name(self.sys.mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(self.sys.nu)]
-        self._muscle_actuator_names = set(np.array(self._actuator_names)[self.sys.actuator_trntype==mujoco.mjtTrn.mjTRN_TENDON])  #model.actuator_dyntype==mujoco.mjtDyn.mjDYN_MUSCLE
+        self._actuator_names = [mujoco.mj_id2name(self._mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(self._mjx_model.nu)]
+        self._muscle_actuator_names = set(np.array(self._actuator_names)[self._mjx_model.actuator_trntype==mujoco.mjtTrn.mjTRN_TENDON])  #model.actuator_dyntype==mujoco.mjtDyn.mjDYN_MUSCLE
         self._motor_actuator_names = set(self._actuator_names) - self._muscle_actuator_names
 
         # Sort the names to preserve original ordering (not really necessary but looks nicer)
@@ -130,16 +154,16 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._motor_actuator_names = sorted(self._motor_actuator_names, key=self._actuator_names.index)
 
         # Find actuator indices in the simulation
-        self._muscle_actuators = jp.array([mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_name)
+        self._muscle_actuators = jp.array([mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_name)
                                 for actuator_name in self._muscle_actuator_names], dtype=jp.int32)
-        self._motor_actuators = jp.array([mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_name)
+        self._motor_actuators = jp.array([mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_name)
                                 for actuator_name in self._motor_actuator_names], dtype=jp.int32)
 
         # Get joint names (dependent and independent)
-        self._joint_names = [mujoco.mj_id2name(self.sys.mj_model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(self.sys.njnt)]
+        self._joint_names = [mujoco.mj_id2name(self._mj_model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(self._mjx_model.njnt)]
         self._dependent_joint_names = {self._joint_names[idx] for idx in
-                                    np.unique(self.sys.eq_obj1id[self.sys.eq_active0.astype(bool)])} \
-        if self.sys.eq_obj1id is not None else set()
+                                    np.unique(self._mjx_model.eq_obj1id[self._mjx_model.eq_active0.astype(bool)])} \
+        if self._mjx_model.eq_obj1id is not None else set()
         self._independent_joint_names = set(self._joint_names) - self._dependent_joint_names
 
         # Sort the names to preserve original ordering (not really necessary but looks nicer)
@@ -147,9 +171,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._independent_joint_names = sorted(self._independent_joint_names, key=self._joint_names.index)
 
         # Find dependent and independent joint indices in the simulation
-        self._dependent_joints = [mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        self._dependent_joints = [mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
                                 for joint_name in self._dependent_joint_names]
-        self._independent_joints = [mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        self._independent_joints = [mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
                                 for joint_name in self._independent_joint_names]
 
         # If there are 'free' type of joints, we'll need to be more careful with which dof corresponds to
@@ -158,11 +182,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             qpos = jp.array([], dtype=jp.int32)
             dofs = jp.array([], dtype=jp.int32)
             for joint_idx in joint_indices:
-                if self.sys.jnt_type[joint_idx] not in [mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE]:
+                if self._mjx_model.jnt_type[joint_idx] not in [mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE]:
                     raise NotImplementedError(f"Only 'hinge' and 'slide' joints are supported, joint "
-                                            f"{self._joint_names[joint_idx]} is of type {mujoco.mjtJoint(self.sys.jnt_type[joint_idx]).name}")
-                qpos = jp.append(qpos, self.sys.jnt_qposadr[joint_idx])
-                dofs = jp.append(dofs, self.sys.jnt_dofadr[joint_idx])
+                                            f"{self._joint_names[joint_idx]} is of type {mujoco.mjtJoint(self._mjx_model.jnt_type[joint_idx]).name}")
+                qpos = jp.append(qpos, self._mjx_model.jnt_qposadr[joint_idx])
+                dofs = jp.append(dofs, self._mjx_model.jnt_dofadr[joint_idx])
             return qpos, dofs
         self._dependent_qpos, self._dependent_dofs = get_dofs(self._dependent_joints)
         self._independent_qpos, self._independent_dofs = get_dofs(self._independent_joints)
@@ -264,8 +288,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         sites = self.target_pos_range.keys()
         if sites:
             for site in sites:
-                self.tip_sids.append(mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site))
-                self.target_sids.append(mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target'))
+                self.tip_sids.append(mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site))
+                self.target_sids.append(mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target'))
         self._episode_length = episode_length
         # self._normalize_act = normalize_act
 
@@ -275,40 +299,40 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # self._trial_success_log_pointer_index = jp.zeros(1, dtype=jp.int32)  #1D array of batch size, where each entry corresponds to the current pointer index, defining for each run where to append the next success/failure boolean
         
         # Dwelling based selection -- fingertip needs to be inside target for some time
-        self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self.sys.opt.timestep*self._n_frames
+        self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self._n_frames
         
         # Use early termination if target is not hit in time
         # self._steps_since_last_hit = jp.zeros(1)
-        self._max_steps_without_hit = 4./self.dt #corresponds to 4 seconds; note that self.dt=self.sys.opt.timestep*self._n_frames
+        self._max_steps_without_hit = 4./self.dt #corresponds to 4 seconds; note that self.dt=self._mjx_model.opt.timestep*self._n_frames
     
     
     def _prepare_after_init(self, data):
         # Define target origin, relative to which target positions will be generated
-        self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.ref_site)].copy() + jp.array(self.target_origin_rel)  #jp.zeros(3,)
+        self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE, self.ref_site)].copy() + jp.array(self.target_origin_rel)  #jp.zeros(3,)
 
     
     def initializeConditions(self):
         # for muscle weakness we assume that a weaker muscle has a
         # reduced maximum force
         if self.muscle_condition == "sarcopenia":
-            for mus_idx in range(self.sys.mj_model.actuator_gainprm.shape[0]):
-                self.sys.mj_model.actuator_gainprm[mus_idx, 2] = (
-                    0.5 * self.sys.mj_model.actuator_gainprm[mus_idx, 2].copy()
+            for mus_idx in range(self._mj_model.actuator_gainprm.shape[0]):
+                self._mj_model.actuator_gainprm[mus_idx, 2] = (
+                    0.5 * self._mj_model.actuator_gainprm[mus_idx, 2].copy()
                 )
 
         # for muscle fatigue we used the 3CC-r model
         elif self.muscle_condition == "fatigue":
             self.muscle_fatigue = CumulativeFatigue(
-                self.sys.mj_model, frame_skip=self.frame_skip, sex=self.sex, seed=self.get_input_seed()
+                self._mj_model, frame_skip=self.frame_skip, sex=self.sex, seed=self.get_input_seed()
             )
 
         # Tendon transfer to redirect EIP --> EPL
         # https://www.assh.org/handcare/condition/tendon-transfer-surgery
         elif self.muscle_condition == "reafferentation":
-            self.EPLpos = self.sys.mj_model.actuator_name2id("EPL")
-            self.EIPpos = self.sys.mj_model.actuator_name2id("EIP")
+            self.EPLpos = self._mj_model.actuator_name2id("EPL")
+            self.EIPpos = self._mj_model.actuator_name2id("EIP")
 
-    def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
+    def get_ctrl(self, state: mjx_env.State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
 
         _selected_motor_control = jp.clip(action[:self._nm], 0, 1)
@@ -346,7 +370,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         #                         + self._motor_alpha * np.clip(_selected_motor_control, 0, 1)
         self._motor_act = _selected_motor_control
 
-        new_ctrl = new_ctrl.at[self._motor_actuators].set(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
+        new_ctrl = new_ctrl.at[self._motor_actuators].set(self._mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self._mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self._mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
         new_ctrl = new_ctrl.at[self._muscle_actuators].set(jp.clip(_selected_muscle_control, 0, 1))
 
         isNormalized = False  #TODO: check whether we can integrate the default normalization from BaseV0.step
@@ -367,7 +391,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         return new_ctrl
     
     # step the simulation forward (overrides BaseV0.step; --> also, enable signal-dependent and/or constant motor noise)
-    def step(self, state: State, action: jp.ndarray) -> State:
+    def step(self, state: mjx_env.State, action: jp.ndarray) -> mjx_env.State:
         """Runs one timestep of the environment's dynamics."""
         # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
         rng = state.info['rng']
@@ -383,10 +407,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
         # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
 
-        data0 = state.pipeline_state
         rng, rng_ctrl = jax.random.split(rng, 2)
-        new_ctrl = self.get_ctrl(state, action, rng_ctrl)
-        
+        new_ctrl = self.get_ctrl(state, action, rng_ctrl)        
         # step forward
         # self.last_ctrl = self.robot.step(
         #     ctrl_desired=new_ctrl,
@@ -396,7 +418,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
         # )
         # self.last_ctrl = new_ctrl  #TODO: is this required?
-        data = self.pipeline_step(data0, new_ctrl)
+        data = mjx_env.step(self._mjx_model, state.data, new_ctrl, 1)
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
@@ -466,9 +488,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         #     self._steps_since_last_hit = jp.zeros(1)
         #     self._steps_inside_target = jp.zeros(1)
         #     self.generate_target(rng)
-        #     data = mjx.forward(self.sys, data)
+        #     data = mjx.forward(self._mjx_model, data)
         #     ##TODO: required??
-        #     # data = _reformat_contact(self.sys, data)
+        #     # data = _reformat_contact(self._mjx_model, data)
         # else:
         #     self._steps_since_last_hit += 1
             
@@ -478,9 +500,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         #         self._steps_since_last_hit = jp.zeros(1)
         #         self._trial_idx += 1
         #         self.generate_target(rng)
-        #         data = mjx.forward(self.sys, data)
+        #         data = mjx.forward(self._mjx_model, data)
         #         ##TODO: required??
-        #         # data = _reformat_contact(self.sys, data)
+        #         # data = _reformat_contact(self._mjx_model, data)
         
         # env_info_additional = {
         #     'target_area_dynamic_width_scale': self.target_area_dynamic_width_scale,
@@ -498,10 +520,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         )
 
         # return self.forward(**kwargs)
-        return state.replace(
-            pipeline_state=data, obs=obs, reward=rwd_dict['dense'], done=rwd_dict['done']
-        )
-    
+        return mjx_env.State(data=data, obs=obs, reward=rwd_dict['dense'], done=rwd_dict['done'], metrics=state.metrics, info=state.info)
+        
     # # updates executed at each step, after MuJoCo step (see BaseV0.step) but before MyoSuite returns observations, reward and infos (see MujocoEnv.forward)
     # def _forward(self, **kwargs):
     #     pass
@@ -522,7 +542,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obs_dict['time'] = jp.array(data.time)
         
         # Normalise qpos
-        jnt_range = self.sys.mj_model.jnt_range[self._independent_joints]
+        jnt_range = self._mj_model.jnt_range[self._independent_joints]
         qpos = data.qpos[self._independent_qpos].copy()
         qpos = (qpos - jnt_range[:, 0]) / (jnt_range[:, 1] - jnt_range[:, 0])
         qpos = (qpos - 0.5) * 2
@@ -548,7 +568,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obs_dict['reach_dist'] = jp.linalg.norm(jp.array(obs_dict['target_pos']) - jp.array(obs_dict['ee_pos']), axis=-1)
 
         # Target radius
-        obs_dict['target_radius'] = info['target_radius']   #jp.array([self.sys.mj_model.site_size[self.target_sids[isite]][0] for isite in range(len(self.tip_sids))])
+        obs_dict['target_radius'] = info['target_radius']   #jp.array([self._mj_model.site_size[self.target_sids[isite]][0] for isite in range(len(self.tip_sids))])
         # jax.debug.print(f"STEP-Obs: {obs_dict['target_radius']}")
         obs_dict['inside_target'] = jp.squeeze(obs_dict['reach_dist'] < obs_dict['target_radius'])
         # print(obs_dict['inside_target'], jp.ones(1))
@@ -675,7 +695,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.rwd_keys_wt.items()]), axis=0)
         return rwd_dict
     
-    def get_env_infos(self, state: State, data: mjx.Data):
+    def get_env_infos(self, state: mjx_env.State, data: mjx.Data):
         """
         Get information about the environment.
         """
@@ -697,7 +717,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # 'visual_dict': visual_dict,                 # MDP(t), will be {} if user hasn't explicitly updated self.visual_dict at the current time
             # 'proprio_dict': self.proprio_dict,          # MDP(t)
             'rwd_dict': self.rwd_dict,                  # MDP(t)
-            'state': state.pipeline_state,              # MDP(t)
+            'state': state.data,              # MDP(t)
         }
 
         return env_info
@@ -715,10 +735,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             for (site, span), _rng in zip(self.target_pos_range.items(), rngs):
                 if self.adaptive_task:
                     span = self.get_current_target_pos_range(span, target_area_dynamic_width_scale)
-                # sid = mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
+                # sid = mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
                 new_position = self.target_coordinates_origin + jax.random.uniform(_rng, shape=self.target_coordinates_origin.shape, minval=span[0], maxval=span[1])
                 target_pos = jp.append(target_pos, new_position.copy())
-                # self.sys.mj_model.site_pos.at[sid].set(new_position)
+                # self._mj_model.site_pos.at[sid].set(new_position)
 
         # self._steps_inside_target = jp.zeros(1)
 
@@ -734,10 +754,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # Sample target radius
             rng, *rngs = jax.random.split(rng, len(self.target_radius_range)+1)
             for (site, span), _rng in zip(self.target_radius_range.items(), rngs):
-                # sid = mujoco.mj_name2id(self.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
+                # sid = mujoco.mj_name2id(self._mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
                 new_radius = jax.random.uniform(_rng, minval=span[0], maxval=span[1])
                 target_radius = jp.append(target_radius, new_radius.copy())
-                # self.sys.mj_model.site_size[sid][0] = new_radius
+                # self._mj_model.site_size[sid][0] = new_radius
 
         # self._steps_inside_target = jp.zeros(1)
 
@@ -815,12 +835,12 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng)
         elif self.reset_type == "range_uniform":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
-            data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act, ctrl=last_ctrl)
+            data = mjx_env.init(self._mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
             reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng, data)
         else:
             reset_qpos, reset_qvel, reset_act = None, None, None
 
-        data = self.pipeline_init(reset_qpos, reset_qvel, act=reset_act, ctrl=last_ctrl)
+        data = mjx_env.init(self._mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
         
         self._reset_bm_model(rng)
 
@@ -853,7 +873,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                     'success_rate': 0., #obs_dict['success_rate'],
                 }  #'bonus': zero}
         
-        return State(data, obs, reward, done, metrics, info)
+        return mjx_env.State(data=data, obs=obs, reward=reward, done=done, metrics=metrics, info=info)
+
     
     def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
@@ -917,7 +938,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                     'success_rate': 0., #obs_dict['success_rate'],
                    }  #'bonus': zero}
         
-        return State(data, obs, reward, done, metrics, info)
+        return mjx_env.State(data=data, obs=obs, reward=reward, done=done, metrics=metrics, info=info)
     
     def _reset_zero(self, rng):
         """ Resets the biomechanical model. """
@@ -927,8 +948,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         nqi = len(self._independent_qpos)
         qpos = jp.zeros((nqi,))
         qvel = jp.zeros((nqi,))
-        reset_qpos = jp.zeros((self.sys.mj_model.nq,))
-        reset_qvel = jp.zeros((self.sys.mj_model.nv,))
+        reset_qpos = jp.zeros((self._mj_model.nq,))
+        reset_qvel = jp.zeros((self._mj_model.nv,))
 
         # Randomly sample act within unit interval
         reset_act = jax.random.uniform(rng1, shape=self._na, minval=jp.zeros((self._na,)), maxval=jp.ones((self._na,)))
@@ -955,8 +976,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         rng, rng1, rng2, rng3 = jax.random.split(rng, 4)
         qpos = jax.random.uniform(rng1, shape=nqi, minval=jp.ones((nqi,))*-0.05, maxval=jp.ones((nqi,))*0.05)
         qvel = jax.random.uniform(rng2, shape=nqi, minval=jp.ones((nqi,))*-0.05, maxval=jp.ones((nqi,))*0.05)
-        reset_qpos = jp.zeros((self.sys.mj_model.nq,))
-        reset_qvel = jp.zeros((self.sys.mj_model.nv,))
+        reset_qpos = jp.zeros((self._mj_model.nq,))
+        reset_qvel = jp.zeros((self._mj_model.nv,))
         reset_act = jax.random.uniform(rng3, shape=self._na, minval=jp.zeros((self._na,)), maxval=jp.ones((self._na,)))
 
         zero = jp.zeros(1)
@@ -980,11 +1001,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # Randomly sample qpos within joint range, qvel around zero values, and act within unit interval
         nqi = len(self._independent_qpos)
         rng, rng1, rng2, rng3 = jax.random.split(rng, 4)
-        jnt_range = self.sys.mj_model.jnt_range[self._independent_joints]
+        jnt_range = self._mj_model.jnt_range[self._independent_joints]
         qpos = jax.random.uniform(rng1, shape=(nqi,), minval=jnt_range[:, 0], maxval=jnt_range[:, 1])
         qvel = jax.random.uniform(rng2, shape=(nqi,), minval=jp.ones((nqi,))*-0.05, maxval=jp.ones((nqi,))*0.05)
-        reset_qpos = jp.zeros((self.sys.mj_model.nq,))
-        reset_qvel = jp.zeros((self.sys.mj_model.nv,))
+        reset_qpos = jp.zeros((self._mj_model.nq,))
+        reset_qvel = jp.zeros((self._mj_model.nv,))
         reset_act = jax.random.uniform(rng3, shape=self._na, minval=jp.zeros((self._na,)), maxval=jp.ones((self._na,)))
 
         # Set qpos and qvel
@@ -1003,13 +1024,13 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
     def ensure_dependent_joint_angles(self, data):
         """ Adjusts virtual joints according to active joint constraints. """
 
-        _joint_constraints = self.sys.mj_model.eq_type == 2
+        _joint_constraints = self._mj_model.eq_type == 2
         _active_eq_constraints = data.eq_active == 1
 
         for (virtual_joint_id, physical_joint_id, poly_coefs) in zip(
-                self.sys.mj_model.eq_obj1id[_joint_constraints & _active_eq_constraints],
-                self.sys.mj_model.eq_obj2id[_joint_constraints & _active_eq_constraints],
-                self.sys.mj_model.eq_data[_joint_constraints & _active_eq_constraints, 4::-1]):
+                self._mj_model.eq_obj1id[_joint_constraints & _active_eq_constraints],
+                self._mj_model.eq_obj2id[_joint_constraints & _active_eq_constraints],
+                self._mj_model.eq_data[_joint_constraints & _active_eq_constraints, 4::-1]):
             if physical_joint_id >= 0:
                 new_qpos = data.qpos  #TODO: copy required?
                 new_qpos = new_qpos.at[virtual_joint_id].set(jp.polyval(poly_coefs, data.qpos[physical_joint_id]))  #TODO: check mapping between joints (njnt) and dofs (nq/nv)
@@ -1032,7 +1053,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
     def render(
         self,
-        trajectory: List[base.State],
+        trajectory: List[mjx_env.State],
         target_pos: Optional[jp.ndarray] = None,
         height: int = 240,
         width: int = 320,
@@ -1041,17 +1062,17 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         """Sets target positions and then renders a trajectory using the MuJoCo renderer."""
         if target_pos is not None:
             for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
-                self.sys.mj_model.site(_target_sid).pos = _target_pos
-                # self.sys = self.sys.tree_replace({'site_pos': self.sys.mj_model.site_pos})
-                # print(self.sys.site_pos[_target_sid])#.set(new_position)
+                self._mj_model.site(_target_sid).pos = _target_pos
+                # self._mjx_model = self._mjx_model.tree_replace({'site_pos': self._mj_model.site_pos})
+                # print(self._mjx_model.site_pos[_target_sid])#.set(new_position)
 
         return super().render(trajectory, height, width, camera)
 
 class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
-    def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
+    def get_ctrl(self, state: mjx_env.State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
 
-        data0 = state.pipeline_state
+        data0 = state.data
         _selected_motor_control = jp.clip(state.info['motor_act'] + action[:self._nm], 0, 1)
         _selected_muscle_control = jp.clip(data0.act[self._muscle_actuators] + action[self._nm:], 0, 1)
 
@@ -1089,7 +1110,7 @@ class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
         self._motor_act = (1 - self._motor_alpha) * state.info['motor_act'] \
                                 + self._motor_alpha * jp.clip(_selected_motor_control, 0, 1)
 
-        new_ctrl = new_ctrl.at[self._motor_actuators].set(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.sys.mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
+        new_ctrl = new_ctrl.at[self._motor_actuators].set(self._mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self._mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self._mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
         new_ctrl = new_ctrl.at[self._muscle_actuators].set(jp.clip(_selected_muscle_control, 0, 1))
 
         isNormalized = False  #TODO: check whether we can integrate the default normalization from BaseV0.step
@@ -1134,7 +1155,7 @@ class AdaptiveTargetWrapper(Wrapper):
 #     obs = jax.tree.map(where_done, state.info['first_obs'], state.obs)
 #     return state.replace(pipeline_state=pipeline_state, obs=obs)
   
-  def step(self, state: State, action: jax.Array):
+  def step(self, state: mjx_env.State, action: jax.Array):
         if 'steps' in state.info:
             steps = state.info['steps']
             steps = jp.where(state.done, jp.zeros_like(steps), steps)
@@ -1163,8 +1184,8 @@ class AdaptiveTargetWrapper(Wrapper):
         for k in state.info:
             state_after_reset.info[k] = state_after_reset.info.get(k, state.info[k])
 
-        pipeline_state = jax.tree.map(
-            where_done, state_after_reset.pipeline_state, state.pipeline_state  #state.pipeline_state
+        data = jax.tree.map(
+            where_done, state_after_reset.data, state.data  #state.pipeline_state
         )
         # obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
         obs = jax.tree.map(where_done, state_after_reset.obs, state.obs)  #state.obs)
@@ -1200,7 +1221,7 @@ class AdaptiveTargetWrapper(Wrapper):
         # # # # self._trial_idx += jp.select([_failure_condition], jp.ones(1))
         # # self._trial_success_log = jp.where(obs_dict['target_fail'], jp.append(self._trial_success_log, 0), self._trial_success_log)  #TODO: ensure append adds entry to correct axis
 
-        return state.replace(pipeline_state=pipeline_state, obs=obs, info=info)
+        return mjx_env.State(data=data, obs=obs, reward=state.reward, done=state.done, metrics=state.metrics, info=info)
 
 
 # class EpisodeWrapper(Wrapper):
