@@ -20,13 +20,14 @@ from brax.base import Base, Motion, Transform, System
 from brax.base import State as PipelineState
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
 from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
+from mujoco_playground._src.wrapper import MadronaWrapper
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
-
+from mujoco_playground._src import mjx_env
 from matplotlib import pyplot as plt
 import mediapy as media
 
@@ -272,11 +273,13 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   _render(rollouts, experiment_id=experiment_id)
 
 def wrap_curriculum_training(
-    env: Env,
+    env: mjx_env.MjxEnv,
+    vision: bool = False,
+    num_vision_envs: int = 1,
     episode_length: int = 1000,
     action_repeat: int = 1,
     randomization_fn: Optional[
-        Callable[[System], Tuple[System, System]]
+        Callable[[mjx.Model], Tuple[mjx.Model, mjx.Model]]
     ] = None,
 ) -> Wrapper:
     """Common wrapper pattern for all training agents.
@@ -293,7 +296,9 @@ def wrap_curriculum_training(
       environment did not already have batch dimensions, it is additional Vmap
       wrapped.
     """
-    if randomization_fn is None:
+    if vision:
+      env = MadronaWrapper(env, num_vision_envs, randomization_fn)
+    elif randomization_fn is None:
       env = VmapWrapper(env)
     else:
       env = DomainRandomizationVmapWrapper(env, randomization_fn)
