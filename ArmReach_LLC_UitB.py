@@ -38,7 +38,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0, LLCEEPosAdaptiveDirectCtrlEnvMJXV0
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
   
-  model_path = 'simhive/uitb_sim/mobl_arms_index_llc_eepos_pointing.xml'
+  model_path = 'simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
   #TODO: load kwargs from config file/registration
   kwargs = {
@@ -57,7 +57,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
             'ctrl_dt': 0.002*25,
-            'sim_dt': 0.002*25,
+            'sim_dt': 0.002,
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
@@ -374,7 +374,7 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'schema_change_final'
+  experiment_id = 'schema_change_final_new_xml_model'
   n_train_steps = 100_000_000
   n_eval_eps = 1
 
