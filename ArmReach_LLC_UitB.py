@@ -145,7 +145,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       wrap_env=False, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
       unroll_length=10, num_minibatches=8, num_updates_per_batch=8,
-      discounting=0.97, learning_rate=5e-4, entropy_cost=7.5e-3, num_envs=kwargs['num_envs'],
+      discounting=0.97, learning_rate=5e-4, entropy_cost=1e-3, num_envs=kwargs['num_envs'],
       num_eval_envs=kwargs['num_envs'],
       batch_size=128, seed=0,
       log_training_metrics=True,
@@ -416,7 +416,7 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'new_hyperparms_but_old_network_size'
+  experiment_id = 'slightly_higher_lr'
   n_train_steps = 50_000_000
   n_eval_eps = 1
 
