@@ -133,8 +133,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
           }, 
           action_size=action_size,
           preprocess_observations_fn=preprocess_observations_fn,
-          policy_hidden_layer_sizes=(512, 256, 128),  
-          value_hidden_layer_sizes=(512, 256, 128),
+          policy_hidden_layer_sizes=(256, 256),  
+          value_hidden_layer_sizes=(256, 256),
           activation=linen.relu,
           normalise_channels=True            # Normalize image channels
       )
@@ -416,7 +416,7 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'new_hyperparams'
+  experiment_id = 'new_hyperparms_but_old_network_size'
   n_train_steps = 50_000_000
   n_eval_eps = 1
 
