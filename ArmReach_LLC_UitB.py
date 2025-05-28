@@ -58,7 +58,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             'target_pos_range': {'fingertip': jp.array([[0.225, 0.02, -0.09], [0.35, 0.32, 0.25]]),},
             'target_radius_range': {'fingertip': jp.array([0.025, 0.025]),},
             'ref_site': 'humphant',
-            'adaptive_task': True,
+            'adaptive_task': False,
             'init_target_area_width_scale': init_target_area_width_scale,
             # 'adaptive_increase_success_rate': 0.6,
             # 'adaptive_decrease_success_rate': 0.3,
@@ -416,12 +416,12 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'slightly_higher_lr'
+  experiment_id = 'not adaptive'
   n_train_steps = 50_000_000
   n_eval_eps = 1
 
   restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
-  init_target_area_width_scale = 0.  #1.0  #TODO: load from file
+  init_target_area_width_scale = 1.  #1.0  #TODO: load from file
 
   main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
        restore_params_path=restore_params_path, init_target_area_width_scale=init_target_area_width_scale)
