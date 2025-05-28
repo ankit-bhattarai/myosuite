@@ -39,6 +39,7 @@ from brax.io import html, mjcf, model
 from mujoco_playground._src import mjx_env
 from mujoco_playground import wrapper
 from matplotlib import pyplot as plt
+from flax import linen
 import mediapy as media
 import wandb
 
@@ -67,7 +68,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
-            'num_envs': 3072,
+            'num_envs': 1024,
             'vision': {
                 'gpu_id': 0,
                 'render_width': 120,
@@ -132,8 +133,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
           }, 
           action_size=action_size,
           preprocess_observations_fn=preprocess_observations_fn,
-          policy_hidden_layer_sizes=(256, 256),  
-          value_hidden_layer_sizes=(256, 256),
+          policy_hidden_layer_sizes=(512, 256, 128),  
+          value_hidden_layer_sizes=(512, 256, 128),
+          activation=linen.relu,
           normalise_channels=True            # Normalize image channels
       )
 
@@ -142,10 +144,10 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
       madrona_backend=True,
       wrap_env=False, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
-      unroll_length=10, num_minibatches=24, num_updates_per_batch=8,
-      discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=kwargs['num_envs'],
+      unroll_length=10, num_minibatches=8, num_updates_per_batch=8,
+      discounting=0.97, learning_rate=5e-4, entropy_cost=7.5e-3, num_envs=kwargs['num_envs'],
       num_eval_envs=kwargs['num_envs'],
-      batch_size=512, seed=0,
+      batch_size=128, seed=0,
       log_training_metrics=True,
       restore_params=restore_params,
       network_factory=custom_network_factory,
@@ -414,8 +416,8 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'schema_change_final_new_xml_model'
-  n_train_steps = 100_000_000
+  experiment_id = 'new_hyperparams'
+  n_train_steps = 50_000_000
   n_eval_eps = 1
 
   restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
