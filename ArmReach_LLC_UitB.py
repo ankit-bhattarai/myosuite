@@ -1,4 +1,5 @@
 import os
+import argparse
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 # os.environ["MADRONA_MWGPU_KERNEL_CACHE"]= ??
@@ -44,7 +45,18 @@ import mediapy as media
 import wandb
 
 def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
-         restore_params_path=None, init_target_area_width_scale=0.):
+         restore_params_path=None, init_target_area_width_scale=0.,
+         num_envs=1024,
+         policy_hidden_layer_sizes=(256, 256),
+         value_hidden_layer_sizes=(256, 256),
+         episode_length=800,
+         unroll_length=10,
+         num_minibatches=8,
+         num_updates_per_batch=8,
+         discounting=0.97,
+         learning_rate=5e-4,
+         entropy_cost=1e-3,
+         batch_size=128):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0, LLCEEPosAdaptiveDirectCtrlEnvMJXV0
@@ -68,7 +80,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
-            'num_envs': 1024,
+            'num_envs': num_envs,
             'vision': {
                 'gpu_id': 0,
                 'render_width': 120,
@@ -133,8 +145,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
           }, 
           action_size=action_size,
           preprocess_observations_fn=preprocess_observations_fn,
-          policy_hidden_layer_sizes=(256, 256),  
-          value_hidden_layer_sizes=(256, 256),
+          policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
+          value_hidden_layer_sizes=value_hidden_layer_sizes,
           activation=linen.relu,
           normalise_channels=True            # Normalize image channels
       )
@@ -142,12 +154,12 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
       madrona_backend=True,
-      wrap_env=False, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
+      wrap_env=False, episode_length=episode_length, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
-      unroll_length=10, num_minibatches=8, num_updates_per_batch=8,
-      discounting=0.97, learning_rate=5e-4, entropy_cost=1e-3, num_envs=kwargs['num_envs'],
+      unroll_length=unroll_length, num_minibatches=num_minibatches, num_updates_per_batch=num_updates_per_batch,
+      discounting=discounting, learning_rate=learning_rate, entropy_cost=entropy_cost, num_envs=kwargs['num_envs'],
       num_eval_envs=kwargs['num_envs'],
-      batch_size=128, seed=0,
+      batch_size=batch_size, seed=0,
       log_training_metrics=True,
       restore_params=restore_params,
       network_factory=custom_network_factory,
@@ -281,7 +293,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
         pass
 
   ## TRAINING
-  wrapped_env = wrap_curriculum_training(env, vision=True, num_vision_envs=kwargs['num_envs'])
+  wrapped_env = wrap_curriculum_training(env, vision=True, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
   wandb.init(project='myosuite-mjx-policies', name=experiment_id, config=kwargs)
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
 
@@ -414,14 +426,41 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 
 
 if __name__ == '__main__':
-  # jax.config.update('jax_default_matmul_precision', 'highest')
+  parser = argparse.ArgumentParser(description='ArmReach LLC UitB Training Script')
+  parser.add_argument('--experiment_id', type=str)
+  parser.add_argument('--n_train_steps', type=int, default=50_000_000)
+  parser.add_argument('--n_eval_eps', type=int, default=1)
+  parser.add_argument('--restore_params_path', type=str, default=None)
+  parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
+  parser.add_argument('--num_envs', type=int, default=1024)
+  parser.add_argument('--policy_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
+  parser.add_argument('--value_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
+  parser.add_argument('--episode_length', type=int, default=800)
+  parser.add_argument('--unroll_length', type=int, default=10)
+  parser.add_argument('--num_minibatches', type=int, default=8)
+  parser.add_argument('--num_updates_per_batch', type=int, default=8)
+  parser.add_argument('--discounting', type=float, default=0.97)
+  parser.add_argument('--learning_rate', type=float, default=5e-4)
+  parser.add_argument('--entropy_cost', type=float, default=1e-3)
+  parser.add_argument('--batch_size', type=int, default=128)
 
-  experiment_id = 'not adaptive'
-  n_train_steps = 50_000_000
-  n_eval_eps = 1
+  args = parser.parse_args()
 
-  restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
-  init_target_area_width_scale = 1.  #1.0  #TODO: load from file
-
-  main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
-       restore_params_path=restore_params_path, init_target_area_width_scale=init_target_area_width_scale)
+  main(
+    experiment_id=args.experiment_id,
+    n_train_steps=args.n_train_steps,
+    n_eval_eps=args.n_eval_eps,
+    restore_params_path=args.restore_params_path,
+    init_target_area_width_scale=args.init_target_area_width_scale,
+    num_envs=args.num_envs,
+    policy_hidden_layer_sizes=tuple(args.policy_hidden_layer_sizes),
+    value_hidden_layer_sizes=tuple(args.value_hidden_layer_sizes),
+    episode_length=args.episode_length,
+    unroll_length=args.unroll_length,
+    num_minibatches=args.num_minibatches,
+    num_updates_per_batch=args.num_updates_per_batch,
+    discounting=args.discounting,
+    learning_rate=args.learning_rate,
+    entropy_cost=args.entropy_cost,
+    batch_size=args.batch_size
+  )
