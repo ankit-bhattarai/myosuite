@@ -21,7 +21,7 @@ from jax import nn
 import mujoco
 from mujoco import mjx
 from myosuite.utils import gym
-
+from flax import linen
 from brax import base
 from brax import envs
 from brax import math
@@ -134,6 +134,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
           preprocess_observations_fn=preprocess_observations_fn,
           policy_hidden_layer_sizes=(256, 256),  
           value_hidden_layer_sizes=(256, 256),
+          activation_fn=linen.relu,
           normalise_channels=True            # Normalize image channels
       )
 
