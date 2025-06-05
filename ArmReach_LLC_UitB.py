@@ -64,6 +64,25 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
   model_path = 'simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
   #TODO: load kwargs from config file/registration
+
+  argument_kwargs = {
+    'experiment_id': experiment_id,
+    'n_train_steps': n_train_steps,
+    'n_eval_eps': n_eval_eps,
+    'restore_params_path': restore_params_path,
+    'init_target_area_width_scale': init_target_area_width_scale,
+    'num_envs': num_envs,
+    'policy_hidden_layer_sizes': policy_hidden_layer_sizes,
+    'value_hidden_layer_sizes': value_hidden_layer_sizes,
+    'episode_length': episode_length,
+    'unroll_length': unroll_length,
+    'num_minibatches': num_minibatches,
+    'num_updates_per_batch': num_updates_per_batch,
+    'discounting': discounting,
+    'learning_rate': learning_rate,
+    'entropy_cost': entropy_cost,
+    'batch_size': batch_size
+  }
   kwargs = {
             'frame_skip': 25,
             'target_pos_range': {'fingertip': jp.array([[0.225, 0.02, -0.09], [0.225, 0.32, 0.25]]),},
@@ -293,7 +312,8 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
 
   ## TRAINING
   wrapped_env = wrap_curriculum_training(env, vision=True, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
-  wandb.init(project='myosuite-mjx-policies', name=experiment_id, config=kwargs)
+  all_config = {**kwargs, **argument_kwargs}
+  wandb.init(project='myosuite-mjx-policies', name=experiment_id, config=all_config)
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
 
   if n_train_steps > 0 and len(times) > 2:
