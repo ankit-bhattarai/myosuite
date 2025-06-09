@@ -121,6 +121,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         if 'vision' in kwargs:
             self.vision = True
             from madrona_mjx.renderer import BatchRenderer
+            vision_mode = kwargs['vision']['vision_mode']
+            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth')
+            assert vision_mode in allowed_vision_modes, f"Invalid vision mode: {vision_mode} (allowed modes: {allowed_vision_modes})"
+            self.vision_mode = vision_mode
             self.batch_renderer = BatchRenderer(m = self._mjx_model,
                                                 gpu_id = kwargs['vision']['gpu_id'],
                                                 num_worlds = kwargs['num_envs'],
@@ -412,12 +416,23 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         # Generates the view of the environment using the batch renderer
         update_info = {}
         if render_token is None: # Initialize renderer during reset
-            render_token, rgb, _ = self.batch_renderer.init(data, self._mjx_model)
+            render_token, rgb, depth = self.batch_renderer.init(data, self._mjx_model)
             update_info.update({"render_token": render_token})
         else: # Render during step
-            _, rgb, _ = self.batch_renderer.render(render_token, data)
+            _, rgb, depth = self.batch_renderer.render(render_token, data)
         pixels = rgb[0][..., :3].astype(jp.float32) / 255.0
-        update_info.update({"pixels/view_0": pixels})
+        depth = depth[0].astype(jp.float32)
+
+        if self.vision_mode == 'rgb':
+            update_info.update({"pixels/view_0": pixels})
+        elif self.vision_mode == 'rgbd':
+            # combine pixels and depth into a single image
+            rgbd = jp.concatenate([pixels, depth], axis=-1)
+            update_info.update({"pixels/view_0": rgbd})
+        elif self.vision_mode == 'rgb+depth':
+            update_info.update({"pixels/view_0": pixels, "pixels/depth": depth})
+        else:
+            raise ValueError(f"Invalid vision mode: {self.vision_mode}")
         return update_info
     
     # step the simulation forward (overrides BaseV0.step; --> also, enable signal-dependent and/or constant motor noise)
@@ -683,6 +698,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
 
         if self.vision:
             obs_dict['pixels/view_0'] = info['pixels/view_0']
+            if self.vision_mode == 'rgb+depth':
+                obs_dict['pixels/depth'] = info['pixels/depth']
         return obs_dict
     
     def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
@@ -692,7 +709,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
             return obsvec
-        return {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
+        vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
+        if self.vision_mode == 'rgb+depth':
+            vision_obs['pixels/depth'] = obs_dict['pixels/depth']
+        return vision_obs
     
     def update_info(self, info, obs_dict):
         ## Update state info of internal variables at the end of each env step

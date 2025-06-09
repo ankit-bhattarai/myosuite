@@ -104,6 +104,7 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
                 'render_width': 120,
                 'render_height': 120,
                 'enabled_cameras': [0],
+                'vision_mode': 'rgbd',
             },
             'ctrl_dt': 0.002*25,
             'sim_dt': 0.002,
@@ -155,12 +156,30 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
 
     return functools.partial(env.render, height=height, width=width, camera=camera)
   
-  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
-      return networks_vision.make_ppo_networks_vision(
-          observation_size={
+  def get_observation_size():
+    if 'vision' not in kwargs:
+      return 48
+    if kwargs['vision']['vision_mode'] == 'rgb':
+      return {
           "pixels/view_0": (120, 120, 3),  # RGB image
           "proprioception": (48,)          # Vector state
-          }, 
+          }
+    elif kwargs['vision']['vision_mode'] == 'rgbd':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+          "proprioception": (48,)          # Vector state
+      }
+    elif kwargs['vision']['vision_mode'] == 'rgb+depth':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (48,)          # Vector state
+          }
+    else:
+      raise NotImplementedError(f'No observation size known for "{kwargs['vision']['vision_mode']}"')
+  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
+      return networks_vision.make_ppo_networks_vision(
+          observation_size=get_observation_size(),
           action_size=action_size,
           preprocess_observations_fn=preprocess_observations_fn,
           policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
