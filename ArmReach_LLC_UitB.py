@@ -34,7 +34,7 @@ from mujoco_playground._src.wrapper import MadronaWrapper
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 from brax.training.agents.ppo import train as ppo
-from brax.training.agents.ppo import networks_vision
+from brax.training.agents.ppo import networks_vision, networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
 from mujoco_playground._src import mjx_env
@@ -46,6 +46,8 @@ import wandb
 def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
          restore_params_path=None, init_target_area_width_scale=0.,
          num_envs=1024,
+         vision=True,
+         vision_mode='rgbd',
          policy_hidden_layer_sizes=(256, 256),
          value_hidden_layer_sizes=(256, 256),
          episode_length=800,
@@ -72,6 +74,8 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
     'restore_params_path': restore_params_path,
     'init_target_area_width_scale': init_target_area_width_scale,
     'num_envs': num_envs,
+    'vision': vision,
+    'vision_mode': vision_mode,
     'policy_hidden_layer_sizes': policy_hidden_layer_sizes,
     'value_hidden_layer_sizes': value_hidden_layer_sizes,
     'episode_length': episode_length,
@@ -99,16 +103,17 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
             'num_envs': num_envs,
-            'vision': {
+            'ctrl_dt': 0.002*25,
+            'sim_dt': 0.002,
+        }
+  if vision:
+    kwargs['vision'] = {
                 'gpu_id': 0,
                 'render_width': 120,
                 'render_height': 120,
                 'enabled_cameras': [0],
-                'vision_mode': 'rgbd',
-            },
-            'ctrl_dt': 0.002*25,
-            'sim_dt': 0.002,
-        }
+                'vision_mode': vision_mode,
+            }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
   cwd = os.path.dirname(os.path.abspath(__file__))
@@ -177,20 +182,27 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
           }
     else:
       raise NotImplementedError(f'No observation size known for "{kwargs['vision']['vision_mode']}"')
-  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
-      return networks_vision.make_ppo_networks_vision(
-          observation_size=get_observation_size(),
-          action_size=action_size,
-          preprocess_observations_fn=preprocess_observations_fn,
-          policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
-          value_hidden_layer_sizes=value_hidden_layer_sizes,
-          activation=linen.relu,
-          normalise_channels=True            # Normalize image channels
-      )
+  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn): 
+      if vision:
+        return networks_vision.make_ppo_networks_vision(
+            observation_size=get_observation_size(),
+            action_size=action_size,
+            preprocess_observations_fn=preprocess_observations_fn,
+            policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
+            value_hidden_layer_sizes=value_hidden_layer_sizes,
+            activation=linen.relu,
+            normalise_channels=True            # Normalize image channels
+        )
+      return networks.make_ppo_networks(observation_size=get_observation_size(),
+                                        action_size=action_size,
+                                        preprocess_observations_fn=preprocess_observations_fn,
+                                        policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+                                        value_hidden_layer_sizes=value_hidden_layer_sizes,
+                                        activation=linen.relu)
 
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
-      madrona_backend=True,
+      madrona_backend=vision,
       wrap_env=False, episode_length=episode_length, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
       unroll_length=unroll_length, num_minibatches=num_minibatches, num_updates_per_batch=num_updates_per_batch,
@@ -330,7 +342,7 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
         pass
 
   ## TRAINING
-  wrapped_env = wrap_curriculum_training(env, vision=True, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
+  wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
   all_config = {**kwargs, **argument_kwargs}
   wandb.init(project='myosuite-mjx-policies', name=experiment_id, config=all_config)
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
@@ -471,6 +483,8 @@ if __name__ == '__main__':
   parser.add_argument('--restore_params_path', type=str, default=None)
   parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
   parser.add_argument('--num_envs', type=int, default=1024)
+  parser.add_argument('--vision', type=bool, default=True, help='Set to False if wanting to disable vision and only use proprioception input')
+  parser.add_argument('--vision_mode', type=str, default='rgbd', help='Change to rgb or rgb+depth if wanting to change vision mode')
   parser.add_argument('--policy_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
   parser.add_argument('--value_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
   parser.add_argument('--episode_length', type=int, default=800)
@@ -491,6 +505,8 @@ if __name__ == '__main__':
     restore_params_path=args.restore_params_path,
     init_target_area_width_scale=args.init_target_area_width_scale,
     num_envs=args.num_envs,
+    vision=args.vision,
+    vision_mode=args.vision_mode,
     policy_hidden_layer_sizes=tuple(args.policy_hidden_layer_sizes),
     value_hidden_layer_sizes=tuple(args.value_hidden_layer_sizes),
     episode_length=args.episode_length,
