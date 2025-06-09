@@ -77,6 +77,7 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
     'num_envs': num_envs,
     'vision': vision,
     'vision_mode': vision_mode,
+    'activation_function': activation_function,
     'policy_hidden_layer_sizes': policy_hidden_layer_sizes,
     'value_hidden_layer_sizes': value_hidden_layer_sizes,
     'episode_length': episode_length,
@@ -165,24 +166,24 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
   def get_observation_size():
     if 'vision' not in kwargs:
       return 48
-    if kwargs['vision']['vision_mode'] == 'rgb':
+    if vision_mode == 'rgb':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
           "proprioception": (48,)          # Vector state
           }
-    elif kwargs['vision']['vision_mode'] == 'rgbd':
+    elif vision_mode == 'rgbd':
       return {
           "pixels/view_0": (120, 120, 4),  # RGBD image
           "proprioception": (48,)          # Vector state
       }
-    elif kwargs['vision']['vision_mode'] == 'rgb+depth':
+    elif vision_mode == 'rgb+depth':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
           "pixels/depth": (120, 120, 1),  # Depth image
           "proprioception": (48,)          # Vector state
           }
     else:
-      raise NotImplementedError(f'No observation size known for "{kwargs['vision']['vision_mode']}"')
+      raise NotImplementedError(f'No observation size known for "{vision_mode}"')
   def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
       if activation_function == 'swish':
         activation = linen.swish
@@ -490,7 +491,9 @@ if __name__ == '__main__':
   parser.add_argument('--restore_params_path', type=str, default=None)
   parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
   parser.add_argument('--num_envs', type=int, default=1024)
-  parser.add_argument('--vision', type=bool, default=True, help='Set to False if wanting to disable vision and only use proprioception input')
+  parser.add_argument('--no-vision', dest='vision', action='store_false', help='Type this if you want to disable vision input, default is true')
+  parser.set_defaults(vision=True)
+  # parser.add_argument('--vision', type=bool, default=True, help='Set to False if wanting to disable vision and only use proprioception input')
   parser.add_argument('--vision_mode', type=str, default='rgbd', help='Change to rgb or rgb+depth if wanting to change vision mode')
   parser.add_argument('--activation_function', type=str, default='swish', choices=('relu', 'swish',),
                       help='Choose between one of these two activation functions')
