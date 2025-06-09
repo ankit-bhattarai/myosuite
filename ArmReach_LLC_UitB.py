@@ -48,6 +48,7 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
          num_envs=1024,
          vision=True,
          vision_mode='rgbd',
+         activation_function='swish',
          policy_hidden_layer_sizes=(256, 256),
          value_hidden_layer_sizes=(256, 256),
          episode_length=800,
@@ -182,7 +183,13 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
           }
     else:
       raise NotImplementedError(f'No observation size known for "{kwargs['vision']['vision_mode']}"')
-  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn): 
+  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
+      if activation_function == 'swish':
+        activation = linen.swish
+      elif activation_function == 'relu':
+        activation = linen.relu
+      else:
+        raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
       if vision:
         return networks_vision.make_ppo_networks_vision(
             observation_size=get_observation_size(),
@@ -190,7 +197,7 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
             preprocess_observations_fn=preprocess_observations_fn,
             policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
             value_hidden_layer_sizes=value_hidden_layer_sizes,
-            activation=linen.relu,
+            activation=activation,
             normalise_channels=True            # Normalize image channels
         )
       return networks.make_ppo_networks(observation_size=get_observation_size(),
@@ -198,7 +205,7 @@ def main(experiment_id, n_train_steps=20_000_000, n_eval_eps=1,
                                         preprocess_observations_fn=preprocess_observations_fn,
                                         policy_hidden_layer_sizes=policy_hidden_layer_sizes,
                                         value_hidden_layer_sizes=value_hidden_layer_sizes,
-                                        activation=linen.relu)
+                                        activation=activation)
 
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
@@ -485,6 +492,8 @@ if __name__ == '__main__':
   parser.add_argument('--num_envs', type=int, default=1024)
   parser.add_argument('--vision', type=bool, default=True, help='Set to False if wanting to disable vision and only use proprioception input')
   parser.add_argument('--vision_mode', type=str, default='rgbd', help='Change to rgb or rgb+depth if wanting to change vision mode')
+  parser.add_argument('--activation_function', type=str, default='swish', choices=('relu', 'swish',),
+                      help='Choose between one of these two activation functions')
   parser.add_argument('--policy_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
   parser.add_argument('--value_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
   parser.add_argument('--episode_length', type=int, default=800)
@@ -507,6 +516,7 @@ if __name__ == '__main__':
     num_envs=args.num_envs,
     vision=args.vision,
     vision_mode=args.vision_mode,
+    activation_function=args.activation_function,
     policy_hidden_layer_sizes=tuple(args.policy_hidden_layer_sizes),
     value_hidden_layer_sizes=tuple(args.value_hidden_layer_sizes),
     episode_length=args.episode_length,
