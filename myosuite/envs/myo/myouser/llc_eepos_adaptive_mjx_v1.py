@@ -321,7 +321,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(mjx_env.MjxEnv):
         
         # Dwelling based selection -- fingertip needs to be inside target for some time
         self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self._n_frames
-        
+
+        if 'vision' in kwargs:
+            print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
+            self.dwell_threshold *= 2   
+
         # Use early termination if target is not hit in time
         # self._steps_since_last_hit = jp.zeros(1)
         self._max_steps_without_hit = 4./self.dt #corresponds to 4 seconds; note that self.dt=self._mjx_model.opt.timestep*self._n_frames
