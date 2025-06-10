@@ -1191,12 +1191,14 @@ class AdaptiveTargetWrapper(Wrapper):
 
         # obs_dict = self.get_obs_dict(state.pipeline_state, state.info)
         ## if isinstance(self.env, VmapWrapper) else functools.partial(self.env.reset_with_curriculum, rng=rng, info_before_reset=state.info)
-        if hasattr(self, 'batch_size'):  #if VmapWrapper is used (training mode)
-            if self.batch_size is not None:
-                rng = jax.random.split(rng, self.batch_size)
-            state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
-        else:
-            state_after_reset = self.env.reset_with_curriculum(rng, state.info)
+        # if hasattr(self, 'batch_size'):  #if VmapWrapper is used (training mode)
+        #     if self.batch_size is not None:
+        #         rng = jax.random.split(rng, self.batch_size)
+        #     state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
+        # else:
+        #     state_after_reset = self.env.reset_with_curriculum(rng, state.info)
+        state_after_reset = jax.vmap(self.env.reset_with_curriculum)(rng, state.info)
+
         # fill state_after_reset.info with entries only in state.info (i.e. entries created by wrappers)
         for k in state.info:
             state_after_reset.info[k] = state_after_reset.info.get(k, state.info[k])
