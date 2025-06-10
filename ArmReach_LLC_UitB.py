@@ -56,7 +56,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
             'ctrl_dt': 0.002*25,
-            'sim_dt': 0.002*25,
+            'sim_dt': 0.002,
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
