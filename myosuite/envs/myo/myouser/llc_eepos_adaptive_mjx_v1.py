@@ -93,6 +93,21 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # data = mjx.make_data(sys)  #this is done by self.reset called in self._prepare_env
 
         self._prepare_env(**kwargs)
+        self.vision = False
+        if 'vision' in kwargs:
+            self.vision = True
+            from madrona_mjx.renderer import BatchRenderer
+            self.batch_renderer = BatchRenderer(m = self.sys,
+                                                gpu_id = kwargs['vision']['gpu_id'],
+                                                num_worlds = kwargs['num_envs'],
+                                                batch_render_view_width = kwargs['vision']['render_width'],
+                                                batch_render_view_height = kwargs['vision']['render_height'],
+                                                enabled_geom_groups = np.asarray([0, 1, 2]),
+                                                enabled_cameras = np.asarray(kwargs['vision']['enabled_cameras']),
+                                                use_rasterizer = False,
+                                                viz_gpu_hdls = None,
+                                                add_cam_debug_geo = False,
+                                                )
     
     def _prepare_env(self, **kwargs):
         self._prepare_bm_model()
@@ -366,6 +381,19 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         return new_ctrl
     
+    
+    def generate_pixels(self, data, render_token=None):
+        # Generates the view of the environment using the batch renderer
+        update_info = {}
+        if render_token is None: # Initialize renderer during reset
+            render_token, rgb, _ = self.batch_renderer.init(data, self.sys)
+            update_info.update({"render_token": render_token})
+        else: # Render during step
+            _, rgb, _ = self.batch_renderer.render(render_token, data)
+        pixels = rgb[0][..., :3].astype(jp.float32) / 255.0
+        update_info.update({"pixels/view_0": pixels})
+        return update_info
+    
     # step the simulation forward (overrides BaseV0.step; --> also, enable signal-dependent and/or constant motor noise)
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
@@ -400,6 +428,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
+        if self.vision:
+            pixels_dict = self.generate_pixels(data, state.info['render_token'])
+            state.info.update(pixels_dict)
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
@@ -618,6 +649,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
             obs_dict['success_rate'] = -1.  #unknown ##TODO: measure success rate if adaptive is not enabled
 
+        if self.vision:
+            obs_dict['pixels/view_0'] = info['pixels/view_0']
         return obs_dict
     
     def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
@@ -625,8 +658,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         for key in self.obs_keys:
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
-
-        return obsvec
+        if not self.vision:
+            return obsvec
+        return {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
     
     def update_info(self, info, obs_dict):
         ## Update state info of internal variables at the end of each env step
@@ -831,7 +865,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 'trial_idx': trial_idx,
                 # 'trial_success_log_pointer_index': trial_success_log_pointer_index,  #TODO: do not reset to initial value at the beginning of each episode!!!
                 # 'trial_success_log': trial_success_log,  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float64),  #TODO: do not reset to initial value at the beginning of each episode!!!
+                'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float32),  #TODO: do not reset to initial value at the beginning of each episode!!!
                 'rng': rng,
                 'target_success': jp.array(False),
                 'target_fail': jp.array(False),
@@ -842,6 +876,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
+        if self.vision:
+            info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
@@ -904,6 +940,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
+        if self.vision:
+            info['render_token'] = info_before_reset['render_token']
+            pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
+            info.update(pixels_dict)
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
