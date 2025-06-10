@@ -1,4 +1,12 @@
 import os
+import argparse
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["MUJOCO_GL"]="egl"
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
+
 from datetime import datetime
 from etils import epath
 import functools
@@ -12,7 +20,7 @@ from jax import nn
 import mujoco
 from mujoco import mjx
 from myosuite.utils import gym
-
+from flax import linen
 from brax import base
 from brax import envs
 from brax import math
@@ -23,7 +31,7 @@ from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrap
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 from brax.training.agents.ppo import train as ppo
-from brax.training.agents.ppo import networks as ppo_networks
+from brax.training.agents.ppo import networks_vision, networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
 from myosuite.envs.myo.myouser.madrona_wrapper import MadronaWrapper
@@ -31,9 +39,24 @@ from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptive
 
 from matplotlib import pyplot as plt
 import mediapy as media
+import wandb
 
-def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
-         restore_params_path=None, init_target_area_width_scale=0.):
+def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
+         restore_params_path=None, init_target_area_width_scale=0.,
+         num_envs=3072,
+         vision=True,
+         vision_mode='rgbd',
+         activation_function='swish',
+         policy_hidden_layer_sizes=(256, 256),
+         value_hidden_layer_sizes=(256, 256),
+         episode_length=800,
+         unroll_length=10,
+         num_minibatches=24,
+         num_updates_per_batch=8,
+         discounting=0.97,
+         learning_rate=3e-4,
+         entropy_cost=1e-3,
+         batch_size=512):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -41,10 +64,32 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   model_path = 'simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
   #TODO: load kwargs from config file/registration
+
+  argument_kwargs = {
+    'experiment_id': experiment_id,
+    'n_train_steps': n_train_steps,
+    'n_eval_eps': n_eval_eps,
+    'restore_params_path': restore_params_path,
+    'init_target_area_width_scale': init_target_area_width_scale,
+    'num_envs': num_envs,
+    'vision': vision,
+    'vision_mode': vision_mode,
+    'activation_function': activation_function,
+    'policy_hidden_layer_sizes': policy_hidden_layer_sizes,
+    'value_hidden_layer_sizes': value_hidden_layer_sizes,
+    'episode_length': episode_length,
+    'unroll_length': unroll_length,
+    'num_minibatches': num_minibatches,
+    'num_updates_per_batch': num_updates_per_batch,
+    'discounting': discounting,
+    'learning_rate': learning_rate,
+    'entropy_cost': entropy_cost,
+    'batch_size': batch_size
+  }
   kwargs = {
             'frame_skip': 25,
-            'target_pos_range': {'fingertip': jp.array([[0.225, -0.3, -0.3], [0.35, 0.1, 0.4]]),},
-            'target_radius_range': {'fingertip': jp.array([0.01, 0.15]),},
+            'target_pos_range': {'fingertip': jp.array([[0.225, 0.02, -0.09], [0.35, 0.32, 0.25]]),},
+            'target_radius_range': {'fingertip': jp.array([0.025, 0.025]),},
             'ref_site': 'humphant',
             'adaptive_task': True,
             'init_target_area_width_scale': init_target_area_width_scale,
@@ -56,7 +101,16 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
             # 'max_trials': 10
+            'num_envs': num_envs,
         }
+  if vision:
+    kwargs['vision'] = {
+                'gpu_id': 0,
+                'render_width': 120,
+                'render_height': 120,
+                'enabled_cameras': [0],
+                'vision_mode': vision_mode,
+            }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
   cwd = os.path.dirname(os.path.abspath(__file__))
@@ -104,15 +158,65 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
 
     return functools.partial(env.render, height=height, width=width, camera=camera)
   
+  def get_observation_size():
+    if 'vision' not in kwargs:
+      return 48
+    if vision_mode == 'rgb':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "proprioception": (48,)          # Vector state
+          }
+    elif vision_mode == 'rgbd':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+          "proprioception": (48,)          # Vector state
+      }
+    elif vision_mode == 'rgb+depth':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (48,)          # Vector state
+          }
+    else:
+      raise NotImplementedError(f'No observation size known for "{vision_mode}"')
+
+  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
+      if activation_function == 'swish':
+        activation = linen.swish
+      elif activation_function == 'relu':
+        activation = linen.relu
+      else:
+        raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
+      if vision:
+        return networks_vision.make_ppo_networks_vision(
+            observation_size=get_observation_size(),
+            action_size=action_size,
+            preprocess_observations_fn=preprocess_observations_fn,
+            policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
+            value_hidden_layer_sizes=value_hidden_layer_sizes,
+            activation=activation,
+            normalise_channels=True            # Normalize image channels
+        )
+      else:
+        return networks.make_ppo_networks(observation_size=get_observation_size(),
+                                          action_size=action_size,
+                                          preprocess_observations_fn=preprocess_observations_fn,
+                                          policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+                                          value_hidden_layer_sizes=value_hidden_layer_sizes,
+                                          activation=activation)
+
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
-      wrap_env_fn=wrap_curriculum_training, episode_length=800, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
+      madrona_backend=vision,
+      wrap_env=False, episode_length=episode_length, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
-      unroll_length=10, num_minibatches=24, num_updates_per_batch=8,
-      discounting=0.97, learning_rate=3e-4, entropy_cost=1e-3, num_envs=3072,
-      batch_size=512, seed=0,
+      unroll_length=unroll_length, num_minibatches=num_minibatches, num_updates_per_batch=num_updates_per_batch,
+      discounting=discounting, learning_rate=learning_rate, entropy_cost=entropy_cost, num_envs=kwargs['num_envs'],
+      num_eval_envs=kwargs['num_envs'],
+      batch_size=batch_size, seed=0,
       log_training_metrics=True,
       restore_params=restore_params,
+      network_factory=custom_network_factory,
       )
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
 
@@ -130,6 +234,10 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   max_y, min_y = 150, 0
   max_episode_length = 800
   def progress(num_steps, metrics):
+
+    if len(times) == 2:
+       print(f'time to jit: {times[1] - times[0]}')
+    wandb.log({'num_steps': num_steps, **metrics})
     
     # print(metrics)
 
@@ -239,7 +347,10 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
         pass
 
   ## TRAINING
-  make_inference_fn, params, metrics = train_fn(environment=env, progress_fn=progress)
+  wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
+  all_config = {**kwargs, **argument_kwargs}
+  wandb.init(project='mjx-training', name=experiment_id, config=all_config)
+  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
 
   if n_train_steps > 0 and len(times) > 2:
     print(f'time to jit: {times[1] - times[0]}')
@@ -370,14 +481,49 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 
 
 if __name__ == '__main__':
-  # jax.config.update('jax_default_matmul_precision', 'highest')
+  parser = argparse.ArgumentParser(description='ArmReach LLC UitB Training Script')
+  parser.add_argument('--experiment_id', type=str, required=True)
+  parser.add_argument('--n_train_steps', type=int, default=100_000_000)
+  parser.add_argument('--n_eval_eps', type=int, default=1)
+  parser.add_argument('--restore_params_path', type=str, default=None)
+  parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
+  parser.add_argument('--num_envs', type=int, default=3072)
+  parser.add_argument('--no-vision', dest='vision', action='store_false', help='Type this if you want to disable vision input, default is true')
+  parser.set_defaults(vision=True)
+  parser.add_argument('--vision_mode', type=str, default='rgbd', help='Change to rgb or rgb+depth if wanting to change vision mode')
+  parser.add_argument('--activation_function', type=str, default='swish', choices=('relu', 'swish',),
+                      help='Choose between one of these two activation functions')
+  parser.add_argument('--policy_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
+  parser.add_argument('--value_hidden_layer_sizes', type=int, nargs='+', default=[256, 256])
+  parser.add_argument('--episode_length', type=int, default=800)
+  parser.add_argument('--unroll_length', type=int, default=10)
+  parser.add_argument('--num_minibatches', type=int, default=24)
+  parser.add_argument('--num_updates_per_batch', type=int, default=8)
+  parser.add_argument('--discounting', type=float, default=0.97)
+  parser.add_argument('--learning_rate', type=float, default=3e-4)
+  parser.add_argument('--entropy_cost', type=float, default=1e-3)
+  parser.add_argument('--batch_size', type=int, default=512)
 
-  experiment_id = 'mobl_llc_eepos_v0.1.2'
-  n_train_steps = 100_000_000
-  n_eval_eps = 1
+  args = parser.parse_args()
 
-  restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
-  init_target_area_width_scale = 0.  #1.0  #TODO: load from file
-
-  main(experiment_id=experiment_id, n_train_steps=n_train_steps, n_eval_eps=n_eval_eps, 
-       restore_params_path=restore_params_path, init_target_area_width_scale=init_target_area_width_scale)
+  main(
+    experiment_id=args.experiment_id,
+    n_train_steps=args.n_train_steps,
+    n_eval_eps=args.n_eval_eps,
+    restore_params_path=args.restore_params_path,
+    init_target_area_width_scale=args.init_target_area_width_scale,
+    num_envs=args.num_envs,
+    vision=args.vision,
+    vision_mode=args.vision_mode,
+    activation_function=args.activation_function,
+    policy_hidden_layer_sizes=tuple(args.policy_hidden_layer_sizes),
+    value_hidden_layer_sizes=tuple(args.value_hidden_layer_sizes),
+    episode_length=args.episode_length,
+    unroll_length=args.unroll_length,
+    num_minibatches=args.num_minibatches,
+    num_updates_per_batch=args.num_updates_per_batch,
+    discounting=args.discounting,
+    learning_rate=args.learning_rate,
+    entropy_cost=args.entropy_cost,
+    batch_size=args.batch_size
+  )
