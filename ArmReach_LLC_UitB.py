@@ -26,6 +26,8 @@ from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
+from myosuite.envs.myo.myouser.madrona_wrapper import MadronaWrapper
+from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0
 
 from matplotlib import pyplot as plt
 import mediapy as media
@@ -34,7 +36,6 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
          restore_params_path=None, init_target_area_width_scale=0.):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
-  from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0, LLCEEPosAdaptiveDirectCtrlEnvMJXV0
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
   
   model_path = 'simhive/uitb_sim/mobl_arms_index_llc_eepos_pointing.xml'
@@ -271,6 +272,8 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
 
 def wrap_curriculum_training(
     env: Env,
+    vision: bool = False,
+    num_vision_envs: int = 1,
     episode_length: int = 1000,
     action_repeat: int = 1,
     randomization_fn: Optional[
@@ -291,7 +294,9 @@ def wrap_curriculum_training(
       environment did not already have batch dimensions, it is additional Vmap
       wrapped.
     """
-    if randomization_fn is None:
+    if vision:
+      env = MadronaWrapper(env, num_worlds=num_vision_envs, randomization_fn=randomization_fn)
+    elif randomization_fn is None:
       env = VmapWrapper(env)
     else:
       env = DomainRandomizationVmapWrapper(env, randomization_fn)
