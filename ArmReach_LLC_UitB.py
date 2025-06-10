@@ -38,7 +38,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
   
-  model_path = 'simhive/uitb_sim/mobl_arms_index_llc_eepos_pointing.xml'
+  model_path = 'simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
   #TODO: load kwargs from config file/registration
   kwargs = {
