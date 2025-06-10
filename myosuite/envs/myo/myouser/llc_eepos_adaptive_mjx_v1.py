@@ -1085,23 +1085,6 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._constantnoise_acc = zero
     
 
-    def render(
-        self,
-        trajectory: List[base.State],
-        target_pos: Optional[jp.ndarray] = None,
-        height: int = 240,
-        width: int = 320,
-        camera: Optional[str] = None,
-    ) -> Sequence[np.ndarray]:
-        """Sets target positions and then renders a trajectory using the MuJoCo renderer."""
-        if target_pos is not None:
-            for _target_sid, _target_pos in zip(self.target_sids, jp.atleast_2d(target_pos)):
-                self.sys.mj_model.site(_target_sid).pos = _target_pos
-                # self.sys = self.sys.tree_replace({'site_pos': self.sys.mj_model.site_pos})
-                # print(self.sys.site_pos[_target_sid])#.set(new_position)
-
-        return super().render(trajectory, height, width, camera)
-
 class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
     def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
