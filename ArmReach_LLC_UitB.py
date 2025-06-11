@@ -41,7 +41,7 @@ from matplotlib import pyplot as plt
 import mediapy as media
 import wandb
 
-def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
+def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_eval_eps=1,
          restore_params_path=None, init_target_area_width_scale=0.,
          num_envs=3072,
          vision=True,
@@ -56,7 +56,13 @@ def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
          discounting=0.97,
          learning_rate=3e-4,
          entropy_cost=1e-3,
-         batch_size=512):
+         batch_size=512,
+         target_pos_range_min=[0.225, -0.1, -0.3],
+         target_pos_range_max=[0.35, 0.1, 0.3],
+         adaptive_increase_success_rate=0.8,
+         adaptive_decrease_success_rate=0.5,
+         adaptive_change_step_size=0.05,
+         adaptive_change_min_trials=100):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -88,15 +94,15 @@ def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
   }
   kwargs = {
             'frame_skip': 25,
-            'target_pos_range': {'fingertip': jp.array([[0.225, 0.02, -0.09], [0.35, 0.32, 0.25]]),},
+            'target_pos_range': {'fingertip': jp.array([target_pos_range_min, target_pos_range_max]),},
             'target_radius_range': {'fingertip': jp.array([0.05, 0.05]),},
             'ref_site': 'humphant',
             'adaptive_task': True,
             'init_target_area_width_scale': init_target_area_width_scale,
-            # 'adaptive_increase_success_rate': 0.6,
-            # 'adaptive_decrease_success_rate': 0.3,
-            # 'adaptive_change_step_size': 0.05,
-            # 'adaptive_change_min_trials': 50,
+            'adaptive_increase_success_rate': adaptive_increase_success_rate,
+            'adaptive_decrease_success_rate': adaptive_decrease_success_rate,
+            'adaptive_change_step_size': adaptive_change_step_size,
+            'adaptive_change_min_trials': adaptive_change_min_trials,
             'success_log_buffer_length': 500,
             # 'normalize_act': True,
             'reset_type': 'range_uniform',
@@ -111,6 +117,8 @@ def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
                 'enabled_cameras': [0],
                 'vision_mode': vision_mode,
             }
+  all_config = {**kwargs, **argument_kwargs}
+  wandb.init(project=project_id, name=experiment_id, config=all_config)
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
 
   cwd = os.path.dirname(os.path.abspath(__file__))
@@ -348,8 +356,6 @@ def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
 
   ## TRAINING
   wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
-  all_config = {**kwargs, **argument_kwargs}
-  wandb.init(project='mjx-training', name=experiment_id, config=all_config)
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
 
   if n_train_steps > 0 and len(times) > 2:
@@ -483,6 +489,7 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='ArmReach LLC UitB Training Script')
   parser.add_argument('--experiment_id', type=str, required=True)
+  parser.add_argument('--project_id', type=str, default='mjx-training')
   parser.add_argument('--n_train_steps', type=int, default=100_000_000)
   parser.add_argument('--n_eval_eps', type=int, default=1)
   parser.add_argument('--restore_params_path', type=str, default=None)
@@ -503,11 +510,17 @@ if __name__ == '__main__':
   parser.add_argument('--learning_rate', type=float, default=3e-4)
   parser.add_argument('--entropy_cost', type=float, default=1e-3)
   parser.add_argument('--batch_size', type=int, default=512)
-
+  parser.add_argument('--target_pos_range_min', type=float, nargs='+', default=[0.225, -0.1, -0.3])
+  parser.add_argument('--target_pos_range_max', type=float, nargs='+', default=[0.35, 0.1, 0.3])
+  parser.add_argument('--adaptive_increase_success_rate', type=float, default=0.8)
+  parser.add_argument('--adaptive_decrease_success_rate', type=float, default=0.5)
+  parser.add_argument('--adaptive_change_step_size', type=float, default=0.05)
+  parser.add_argument('--adaptive_change_min_trials', type=int, default=100)
   args = parser.parse_args()
 
   main(
     experiment_id=args.experiment_id,
+    project_id=args.project_id,
     n_train_steps=args.n_train_steps,
     n_eval_eps=args.n_eval_eps,
     restore_params_path=args.restore_params_path,
@@ -525,5 +538,11 @@ if __name__ == '__main__':
     discounting=args.discounting,
     learning_rate=args.learning_rate,
     entropy_cost=args.entropy_cost,
-    batch_size=args.batch_size
+    batch_size=args.batch_size,
+    target_pos_range_min=args.target_pos_range_min,
+    target_pos_range_max=args.target_pos_range_max,
+    adaptive_increase_success_rate=args.adaptive_increase_success_rate,
+    adaptive_decrease_success_rate=args.adaptive_decrease_success_rate,
+    adaptive_change_step_size=args.adaptive_change_step_size,
+    adaptive_change_min_trials=args.adaptive_change_min_trials,
   )
