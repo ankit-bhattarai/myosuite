@@ -89,7 +89,7 @@ def main(experiment_id, n_train_steps=100_000_000, n_eval_eps=1,
   kwargs = {
             'frame_skip': 25,
             'target_pos_range': {'fingertip': jp.array([[0.225, 0.02, -0.09], [0.35, 0.32, 0.25]]),},
-            'target_radius_range': {'fingertip': jp.array([0.025, 0.025]),},
+            'target_radius_range': {'fingertip': jp.array([0.05, 0.05]),},
             'ref_site': 'humphant',
             'adaptive_task': True,
             'init_target_area_width_scale': init_target_area_width_scale,
