@@ -98,7 +98,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             self.vision = True
             from madrona_mjx.renderer import BatchRenderer
             vision_mode = kwargs['vision']['vision_mode']
-            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth')
+            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth', 'rgbd_only', 'depth_only')
             assert vision_mode in allowed_vision_modes, f"Invalid vision mode: {vision_mode} (allowed modes: {allowed_vision_modes})"
             self.vision_mode = vision_mode
             self.batch_renderer = BatchRenderer(m = self.sys,
@@ -405,11 +405,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         if self.vision_mode == 'rgb':
             update_info.update({"pixels/view_0": pixels})
-        elif self.vision_mode == 'rgbd':
+        elif self.vision_mode == 'rgbd' or self.vision_mode == 'rgbd_only':
             # combine pixels and depth into a single image
             rgbd = jp.concatenate([pixels, depth], axis=-1)
             update_info.update({"pixels/view_0": rgbd})
-        elif self.vision_mode == 'rgb+depth':
+        elif self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only':
             update_info.update({"pixels/view_0": pixels, "pixels/depth": depth})
         else:
             raise ValueError(f"Invalid vision mode: {self.vision_mode}")
@@ -682,7 +682,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         if self.vision:
             obs_dict['pixels/view_0'] = info['pixels/view_0']
-            if self.vision_mode == 'rgb+depth':
+            if self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only':
                 obs_dict['pixels/depth'] = info['pixels/depth']
         return obs_dict
     
@@ -693,6 +693,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
             return obsvec
+        if self.vision_mode == 'rgbd_only':
+            return {'pixels/view_0': obs_dict['pixels/view_0']}
+        elif self.vision_mode == 'depth_only':
+            return {'pixels/depth': obs_dict['pixels/depth']}
         vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
         if self.vision_mode == 'rgb+depth':
             vision_obs['pixels/depth'] = obs_dict['pixels/depth']

@@ -185,6 +185,14 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
           "pixels/depth": (120, 120, 1),  # Depth image
           "proprioception": (48,)          # Vector state
           }
+    elif vision_mode == 'rgbd_only':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+      }
+    elif vision_mode == 'depth_only':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+      }
     else:
       raise NotImplementedError(f'No observation size known for "{vision_mode}"')
 
