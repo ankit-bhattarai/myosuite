@@ -17,7 +17,7 @@
 from typing import Any, Callable, Mapping, Sequence, Tuple
 
 from brax.training import distribution
-from brax.training.networks import FeedForwardNetwork
+from brax.training.networks import FeedForwardNetwork, make_policy_network, make_value_network
 from brax.training import types
 from brax.training.types import PRNGKey
 import flax
@@ -166,3 +166,105 @@ def make_unified_feature_extractor(
   return FeedForwardNetwork(
       init=lambda key: feature_extractor.init(key, dummy_obs), apply=apply
   )
+
+def make_ppo_networks_unified_extractor(
+  observation_size: Mapping[str, Tuple[int, ...]],
+  action_size: int,
+  preprocess_observations_fn: types.PreprocessObservationFn = types.identity_observation_preprocessor,
+  policy_hidden_layer_sizes: Sequence[int] = (256, 256),
+  value_hidden_layer_sizes: Sequence[int] = (256, 256),
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01),
+  normalise_pixels: bool = True,
+  vision_output_size: int = 256,
+  proprioception_output_size: int = 128,
+  proprioception_obs_key: str = 'proprioception',
+  cnn_layers: Sequence[CNNLayer] = (
+    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+  )
+) -> PPONetworksUnifiedExtractor:
+  """Make PPO networks with unified feature extractor."""
+
+  parametric_action_distribution = distribution.NormalTanhDistribution(
+      event_size=action_size
+  )
+
+  feature_extractor = make_unified_feature_extractor(
+    observation_size=observation_size,
+    preprocess_observations_fn=preprocess_observations_fn,
+    vision_output_size=vision_output_size,
+    proprioception_output_size=proprioception_output_size,
+    proprioception_obs_key=proprioception_obs_key,
+    activation=activation,
+    cnn_layers=cnn_layers,
+    normalise_pixels=normalise_pixels,
+  )
+
+  feature_extractor_output_size = vision_output_size + proprioception_output_size
+  
+  policy_network = make_policy_network(
+      parametric_action_distribution.param_size,
+      feature_extractor_output_size,
+      # Already preprocessed in the feature extractor so no need to preprocess again
+      preprocess_observations_fn=types.identity_observation_preprocessor,
+      hidden_layer_sizes=policy_hidden_layer_sizes,
+      activation=activation,
+  )
+  value_network = make_value_network(
+      feature_extractor_output_size,
+      # Already preprocessed in the feature extractor so no need to preprocess again
+      preprocess_observations_fn=types.identity_observation_preprocessor,
+      hidden_layer_sizes=value_hidden_layer_sizes,
+      activation=activation,
+  )
+
+  return PPONetworksUnifiedExtractor(
+    feature_extractor=feature_extractor,
+    policy_network=policy_network,
+    value_network=value_network,
+    parametric_action_distribution=parametric_action_distribution,
+  )
+
+
+def make_inference_fn_unified_extractor(ppo_network: PPONetworksUnifiedExtractor):
+  """Creates params and inference function for the PPO agent."""
+  feature_extractor = ppo_network.feature_extractor
+  policy_network = ppo_network.policy_network
+  parametric_action_distribution = ppo_network.parametric_action_distribution
+  
+  def make_policy(
+      params: types.Params, deterministic: bool = False
+  ) -> types.Policy:
+    processor_params = params[0]
+    extractor_params = params[1]
+    policy_params = params[2]
+    
+    def policy(
+        observations: types.Observation, key_sample: PRNGKey
+    ) -> Tuple[types.Action, types.Extra]:
+      extractor_outputs = feature_extractor.apply(processor_params, extractor_params, observations)
+      # Policy network expects some kind of normalizer params, even though the network uses an identity preprocessor
+      logits = policy_network.apply(None, policy_params, extractor_outputs)
+
+      if deterministic:
+        return parametric_action_distribution.mode(logits), {}
+
+      raw_actions = parametric_action_distribution.sample_no_postprocessing(
+          logits, key_sample
+      )
+      log_prob = parametric_action_distribution.log_prob(logits, raw_actions)
+      postprocessed_actions = parametric_action_distribution.postprocess(
+          raw_actions
+      )
+      return postprocessed_actions, {
+          'log_prob': log_prob,
+          'raw_action': raw_actions,
+      }
+
+    return policy
+
+  return make_policy
+    
+    
+  
