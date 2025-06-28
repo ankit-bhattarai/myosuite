@@ -20,7 +20,7 @@ See: https://arxiv.org/pdf/1707.06347.pdf
 from typing import Any, Tuple
 
 from brax.training import types
-from brax.training.agents.ppo import networks as ppo_networks
+from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as ppo_networks
 from brax.training.types import Params
 import flax
 import jax
@@ -30,7 +30,7 @@ import jax.numpy as jnp
 @flax.struct.dataclass
 class PPONetworkParams:
   """Contains training state for the learner."""
-
+  extractor: Params
   policy: Params
   value: Params
 
@@ -106,7 +106,7 @@ def compute_ppo_loss(
     normalizer_params: Any,
     data: types.Transition,
     rng: jnp.ndarray,
-    ppo_network: ppo_networks.PPONetworks,
+    ppo_network: ppo_networks.PPONetworksUnifiedExtractor,
     entropy_cost: float = 1e-4,
     discounting: float = 0.9,
     reward_scaling: float = 1.0,
@@ -135,18 +135,21 @@ def compute_ppo_loss(
     A tuple (loss, metrics)
   """
   parametric_action_distribution = ppo_network.parametric_action_distribution
+  extractor_apply = ppo_network.feature_extractor.apply
   policy_apply = ppo_network.policy_network.apply
   value_apply = ppo_network.value_network.apply
 
   # Put the time dimension first.
   data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), data)
+  extractor_outputs = extractor_apply(normalizer_params, params.extractor, data.observation)
   policy_logits = policy_apply(
-      normalizer_params, params.policy, data.observation
+      None, params.policy, extractor_outputs
   )
 
-  baseline = value_apply(normalizer_params, params.value, data.observation)
+  baseline = value_apply(None, params.value, extractor_outputs)
   terminal_obs = jax.tree_util.tree_map(lambda x: x[-1], data.next_observation)
-  bootstrap_value = value_apply(normalizer_params, params.value, terminal_obs)
+  terminal_features = extractor_apply(normalizer_params, params.extractor, terminal_obs)
+  bootstrap_value = value_apply(None, params.value, terminal_features)
 
   rewards = data.reward * reward_scaling
   truncation = data.extras['state_extras']['truncation']
