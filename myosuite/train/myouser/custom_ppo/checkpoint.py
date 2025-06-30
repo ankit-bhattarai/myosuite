@@ -19,7 +19,11 @@ from typing import Any, Union
 
 from brax.training import checkpoint
 from brax.training import types
-from brax.training.agents.ppo import networks as ppo_networks
+from myosuite.train.myouser.custom_ppo.networks_vision_multimodal import (
+    make_ppo_networks_unified_extractor,
+    make_inference_fn_unified_extractor,
+    PPONetworksUnifiedExtractor,
+)
 from etils import epath
 from ml_collections import config_dict
 
@@ -47,7 +51,7 @@ def network_config(
     observation_size: types.ObservationSize,
     action_size: int,
     normalize_observations: bool,
-    network_factory: types.NetworkFactory[Union[ppo_networks.PPONetworks]],
+    network_factory: types.NetworkFactory[Union[PPONetworksUnifiedExtractor]],
 ) -> config_dict.ConfigDict:
   """Returns a config dict for re-creating a network from a checkpoint."""
   return checkpoint.network_config(
@@ -57,8 +61,8 @@ def network_config(
 
 def _get_ppo_network(
     config: config_dict.ConfigDict,
-    network_factory: types.NetworkFactory[ppo_networks.PPONetworks],
-) -> ppo_networks.PPONetworks:
+    network_factory: types.NetworkFactory[PPONetworksUnifiedExtractor],
+) -> PPONetworksUnifiedExtractor:
   """Generates a PPO network given config."""
   return checkpoint.get_network(config, network_factory)  # pytype: disable=bad-return-type
 
@@ -66,8 +70,8 @@ def _get_ppo_network(
 def load_policy(
     path: Union[str, epath.Path],
     network_factory: types.NetworkFactory[
-        ppo_networks.PPONetworks
-    ] = ppo_networks.make_ppo_networks,
+        PPONetworksUnifiedExtractor
+    ] = make_ppo_networks_unified_extractor,
     deterministic: bool = True,
 ):
   """Loads policy inference function from PPO checkpoint."""
@@ -81,6 +85,6 @@ def load_policy(
 
   params = load(path)
   ppo_network = _get_ppo_network(config, network_factory)
-  make_inference_fn = ppo_networks.make_inference_fn(ppo_network)
+  make_inference_fn = make_inference_fn_unified_extractor(ppo_network)
 
   return make_inference_fn(params, deterministic=deterministic)

@@ -15,7 +15,7 @@
 """Test PPO checkpointing."""
 
 import functools
-
+#TODO: make the changes to this file to accommodate the new network architecture
 from absl import flags
 from absl.testing import absltest
 from brax.training.acme import running_statistics
