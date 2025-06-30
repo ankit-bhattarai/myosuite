@@ -30,8 +30,9 @@ from brax.envs.base import Env, PipelineEnv, State, Wrapper
 from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
-from brax.training.agents.ppo import train as ppo
-from brax.training.agents.ppo import networks_vision, networks
+# from brax.training.agents.ppo import train as ppo
+from myosuite.train.myouser.custom_ppo import train as ppo
+from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
 from myosuite.envs.myo.myouser.madrona_wrapper import MadronaWrapper
@@ -62,7 +63,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          adaptive_increase_success_rate=0.8,
          adaptive_decrease_success_rate=0.5,
          adaptive_change_step_size=0.05,
-         adaptive_change_min_trials=100):
+         adaptive_change_min_trials=100,
+         vision_output_size=20):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -80,6 +82,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'num_envs': num_envs,
     'vision': vision,
     'vision_mode': vision_mode,
+    'vision_output_size': vision_output_size,
     'activation_function': activation_function,
     'policy_hidden_layer_sizes': policy_hidden_layer_sizes,
     'value_hidden_layer_sizes': value_hidden_layer_sizes,
@@ -193,6 +196,11 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
       return {
           "pixels/depth": (120, 120, 1),  # Depth image
       }
+    elif vision_mode == 'depth':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (48,)          # Vector state
+      }
     else:
       raise NotImplementedError(f'No observation size known for "{vision_mode}"')
 
@@ -203,23 +211,33 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
         activation = linen.relu
       else:
         raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
-      if vision:
-        return networks_vision.make_ppo_networks_vision(
-            observation_size=get_observation_size(),
-            action_size=action_size,
-            preprocess_observations_fn=preprocess_observations_fn,
-            policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
-            value_hidden_layer_sizes=value_hidden_layer_sizes,
-            activation=activation,
-            normalise_channels=True            # Normalize image channels
-        )
-      else:
-        return networks.make_ppo_networks(observation_size=get_observation_size(),
-                                          action_size=action_size,
-                                          preprocess_observations_fn=preprocess_observations_fn,
-                                          policy_hidden_layer_sizes=policy_hidden_layer_sizes,
-                                          value_hidden_layer_sizes=value_hidden_layer_sizes,
-                                          activation=activation)
+      return networks.make_ppo_networks_unified_extractor(
+        observation_size=get_observation_size(),
+        action_size=action_size,
+        preprocess_observations_fn=preprocess_observations_fn,
+        policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+        value_hidden_layer_sizes=value_hidden_layer_sizes,
+        vision_output_size=vision_output_size,
+        activation=activation,
+        normalise_pixels=True,
+      )
+      # if vision:
+      #   return networks_vision.make_ppo_networks_vision(
+      #       observation_size=get_observation_size(),
+      #       action_size=action_size,
+      #       preprocess_observations_fn=preprocess_observations_fn,
+      #       policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
+      #       value_hidden_layer_sizes=value_hidden_layer_sizes,
+      #       activation=activation,
+      #       normalise_channels=True            # Normalize image channels
+      #   )
+      # else:
+      #   return networks.make_ppo_networks(observation_size=get_observation_size(),
+      #                                     action_size=action_size,
+      #                                     preprocess_observations_fn=preprocess_observations_fn,
+      #                                     policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+      #                                     value_hidden_layer_sizes=value_hidden_layer_sizes,
+      #                                     activation=activation)
 
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
@@ -524,6 +542,7 @@ if __name__ == '__main__':
   parser.add_argument('--adaptive_decrease_success_rate', type=float, default=0.5)
   parser.add_argument('--adaptive_change_step_size', type=float, default=0.05)
   parser.add_argument('--adaptive_change_min_trials', type=int, default=100)
+  parser.add_argument('--vision_output_size', type=int, default=20)
   args = parser.parse_args()
 
   main(
@@ -553,4 +572,5 @@ if __name__ == '__main__':
     adaptive_decrease_success_rate=args.adaptive_decrease_success_rate,
     adaptive_change_step_size=args.adaptive_change_step_size,
     adaptive_change_min_trials=args.adaptive_change_min_trials,
+    vision_output_size=args.vision_output_size,
   )
