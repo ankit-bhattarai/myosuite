@@ -31,9 +31,9 @@ from brax.training import pmap
 from brax.training import types
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
-from brax.training.agents.ppo import checkpoint
-from brax.training.agents.ppo import losses as ppo_losses
-from brax.training.agents.ppo import networks as ppo_networks
+from myosuite.train.myouser.custom_ppo import checkpoint
+from myosuite.train.myouser.custom_ppo import losses as ppo_losses
+from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as ppo_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import flax
@@ -222,8 +222,8 @@ def train(
     max_grad_norm: Optional[float] = None,
     normalize_advantage: bool = True,
     network_factory: types.NetworkFactory[
-        ppo_networks.PPONetworks
-    ] = ppo_networks.make_ppo_networks,
+        ppo_networks.PPONetworksUnifiedExtractor
+    ] = ppo_networks.make_ppo_networks_unified_extractor,
     seed: int = 0,
     # eval
     num_evals: int = 1,
@@ -361,7 +361,7 @@ def train(
   local_key, key_env, eval_key = jax.random.split(local_key, 3)
   # key_networks should be global, so that networks are initialized the same
   # way for different processes.
-  key_policy, key_value = jax.random.split(global_key)
+  key_extractor, key_policy, key_value = jax.random.split(global_key, 3)
   del global_key
 
   assert num_envs % device_count == 0
@@ -392,7 +392,7 @@ def train(
   ppo_network = network_factory(
       obs_shape, env.action_size, preprocess_observations_fn=normalize
   )
-  make_policy = ppo_networks.make_inference_fn(ppo_network)
+  make_policy = ppo_networks.make_inference_fn_unified_extractor(ppo_network)
 
   optimizer = optax.adam(learning_rate=learning_rate)
   if max_grad_norm is not None:
@@ -490,6 +490,7 @@ def train(
 
     policy = make_policy((
         training_state.normalizer_params,
+        training_state.params.extractor,
         training_state.params.policy,
         training_state.params.value,
     ))
@@ -530,7 +531,7 @@ def train(
     # Update normalization params and normalize observations.
     normalizer_params = running_statistics.update(
         training_state.normalizer_params,
-        _remove_pixels(data.observation),
+        data.observation['proprioception'],
         pmap_axis_name=_PMAP_AXIS_NAME,
     )
 
@@ -594,6 +595,7 @@ def train(
 
   # Initialize model params and training state.
   init_params = ppo_losses.PPONetworkParams(
+      extractor=ppo_network.feature_extractor.init(key_extractor),
       policy=ppo_network.policy_network.init(key_policy),
       value=ppo_network.value_network.init(key_value),
   )
@@ -604,8 +606,9 @@ def train(
   training_state = TrainingState(  # pytype: disable=wrong-arg-types  # jax-ndarray
       optimizer_state=optimizer.init(init_params),  # pytype: disable=wrong-arg-types  # numpy-scalars
       params=init_params,
-      normalizer_params=running_statistics.init_state(
-          _remove_pixels(obs_shape)
+      #TODO: fix this properly
+      # I think the original format is much better, I just need to modify the .apply function in the feature extractor to use it properly!
+      normalizer_params=running_statistics.init_state(obs_shape['proprioception']
       ),
       env_steps=types.UInt64(hi=0, lo=0),
   )
@@ -635,6 +638,7 @@ def train(
         make_policy,
         (
             training_state.normalizer_params,
+            training_state.params.extractor,
             training_state.params.policy,
             training_state.params.value,
         ),
@@ -671,6 +675,7 @@ def train(
     metrics = evaluator.run_evaluation(
         _unpmap((
             training_state.normalizer_params,
+            training_state.params.extractor,
             training_state.params.policy,
             training_state.params.value,
         )),
@@ -706,6 +711,7 @@ def train(
     # Process id == 0.
     params = _unpmap((
         training_state.normalizer_params,
+        training_state.params.extractor,
         training_state.params.policy,
         training_state.params.value,
     ))
@@ -737,6 +743,7 @@ def train(
   pmap.assert_is_replicated(training_state)
   params = _unpmap((
       training_state.normalizer_params,
+      training_state.params.extractor,
       training_state.params.policy,
       training_state.params.value,
   ))
