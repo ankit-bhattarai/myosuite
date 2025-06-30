@@ -98,7 +98,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             self.vision = True
             from madrona_mjx.renderer import BatchRenderer
             vision_mode = kwargs['vision']['vision_mode']
-            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth', 'rgbd_only', 'depth_only')
+            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth', 'rgbd_only', 'depth_only', 'depth')
             assert vision_mode in allowed_vision_modes, f"Invalid vision mode: {vision_mode} (allowed modes: {allowed_vision_modes})"
             self.vision_mode = vision_mode
             self.batch_renderer = BatchRenderer(m = self.sys,
@@ -299,8 +299,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self._n_frames
 
         if 'vision' in kwargs:
-            print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
-            self.dwell_threshold *= 2   
+            print(f'Using vision, so 2.5x timesing dwell threshold to {self.dwell_threshold*2.5}')
+            self.dwell_threshold *= 2.5  
 
         # Use early termination if target is not hit in time
         # self._steps_since_last_hit = jp.zeros(1)
@@ -409,7 +409,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # combine pixels and depth into a single image
             rgbd = jp.concatenate([pixels, depth], axis=-1)
             update_info.update({"pixels/view_0": rgbd})
-        elif self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only':
+        elif self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth':
             update_info.update({"pixels/view_0": pixels, "pixels/depth": depth})
         else:
             raise ValueError(f"Invalid vision mode: {self.vision_mode}")
@@ -682,7 +682,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         if self.vision:
             obs_dict['pixels/view_0'] = info['pixels/view_0']
-            if self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only':
+            if self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth':
                 obs_dict['pixels/depth'] = info['pixels/depth']
         return obs_dict
     
@@ -697,6 +697,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             return {'pixels/view_0': obs_dict['pixels/view_0']}
         elif self.vision_mode == 'depth_only':
             return {'pixels/depth': obs_dict['pixels/depth']}
+        elif self.vision_mode == 'depth':
+            return {'pixels/depth': obs_dict['pixels/depth'], 'proprioception': obsvec}
         vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
         if self.vision_mode == 'rgb+depth':
             vision_obs['pixels/depth'] = obs_dict['pixels/depth']
