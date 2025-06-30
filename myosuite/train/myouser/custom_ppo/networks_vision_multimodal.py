@@ -101,7 +101,8 @@ class MultimodalFeatureExtractor(linen.Module):
         hidden = self.activation(hidden)
       
       # Flatten
-      hidden = jnp.reshape(hidden, (hidden.shape[0], -1))      
+      spatial_dims = hidden.ndim - 3  # Number of leading dimensions to preserve
+      hidden = jnp.reshape(hidden, hidden.shape[:spatial_dims] + (-1,))
       vision_features.append(hidden)
       
     # Concatenate all vision features and pass through linear layer
@@ -151,10 +152,11 @@ def make_unified_feature_extractor(
   )
 
   def apply(processor_params, extractor_params, obs):
+    #TODO: fix this properly
     proprioception_obs = preprocess_observations_fn(
-      obs[proprioception_obs_key], processor_params
+      obs["proprioception"], processor_params
     )
-    obs = {**obs, proprioception_obs_key: proprioception_obs}
+    obs = {**obs, "proprioception": proprioception_obs}
 
     features = feature_extractor.apply(extractor_params, obs)
 
