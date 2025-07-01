@@ -42,6 +42,16 @@ from matplotlib import pyplot as plt
 import mediapy as media
 import wandb
 
+class ProgressLogger:
+  def __init__(self):
+    self.times = []
+
+  def progress(self, num_steps, metrics):
+    self.times.append(datetime.now())
+    if len(self.times) == 2:
+        print(f'time to jit: {self.times[1] - self.times[0]}')
+    wandb.log({'num_steps': num_steps, **metrics})
+
 def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_eval_eps=1,
          restore_params_path=None, init_target_area_width_scale=0.,
          num_envs=3072,
@@ -254,136 +264,14 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
       )
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
 
-  x_data = []
-  y_data = []
-  ydataerr = []
-  times = [datetime.now()]
 
-  x_data_train = []
-  y_data_train = []
-  y_data_train_length = []
-  y_data_train_success = []
-  y_data_train_curriculum_state = []
-
-  max_y, min_y = 150, 0
-  max_episode_length = 800
-  def progress(num_steps, metrics):
-
-    if len(times) == 2:
-       print(f'time to jit: {times[1] - times[0]}')
-    wandb.log({'num_steps': num_steps, **metrics})
-    
-    # print(metrics)
-
-    if 'eval/episode_reward' in metrics:
-      ## called during evaluation
-      print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
-          task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
-          episode length: {metrics['eval/avg_episode_length']}")
-      times.append(datetime.now())
-      x_data.append(num_steps)
-      y_data.append(metrics['eval/episode_reward'])
-      ydataerr.append(metrics['eval/episode_reward_std'])
-
-      plt.xlim([0, train_fn.keywords['num_timesteps'] * 1.25])
-      plt.ylim([min_y, max_y])
-
-      plt.xlabel('# environment steps')
-      plt.ylabel('reward per episode')
-      plt.title(f'y={y_data[-1]:.3f}')
-
-      plt.errorbar(
-          x_data, y_data, yerr=ydataerr)
-      plt.show()
-
-      cwd = os.path.dirname(os.path.abspath(__file__))
-      os.makedirs(cwd + '/myosuite-mjx-policies/', exist_ok=True)
-      fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress.png')
-      plt.savefig(fig_path)
-    elif 'episode/sum_reward' in metrics:
-      ## called during training
-          # print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
-          # task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
-          # episode length: {metrics['eval/avg_episode_length']}")
-      times.append(datetime.now())
-      x_data_train.append(num_steps)
-      y_data_train.append(metrics['episode/sum_reward'])
-      y_data_train_length.append(metrics['episode/length'])
-      y_data_train_success.append(metrics['episode/success_rate'])
-      y_data_train_curriculum_state.append(metrics['episode/target_area_dynamic_width_scale'])
-
-      cwd = os.path.dirname(os.path.abspath(__file__))
-      os.makedirs(cwd + '/myosuite-mjx-policies/', exist_ok=True)
-
-      ## Reward
-      plt.xlim([0, train_fn.keywords['num_timesteps'] * 1.25])
-      plt.ylim([min_y, max_y])
-
-      plt.xlabel('# environment steps')
-      plt.ylabel('reward per episode')
-      plt.title(f'y={y_data_train[-1]:.3f}')
-
-      plt.errorbar(
-          x_data_train, y_data_train) # yerr=ydataerr)
-      plt.show()
-
-      fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_reward.png')
-      plt.savefig(fig_path)
-      plt.close()
-
-      ## Episode length
-      plt.xlim([0, train_fn.keywords['num_timesteps'] * 1.25])
-      plt.ylim([0, max_episode_length * 1.1])
-
-      plt.xlabel('# environment steps')
-      plt.ylabel('episode length')
-      plt.title(f'length={y_data_train_length[-1]:.3f}')
-      plt.errorbar(
-          x_data_train, y_data_train_length) # yerr=ydataerr)
-      plt.show()
-      plt.show()
-
-      fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_length.png')
-      plt.savefig(fig_path)
-      plt.close()
-      
-      ## Success rate
-      plt.xlim([0, train_fn.keywords['num_timesteps'] * 1.25])
-      plt.ylim([0, 1])
-
-      plt.xlabel('# environment steps')
-      plt.ylabel('success rate')
-      plt.title(f'success={y_data_train_success[-1]:.3f}')
-      plt.errorbar(
-          x_data_train, y_data_train_success) # yerr=ydataerr)
-      plt.show()
-
-      fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_success.png')
-      plt.savefig(fig_path)
-      plt.close()
-      
-      ## Curriculum state
-      plt.xlim([0, train_fn.keywords['num_timesteps'] * 1.25])
-      plt.ylim([0, 1])
-
-      plt.xlabel('# environment steps')
-      plt.ylabel('curriculum state')
-      plt.title(f'width={y_data_train_curriculum_state[-1]:.3f}')
-      plt.errorbar(
-          x_data_train, y_data_train_curriculum_state) # yerr=ydataerr)
-      plt.show()
-
-      fig_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_progress_train_curriculum.png')
-      try:
-        plt.savefig(fig_path)
-        plt.close()
-      except:
-        pass
 
   ## TRAINING
   wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
-  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress)
-
+  progress_logger = ProgressLogger()
+  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress)
+  times = progress_logger.times
+  
   if n_train_steps > 0 and len(times) > 2:
     print(f'time to jit: {times[1] - times[0]}')
     print(f'time to train: {times[-1] - times[1]}')
