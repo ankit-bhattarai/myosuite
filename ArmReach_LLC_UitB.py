@@ -26,8 +26,7 @@ from brax import envs
 from brax import math
 from brax.base import Base, Motion, Transform, System
 from brax.base import State as PipelineState
-from brax.envs.base import Env, PipelineEnv, State, Wrapper
-from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
+from myosuite.train.utils.wrapper import wrap_curriculum_training
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 # from brax.training.agents.ppo import train as ppo
@@ -35,7 +34,6 @@ from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
-from myosuite.envs.myo.myouser.madrona_wrapper import MadronaWrapper
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0
 
 from matplotlib import pyplot as plt
@@ -268,10 +266,11 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
   ## TRAINING
   wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
+  # Adding custom task specific adaptive target wrapper
+  wrapped_env = AdaptiveTargetWrapper(wrapped_env)
   progress_logger = ProgressLogger()
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress)
   times = progress_logger.times
-  
   if n_train_steps > 0 and len(times) > 2:
     print(f'time to jit: {times[1] - times[0]}')
     print(f'time to train: {times[-1] - times[1]}')
@@ -301,40 +300,6 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
   _render(rollouts, experiment_id=experiment_id)
 
-def wrap_curriculum_training(
-    env: Env,
-    vision: bool = False,
-    num_vision_envs: int = 1,
-    episode_length: int = 1000,
-    action_repeat: int = 1,
-    randomization_fn: Optional[
-        Callable[[System], Tuple[System, System]]
-    ] = None,
-) -> Wrapper:
-    """Common wrapper pattern for all training agents.
-
-    Args:
-      env: environment to be wrapped
-      episode_length: length of episode
-      action_repeat: how many repeated actions to take per step
-      randomization_fn: randomization function that produces a vectorized system
-        and in_axes to vmap over
-
-    Returns:
-      An environment that is wrapped with Episode and AutoReset wrappers.  If the
-      environment did not already have batch dimensions, it is additional Vmap
-      wrapped.
-    """
-    if vision:
-      env = MadronaWrapper(env, num_worlds=num_vision_envs, randomization_fn=randomization_fn)
-    elif randomization_fn is None:
-      env = VmapWrapper(env)
-    else:
-      env = DomainRandomizationVmapWrapper(env, randomization_fn)
-    env = EpisodeWrapper(env, episode_length, action_repeat)
-    env = AdaptiveTargetWrapper(env)
-
-    return env
 
 def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single'):
   if rng is None:

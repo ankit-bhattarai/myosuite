@@ -26,6 +26,8 @@ from jax import numpy as jp
 import mujoco
 from mujoco import mjx
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
+from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
+from brax.base import System
 from brax import base
 
 from mujoco_playground._src import mjx_env
@@ -194,3 +196,37 @@ class MadronaWrapper:
   def __getattr__(self, name):
     """Delegate attribute access to the wrapped instance."""
     return getattr(self._env.unwrapped, name)
+
+
+def wrap_curriculum_training(
+    env: Env,
+    vision: bool = False,
+    num_vision_envs: int = 1,
+    episode_length: int = 1000,
+    action_repeat: int = 1,
+    randomization_fn: Optional[
+        Callable[[System], Tuple[System, System]]
+    ] = None,
+) -> Wrapper:
+    """Common wrapper pattern for all training agents.
+
+    Args:
+      env: environment to be wrapped
+      episode_length: length of episode
+      action_repeat: how many repeated actions to take per step
+      randomization_fn: randomization function that produces a vectorized system
+        and in_axes to vmap over
+
+    Returns:
+      An environment that is wrapped with Episode and AutoReset wrappers.  If the
+      environment did not already have batch dimensions, it is additional Vmap
+      wrapped.
+    """
+    if vision:
+      env = MadronaWrapper(env, num_worlds=num_vision_envs, randomization_fn=randomization_fn)
+    elif randomization_fn is None:
+      env = VmapWrapper(env)
+    else:
+      env = DomainRandomizationVmapWrapper(env, randomization_fn)
+    env = EpisodeWrapper(env, episode_length, action_repeat)
+    return env
