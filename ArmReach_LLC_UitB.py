@@ -73,6 +73,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          adaptive_change_step_size=0.05,
          adaptive_change_min_trials=100,
          vision_output_size=20,
+         proprioception_output_size=128,
+         fused_output_size=148,
          weights_reach=1.0,
          weights_bonus=8.0,
          reach_metric_coefficient=10.0):
@@ -94,6 +96,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'vision': vision,
     'vision_mode': vision_mode,
     'vision_output_size': vision_output_size,
+    'proprioception_output_size': proprioception_output_size,
+    'fused_output_size': fused_output_size,
     'activation_function': activation_function,
     'policy_hidden_layer_sizes': policy_hidden_layer_sizes,
     'value_hidden_layer_sizes': value_hidden_layer_sizes,
@@ -234,6 +238,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
         policy_hidden_layer_sizes=policy_hidden_layer_sizes,
         value_hidden_layer_sizes=value_hidden_layer_sizes,
         vision_output_size=vision_output_size,
+        proprioception_output_size=proprioception_output_size,
+        fused_output_size=fused_output_size,
         activation=activation,
         normalise_pixels=True,
       )
@@ -404,6 +410,8 @@ if __name__ == '__main__':
   parser.add_argument('--adaptive_change_step_size', type=float, default=0.05)
   parser.add_argument('--adaptive_change_min_trials', type=int, default=100)
   parser.add_argument('--vision_output_size', type=int, default=20)
+  parser.add_argument('--proprioception_output_size', type=int, default=128)
+  parser.add_argument('--fused_output_size', type=int, default=148)
   parser.add_argument('--weights_reach', type=float, default=1.0)
   parser.add_argument('--weights_bonus', type=float, default=8.0)
   parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
@@ -437,6 +445,8 @@ if __name__ == '__main__':
     adaptive_change_step_size=args.adaptive_change_step_size,
     adaptive_change_min_trials=args.adaptive_change_min_trials,
     vision_output_size=args.vision_output_size,
+    proprioception_output_size=args.proprioception_output_size,
+    fused_output_size=args.fused_output_size,
     weights_reach=args.weights_reach,
     weights_bonus=args.weights_bonus,
     reach_metric_coefficient=args.reach_metric_coefficient,

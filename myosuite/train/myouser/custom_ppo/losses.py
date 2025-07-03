@@ -21,6 +21,7 @@ from typing import Any, Tuple
 
 from brax.training import types
 from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as ppo_networks
+from myosuite.train.myouser.custom_ppo.networks_vision_multimodal import ExtractorParams
 from brax.training.types import Params
 import flax
 import jax
@@ -30,7 +31,7 @@ import jax.numpy as jnp
 @flax.struct.dataclass
 class PPONetworkParams:
   """Contains training state for the learner."""
-  extractor: Params
+  extractor: ExtractorParams
   policy: Params
   value: Params
 
@@ -113,6 +114,7 @@ def compute_ppo_loss(
     gae_lambda: float = 0.95,
     clipping_epsilon: float = 0.3,
     normalize_advantage: bool = True,
+    reconstruction_loss_weight: float = 1.0,
 ) -> Tuple[jnp.ndarray, types.Metrics]:
   """Computes PPO loss.
 
@@ -141,14 +143,17 @@ def compute_ppo_loss(
 
   # Put the time dimension first.
   data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), data)
-  extractor_outputs = extractor_apply(normalizer_params, params.extractor, data.observation)
+  extractor_outputs = extractor_apply(normalizer_params, params.extractor, data.observation)  
   policy_logits = policy_apply(
-      None, params.policy, extractor_outputs
+      None, params.policy, extractor_outputs['combined_features']
   )
 
-  baseline = value_apply(None, params.value, extractor_outputs)
+  reconstruction_error = extractor_outputs['cnn_decoder_preds'] - extractor_outputs['cnn_inputs']
+  reconstruction_loss = jnp.mean(reconstruction_error * reconstruction_error) * reconstruction_loss_weight
+
+  baseline = value_apply(None, params.value, extractor_outputs['combined_features'])
   terminal_obs = jax.tree_util.tree_map(lambda x: x[-1], data.next_observation)
-  terminal_features = extractor_apply(normalizer_params, params.extractor, terminal_obs)
+  terminal_features = extractor_apply(normalizer_params, params.extractor, terminal_obs)['combined_features']
   bootstrap_value = value_apply(None, params.value, terminal_features)
 
   rewards = data.reward * reward_scaling
@@ -188,10 +193,11 @@ def compute_ppo_loss(
   entropy = jnp.mean(parametric_action_distribution.entropy(policy_logits, rng))
   entropy_loss = entropy_cost * -entropy
 
-  total_loss = policy_loss + v_loss + entropy_loss
+  total_loss = policy_loss + v_loss + entropy_loss + reconstruction_loss
   return total_loss, {
       'total_loss': total_loss,
       'policy_loss': policy_loss,
       'v_loss': v_loss,
       'entropy_loss': entropy_loss,
+      'reconstruction_loss': reconstruction_loss,
   }
