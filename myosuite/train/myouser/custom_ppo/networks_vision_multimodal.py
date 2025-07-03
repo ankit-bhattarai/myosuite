@@ -38,6 +38,14 @@ class PPONetworksUnifiedExtractor:
   value_network: FeedForwardNetwork
   parametric_action_distribution: distribution.ParametricDistribution
 
+@flax.struct.dataclass
+class UnifiedExtractor:
+  cnn_normaliser: linen.Module
+  cnn_encoder: FeedForwardNetwork
+  cnn_decoder: FeedForwardNetwork
+  state_encoder: FeedForwardNetwork
+  inputs_fuser: FeedForwardNetwork
+
 @dataclass
 class CNNLayer:
   features: int
@@ -46,31 +54,11 @@ class CNNLayer:
   padding: Tuple[int, int]
   use_bias: bool = True
 
+class CNNNormaliser(linen.Module):
 
-class MultimodalFeatureExtractor(linen.Module):
-  """Multimodal feature extractor with vision and proprioception branches."""
-  
-  vision_output_size: int = 256
-  proprioception_output_size: int = 128
-  proprioception_obs_key: str = 'proprioception'
-  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01)
-  cnn_layers: Sequence[CNNLayer] = (
-    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
-    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
-    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
-  )
-  normalise_pixels: bool = True
-  
   @linen.compact
-  def __call__(self, data: dict):
-    # Vision branch
-    vision_features = []
-    pixels_hidden = {k: v for k, v in data.items() if k.startswith('pixels/')}
-
-    assert len(pixels_hidden) >= 1, "At least one vision input is required"
-
-    if self.normalise_pixels:
-      # Calculates shared statistics over an entire 2D image.
+  def __call__(self, pixels_hidden: dict):
+    # Calculates shared statistics over an entire 2D image.
       image_layernorm = functools.partial(
           linen.LayerNorm,
           use_bias=False,
@@ -85,9 +73,98 @@ class MultimodalFeatureExtractor(linen.Module):
         return jnp.stack(normalised, axis=-1)
 
       pixels_hidden = jax.tree.map(ln_per_chan, pixels_hidden)
-    
+      return pixels_hidden
+
+class CNNDecoder(linen.Module):
+  vision_input_size: int = 256
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01)
+  cnn_layers: Sequence[CNNLayer] = (
+    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+  )
+
+  @linen.compact
+  def __call__(self, vision_features: jax.Array):
+    hidden = vision_features
+
+    hidden = linen.Dense(
+      features=7200,
+      use_bias=True,
+    )(hidden)
+    hidden = self.activation(hidden)
+
+    # Unflatten
+    spatial_dims = hidden.ndim - 1  # Number of leading dimensions to preserve
+
+    n = int(jnp.sqrt(7200 / self.cnn_layers[0].features))
+    hidden = jnp.reshape(hidden, hidden.shape[:spatial_dims] + (n, n, self.cnn_layers[0].features))
+
+    for i in range(len(self.cnn_layers) - 1):
+      current_layer = self.cnn_layers[i]
+      next_layer_features = self.cnn_layers[i + 1].features
+      hidden = linen.ConvTranspose(features=next_layer_features,
+                                   kernel_size=current_layer.kernel_size,
+                                   strides=current_layer.stride,
+                                   use_bias=current_layer.use_bias,
+                                   )(hidden)
+      hidden = self.activation(hidden)
+
+    # Last layer
+    current_layer = self.cnn_layers[-1]
+    hidden = linen.ConvTranspose(features=current_layer.features,
+                                 kernel_size=current_layer.kernel_size,
+                                 strides=current_layer.stride,
+                                 use_bias=current_layer.use_bias,
+                                 )(hidden)
+    # No activation for the last layer
+
+    return hidden
+
+def make_cnn_decoder(
+  observation_size: Tuple[int, ...],
+  vision_input_size: int = 256,
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01),
+  cnn_layers: Sequence[CNNLayer] = (
+    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+  ),
+) -> CNNDecoder:
+  decoder = CNNDecoder(
+    vision_input_size=vision_input_size,
+    activation=activation,
+    cnn_layers=cnn_layers,
+  )
+  def apply(decoder_params, vision_features):
+    hidden = decoder.apply(decoder_params, vision_features)
+    return hidden
+  
+  dummy_obs = jnp.zeros((1,) + observation_size)
+  
+  return FeedForwardNetwork(
+    init=lambda key: decoder.init(key, dummy_obs), apply=apply
+  )
+
+class CNNEncoder(linen.Module):
+  vision_output_size: int = 256
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01)
+  cnn_layers: Sequence[CNNLayer] = (
+    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+  )
+
+  @linen.compact
+  def __call__(self, pixels_hidden: dict):
+    "Note that the input is normalised by the CNNNormaliser before being passed to the encoder."
+    # Vision branch
+    vision_features = []
+
+    assert len(pixels_hidden) == 1, "Only one vision input is currently supported"
+
     for key in pixels_hidden:
-      # CNN layers for vision
+    # CNN layers for vision
       hidden = pixels_hidden[key]
 
       for layer in self.cnn_layers:
@@ -112,7 +189,133 @@ class MultimodalFeatureExtractor(linen.Module):
         use_bias=True,
     )(vision_concat)
     vision_out = self.activation(vision_out)
-    
+
+    return vision_out
+
+def make_cnn_encoder(
+  observation_size: Mapping[str, Tuple[int, ...]],
+  vision_output_size: int = 256,
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01),
+  cnn_layers: Sequence[CNNLayer] = (
+    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+  )
+) -> CNNEncoder:
+  """Make CNN encoder."""
+  cnn_encoder = CNNEncoder(
+    vision_output_size=vision_output_size,
+    activation=activation,
+    cnn_layers=cnn_layers,
+  )
+  def apply(cnn_encoder_params, obs):
+    features = cnn_encoder.apply(cnn_encoder_params, obs)
+    return features
+  
+  dummy_obs = {
+      key: jnp.zeros((1,) + shape) for key, shape in observation_size.items()
+  }
+  return FeedForwardNetwork(
+      init=lambda key: cnn_encoder.init(key, dummy_obs), apply=apply
+  )
+
+class StateEncoder(linen.Module):
+  """Encodes the proprioception state"""
+  proprioception_output_size: int = 128
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01)
+
+  @linen.compact
+  def __call__(self, proprioception_input: jax.Array):
+    proprioception_out = linen.Dense(
+        features=self.proprioception_output_size,
+        use_bias=True,
+    )(proprioception_input)
+    proprioception_out = self.activation(proprioception_out)
+    return proprioception_out
+  
+def make_state_encoder(
+  observation_size: Tuple[int, ...],
+  proprioception_output_size: int = 128,
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01),
+) -> StateEncoder:
+  state_encoder = StateEncoder(
+    proprioception_output_size=proprioception_output_size,
+    activation=activation,
+  )
+  def apply(state_encoder_params, proprioception_input):
+    proprioception_out = state_encoder.apply(state_encoder_params, proprioception_input)
+    return proprioception_out
+  
+  dummy_obs = jnp.zeros((1,) + observation_size)
+  return FeedForwardNetwork(
+      init=lambda key: state_encoder.init(key, dummy_obs), apply=apply
+  )
+
+class InputsFuser(linen.Module):
+  """Fuses vision and proprioception inputs."""
+  combined_output_size: int = 384
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01)
+
+  @linen.compact
+  def __call__(self, vision_input, proprioception_input):
+    vision_layernorm = linen.LayerNorm(use_bias=False, use_scale=False)
+    proprioception_layernorm = linen.LayerNorm(use_bias=False, use_scale=False)
+
+    vision_hidden = vision_layernorm(vision_input)
+    proprioception_hidden = proprioception_layernorm(proprioception_input)
+
+    hidden = jnp.concatenate([vision_hidden, proprioception_hidden], axis=-1)
+    hidden = linen.Dense(
+        features=self.combined_output_size,
+        use_bias=True,
+    )(hidden)
+    hidden = self.activation(hidden)
+    return hidden
+
+def make_inputs_fuser(
+    vision_observation_size: Tuple[int, ...],
+    proprioception_observation_size: Tuple[int, ...],
+    combined_output_size: int = 384,
+    activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01),
+) -> InputsFuser:
+  inputs_fuser = InputsFuser(
+    combined_output_size=combined_output_size,
+    activation=activation,
+  )
+
+  def apply(inputs_fuser_params, vision_input, proprioception_input):
+    hidden = inputs_fuser.apply(inputs_fuser_params, vision_input, proprioception_input)
+    return hidden
+  
+  dummy_obs = (jnp.zeros((1,) + vision_observation_size), 
+               jnp.zeros((1,) + proprioception_observation_size))
+  return FeedForwardNetwork(
+      init=lambda key: inputs_fuser.init(key, *dummy_obs), apply=apply
+  )
+ 
+class MultimodalFeatureExtractor(linen.Module):
+  """Multimodal feature extractor with vision and proprioception branches."""
+  
+  vision_output_size: int = 256
+  proprioception_output_size: int = 128
+  fused_output_size: int = 384
+  proprioception_obs_key: str = 'proprioception'
+  activation: ActivationFn = functools.partial(linen.leaky_relu, negative_slope=0.01)
+  cnn_layers: Sequence[CNNLayer] = (
+    CNNLayer(features=8, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+    CNNLayer(features=32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+  )
+  normalise_pixels: bool = True
+  
+  @linen.compact
+  def __call__(self, data: dict):
+    # Vision branch
+    pixels_hidden = {k: v for k, v in data.items() if k.startswith('pixels/')}
+  
+    vision_out = CNNEncoder(activation=self.activation,
+                     cnn_layers=self.cnn_layers,
+                     normalise_pixels=self.normalise_pixels)(pixels_hidden)  
     
     # Proprioception branch
     assert self.proprioception_obs_key in data, "Proprioception input is required"
