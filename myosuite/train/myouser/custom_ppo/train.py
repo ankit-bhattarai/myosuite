@@ -521,12 +521,6 @@ def train(
     )
     assert data.discount.shape[1:] == (unroll_length,)
 
-    if log_training_metrics:  # log unroll metrics
-      jax.debug.callback(
-          metrics_aggregator.update_episode_metrics,
-          data.extras['state_extras']['episode_metrics'],
-          data.extras['state_extras']['episode_done'],
-      )
 
     # Update normalization params and normalize observations.
     normalizer_params = running_statistics.update(
@@ -550,6 +544,20 @@ def train(
         normalizer_params=normalizer_params,
         env_steps=training_state.env_steps + env_step_per_training_step,
     )
+    episode_metrics = data.extras['state_extras']['episode_metrics']
+    episode_done = data.extras['state_extras']['episode_done']
+    def get_metrics_into_shape_of_done(x):
+      mean = x.mean()
+      return jnp.full(episode_done.shape, mean)
+    
+    new_metrics = jax.tree_map(get_metrics_into_shape_of_done, metrics)
+    episode_metrics.update(new_metrics)
+    if log_training_metrics:  # log unroll metrics
+      jax.debug.callback(
+          metrics_aggregator.update_episode_metrics,
+          episode_metrics,
+          data.extras['state_extras']['episode_done'],
+      )
     return (new_training_state, state, new_key), metrics
 
   def training_epoch(
