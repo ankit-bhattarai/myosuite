@@ -30,7 +30,7 @@ from brax.io import html, mjcf, model
 class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
     # DEFAULT_OBS_KEYS = ['reach_dist', 'inside_target', 'steps_inside_target', 'target_success',    'qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']  #TODO: exclude 'reach_dist' etc.
-    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']
+    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act'] #, 'target_pos', 'target_radius']
     DEFAULT_RWD_KEYS_AND_WEIGHTS = {
         "reach": 1.0,
         "bonus": 8.0,
@@ -276,7 +276,20 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         
         # Setup reward function and observation components, and other meta-parameters
         self.rwd_keys_wt = weighted_reward_keys
+        if 'weights/reach' in kwargs:
+            print(f'Overriding reach weight to {kwargs["weights/reach"]}')
+            self.rwd_keys_wt['reach'] = kwargs['weights/reach']
+        if 'weights/bonus' in kwargs:
+            print(f'Overriding bonus weight to {kwargs["weights/bonus"]}')
+            self.rwd_keys_wt['bonus'] = kwargs['weights/bonus']
         self.obs_keys = obs_keys
+        if 'reach_metric_coefficient' in kwargs:
+            self.reach_metric_coefficient = kwargs['reach_metric_coefficient']
+            print(f'Overriding reach metric coefficient to {self.reach_metric_coefficient}')
+        else:
+            self.reach_metric_coefficient = 10.0
+        print(f'Reach metric coefficient: {self.reach_metric_coefficient}')
+        print(f'Reward keys and weights: {self.rwd_keys_wt}')
 
         self.tip_sids = []
         self.target_sids = []
@@ -735,9 +748,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         act_mag = jp.linalg.norm(obs_dict['act'], axis=-1)/self._na if self._na != 0 else 0
         # far_th = self.far_th*len(self.tip_sids) if jp.squeeze(obs_dict['time'])>2*self.dt else jp.inf
         # near_th = len(self.tip_sids)*.0125
+        rm = self.reach_metric_coefficient 
         rwd_dict = collections.OrderedDict((
             # Optional Keys
-            ('reach',   1.*(jp.exp(-reach_dist_to_target_bound*10.) - 1.)/10.),  #-1.*reach_dist)
+            ('reach',   1.*(jp.exp(-reach_dist_to_target_bound*rm) - 1.)/rm),  #-1.*reach_dist)
             ('bonus',   1.*(obs_dict['target_success'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
             ('neural_effort', -1.*(last_ctrl ** 2)),
             ('act_reg', -1.*act_mag),

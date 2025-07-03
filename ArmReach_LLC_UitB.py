@@ -72,7 +72,10 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          adaptive_decrease_success_rate=0.5,
          adaptive_change_step_size=0.05,
          adaptive_change_min_trials=100,
-         vision_output_size=20):
+         vision_output_size=20,
+         weights_reach=1.0,
+         weights_bonus=8.0,
+         reach_metric_coefficient=10.0):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -101,7 +104,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'discounting': discounting,
     'learning_rate': learning_rate,
     'entropy_cost': entropy_cost,
-    'batch_size': batch_size
+    'batch_size': batch_size,
   }
   kwargs = {
             'frame_skip': 25,
@@ -119,6 +122,9 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
             'reset_type': 'range_uniform',
             # 'max_trials': 10
             'num_envs': num_envs,
+            'weights/reach': weights_reach,
+            'weights/bonus': weights_bonus,
+            'reach_metric_coefficient': reach_metric_coefficient,
         }
   if vision:
     kwargs['vision'] = {
@@ -135,7 +141,9 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   cwd = os.path.dirname(os.path.abspath(__file__))
   if restore_params_path is not None:
     restore_params = model.load_params(cwd + '/' + restore_params_path)
+    print(f'Restored params from {restore_params_path}')
   else:
+
     restore_params = None
 
 
@@ -179,22 +187,22 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   
   def get_observation_size():
     if 'vision' not in kwargs:
-      return 48
+      return 44
     if vision_mode == 'rgb':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
-          "proprioception": (48,)          # Vector state
+          "proprioception": (44,)          # Vector state
           }
     elif vision_mode == 'rgbd':
       return {
           "pixels/view_0": (120, 120, 4),  # RGBD image
-          "proprioception": (48,)          # Vector state
+          "proprioception": (44,)          # Vector state
       }
     elif vision_mode == 'rgb+depth':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
           "pixels/depth": (120, 120, 1),  # Depth image
-          "proprioception": (48,)          # Vector state
+          "proprioception": (44,)          # Vector state
           }
     elif vision_mode == 'rgbd_only':
       return {
@@ -207,7 +215,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     elif vision_mode == 'depth':
       return {
           "pixels/depth": (120, 120, 1),  # Depth image
-          "proprioception": (48,)          # Vector state
+          "proprioception": (44,)          # Vector state
       }
     else:
       raise NotImplementedError(f'No observation size known for "{vision_mode}"')
@@ -396,6 +404,9 @@ if __name__ == '__main__':
   parser.add_argument('--adaptive_change_step_size', type=float, default=0.05)
   parser.add_argument('--adaptive_change_min_trials', type=int, default=100)
   parser.add_argument('--vision_output_size', type=int, default=20)
+  parser.add_argument('--weights_reach', type=float, default=1.0)
+  parser.add_argument('--weights_bonus', type=float, default=8.0)
+  parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
   args = parser.parse_args()
 
   main(
@@ -426,4 +437,7 @@ if __name__ == '__main__':
     adaptive_change_step_size=args.adaptive_change_step_size,
     adaptive_change_min_trials=args.adaptive_change_min_trials,
     vision_output_size=args.vision_output_size,
+    weights_reach=args.weights_reach,
+    weights_bonus=args.weights_bonus,
+    reach_metric_coefficient=args.reach_metric_coefficient,
   )
