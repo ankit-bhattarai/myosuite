@@ -42,7 +42,7 @@ import wandb
 
 class ProgressLogger:
   def __init__(self):
-    self.times = []
+    self.times = [datetime.now()]
 
   def progress(self, num_steps, metrics):
     self.times.append(datetime.now())
