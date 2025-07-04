@@ -241,6 +241,7 @@ def train(
     restore_checkpoint_path: Optional[str] = None,
     restore_params: Optional[Any] = None,
     restore_value_fn: bool = True,
+    reconstruction_loss_weight: float = 1.0,
 ):
   """PPO training.
 
@@ -411,6 +412,7 @@ def train(
       gae_lambda=gae_lambda,
       clipping_epsilon=clipping_epsilon,
       normalize_advantage=normalize_advantage,
+      reconstruction_loss_weight=reconstruction_loss_weight,
   )
 
   gradient_update_fn = gradients.gradient_update_fn(

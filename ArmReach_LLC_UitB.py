@@ -77,7 +77,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          fused_output_size=148,
          weights_reach=1.0,
          weights_bonus=8.0,
-         reach_metric_coefficient=10.0):
+         reach_metric_coefficient=10.0,
+         reconstruction_loss_weight=1.0):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -109,6 +110,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'learning_rate': learning_rate,
     'entropy_cost': entropy_cost,
     'batch_size': batch_size,
+    'reconstruction_loss_weight': reconstruction_loss_weight,
   }
   kwargs = {
             'frame_skip': 25,
@@ -273,6 +275,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
       log_training_metrics=True,
       restore_params=restore_params,
       network_factory=custom_network_factory,
+      reconstruction_loss_weight=reconstruction_loss_weight,
       )
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
 
@@ -415,6 +418,7 @@ if __name__ == '__main__':
   parser.add_argument('--weights_reach', type=float, default=1.0)
   parser.add_argument('--weights_bonus', type=float, default=8.0)
   parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
+  parser.add_argument('--reconstruction_loss_weight', type=float, default=1.0)
   args = parser.parse_args()
 
   main(
@@ -450,4 +454,5 @@ if __name__ == '__main__':
     weights_reach=args.weights_reach,
     weights_bonus=args.weights_bonus,
     reach_metric_coefficient=args.reach_metric_coefficient,
+    reconstruction_loss_weight=args.reconstruction_loss_weight,
   )
