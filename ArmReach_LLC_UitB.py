@@ -232,45 +232,6 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   else:
 
     restore_params = None
-
-
-  def _render(rollouts, experiment_id='ArmReach', video_type='single', height=480, width=640, camera='for_testing'):
-
-    front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
-    front_view_pos[1] = -2
-    front_view_pos[2] = 0.65
-    env.sys.mj_model.camera(camera).poscom0 = front_view_pos
-
-    videos = []
-    for rollout in rollouts:
-      
-      # change the target position of the environment for rendering
-      ## TODO: generate new target for each rollout
-      # env.sys.mj_model.site_pos[env._target_sids] = rollout['wrist_target']
-
-      if video_type == 'single':
-        videos += env.render(rollout['states'], height=height, width=width, camera=camera)
-      elif video_type == 'multiple':
-        videos.append(env.render(rollout['states'], height=height, width=width, camera=camera))
-
-    os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
-    eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
-
-    if video_type == 'single':
-      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
-    elif video_type == 'multiple':
-      for i, video in enumerate(videos):
-        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
-
-    return None
-  
-  def _create_render(env, height=480, width=640, camera='for_testing'):
-    front_view_pos = env.sys.mj_model.camera(camera).pos.copy()
-    front_view_pos[1] = -2
-    front_view_pos[2] = 0.65
-    env.sys.mj_model.camera(camera).poscom0 = front_view_pos
-
-    return functools.partial(env.render, height=height, width=width, camera=camera)
   
   network_factory_function = functools.partial(custom_network_factory, vision=vision,
                                                vision_mode=vision_mode,
@@ -318,85 +279,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
   # TODO: store metrics as well
   print(metrics)
-
-  ## EVALUATION
-  ##TODO: load internal env state ('target_area_dynamic_width_scale')
-  backend = 'positional' # @param ['generalized', 'positional', 'spring']
-  eval_env = envs.create(env_name=env_name, model_path=path, eval_mode=True, backend=backend, episode_length=env._episode_length, **kwargs)
-
-  params = model.load_params(param_path)
-  inference_fn = make_inference_fn(params)
-
-  times = [datetime.now()]
-
-  render_fn = _create_render(env)
-  rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn)
-
-  _render(rollouts, experiment_id=experiment_id)
-
-
-def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single'):
-  if rng is None:
-    rng = jax.random.PRNGKey(seed=0)
-  
-  jit_env_reset = jax.jit(env.reset)
-  jit_env_step = jax.jit(env.step)
-  jit_inference_fn = jax.jit(inference_fn)
-
-  state = jit_env_reset(rng=rng)
-  act = jp.zeros(env.sys.nu)
-  state = jit_env_step(state, act)
-
-  times.append(datetime.now())
-  print(f'time to jit: {times[1] - times[0]}')
-
-  rollouts = []
-  videos = []
-  for episode in range(n_eps):
-    rng = jax.random.PRNGKey(seed=episode)
-    state = jit_env_reset(rng=rng)
-    rollout = {}
-    # rollout['wrist_target'] = state.info['wrist_target']
-    states = []
-    states_pointer = 0
-    frame_collection = []
-    # while not (state.done or state.info['truncation']):
-    done = state.done
-    while not (done or state.info['truncation']):
-      states.append(state.pipeline_state)
-      act_rng, rng = jax.random.split(rng)
-      act, _ = jit_inference_fn(state.obs, act_rng)
-      state = jit_env_step(state, act)
-      
-      obs_dict = env.get_obs_dict(state.pipeline_state, state.info)
-      done = obs_dict['task_completed']
-      if obs_dict['target_success'] or obs_dict['target_fail']:
-        # print('RENDER', rollout_pointer, len(rollout), obs_dict['target_pos'])
-        if render_fn is not None:
-          frame_collection.extend(render_fn(states[states_pointer:], state.info['target_pos'])) #with render_mode="rgb_array_list", env.render() returns a list of all frames since last call of reset()
-          states_pointer = len(states)
-
-    times.append(datetime.now())
-
-    rollout['states'] = states
-    rollouts.append(rollout)
-
-    if render_fn is not None:
-      frame_collection.extend(render_fn(states[states_pointer:], state.info['target_pos'])) #with render_mode="rgb_array_list", env.render() returns a list of all frames since last call of reset()
-      states_pointer = len(states)
-      videos += frame_collection
-  
-  cwd = os.path.dirname(os.path.abspath(__file__))
-  os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
-  eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
-
-  if video_type == 'single':
-    media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
-  elif video_type == 'multiple':
-    for i, video in enumerate(videos):
-      media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
-
-  return rollouts
+  print('Training complete!')
 
 
 if __name__ == '__main__':
