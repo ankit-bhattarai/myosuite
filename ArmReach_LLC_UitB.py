@@ -50,6 +50,87 @@ class ProgressLogger:
         print(f'time to jit: {self.times[1] - self.times[0]}')
     wandb.log({'num_steps': num_steps, **metrics})
 
+def get_observation_size(vision: bool, vision_mode: Optional[str] = None):
+    if not vision:
+      return 44
+    elif vision_mode == 'rgb':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "proprioception": (44,)          # Vector state
+          }
+    elif vision_mode == 'rgbd':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+          "proprioception": (44,)          # Vector state
+      }
+    elif vision_mode == 'rgb+depth':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (44,)          # Vector state
+          }
+    elif vision_mode == 'rgbd_only':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+      }
+    elif vision_mode == 'depth_only':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+      }
+    elif vision_mode == 'depth':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (44,)          # Vector state
+      }
+    else:
+      raise NotImplementedError(f'No observation size known for "{vision_mode}"')
+    
+
+def custom_network_factory(obs_shape, action_size, preprocess_observations_fn, 
+                           vision: bool, vision_mode: Optional[str] = None,
+                           activation_function: str = 'swish',
+                           policy_hidden_layer_sizes: Tuple[int, ...] = (256, 256),
+                           value_hidden_layer_sizes: Tuple[int, ...] = (256, 256),
+                           vision_output_size: int = 20,
+                           proprioception_output_size: int = 128,
+                           fused_output_size: int = 148):
+  if activation_function == 'swish':
+    activation = linen.swish
+  elif activation_function == 'relu':
+    activation = linen.relu
+  else:
+    raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
+  return networks.make_ppo_networks_unified_extractor(
+    observation_size=get_observation_size(vision, vision_mode),
+    action_size=action_size,
+    preprocess_observations_fn=preprocess_observations_fn,
+    policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+    value_hidden_layer_sizes=value_hidden_layer_sizes,
+    vision_output_size=vision_output_size,
+    proprioception_output_size=proprioception_output_size,
+    fused_output_size=fused_output_size,
+    activation=activation,
+    normalise_pixels=True,
+  )
+  # if vision:
+  #   return networks_vision.make_ppo_networks_vision(
+  #       observation_size=get_observation_size(),
+  #       action_size=action_size,
+  #       preprocess_observations_fn=preprocess_observations_fn,
+  #       policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
+  #       value_hidden_layer_sizes=value_hidden_layer_sizes,
+  #       activation=activation,
+  #       normalise_channels=True            # Normalize image channels
+  #   )
+  # else:
+  #   return networks.make_ppo_networks(observation_size=get_observation_size(),
+  #                                     action_size=action_size,
+  #                                     preprocess_observations_fn=preprocess_observations_fn,
+  #                                     policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+  #                                     value_hidden_layer_sizes=value_hidden_layer_sizes,
+  #                                     activation=activation)
+
+
 def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_eval_eps=1,
          restore_params_path=None, init_target_area_width_scale=0.,
          num_envs=3072,
@@ -191,78 +272,14 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
     return functools.partial(env.render, height=height, width=width, camera=camera)
   
-  def get_observation_size():
-    if 'vision' not in kwargs:
-      return 44
-    if vision_mode == 'rgb':
-      return {
-          "pixels/view_0": (120, 120, 3),  # RGB image
-          "proprioception": (44,)          # Vector state
-          }
-    elif vision_mode == 'rgbd':
-      return {
-          "pixels/view_0": (120, 120, 4),  # RGBD image
-          "proprioception": (44,)          # Vector state
-      }
-    elif vision_mode == 'rgb+depth':
-      return {
-          "pixels/view_0": (120, 120, 3),  # RGB image
-          "pixels/depth": (120, 120, 1),  # Depth image
-          "proprioception": (44,)          # Vector state
-          }
-    elif vision_mode == 'rgbd_only':
-      return {
-          "pixels/view_0": (120, 120, 4),  # RGBD image
-      }
-    elif vision_mode == 'depth_only':
-      return {
-          "pixels/depth": (120, 120, 1),  # Depth image
-      }
-    elif vision_mode == 'depth':
-      return {
-          "pixels/depth": (120, 120, 1),  # Depth image
-          "proprioception": (44,)          # Vector state
-      }
-    else:
-      raise NotImplementedError(f'No observation size known for "{vision_mode}"')
-
-  def custom_network_factory(obs_shape, action_size, preprocess_observations_fn):
-      if activation_function == 'swish':
-        activation = linen.swish
-      elif activation_function == 'relu':
-        activation = linen.relu
-      else:
-        raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
-      return networks.make_ppo_networks_unified_extractor(
-        observation_size=get_observation_size(),
-        action_size=action_size,
-        preprocess_observations_fn=preprocess_observations_fn,
-        policy_hidden_layer_sizes=policy_hidden_layer_sizes,
-        value_hidden_layer_sizes=value_hidden_layer_sizes,
-        vision_output_size=vision_output_size,
-        proprioception_output_size=proprioception_output_size,
-        fused_output_size=fused_output_size,
-        activation=activation,
-        normalise_pixels=True,
-      )
-      # if vision:
-      #   return networks_vision.make_ppo_networks_vision(
-      #       observation_size=get_observation_size(),
-      #       action_size=action_size,
-      #       preprocess_observations_fn=preprocess_observations_fn,
-      #       policy_hidden_layer_sizes=policy_hidden_layer_sizes,  
-      #       value_hidden_layer_sizes=value_hidden_layer_sizes,
-      #       activation=activation,
-      #       normalise_channels=True            # Normalize image channels
-      #   )
-      # else:
-      #   return networks.make_ppo_networks(observation_size=get_observation_size(),
-      #                                     action_size=action_size,
-      #                                     preprocess_observations_fn=preprocess_observations_fn,
-      #                                     policy_hidden_layer_sizes=policy_hidden_layer_sizes,
-      #                                     value_hidden_layer_sizes=value_hidden_layer_sizes,
-      #                                     activation=activation)
-
+  network_factory_function = functools.partial(custom_network_factory, vision=vision,
+                                               vision_mode=vision_mode,
+                                               activation_function=activation_function,
+                                               policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+                                               value_hidden_layer_sizes=value_hidden_layer_sizes,
+                                               vision_output_size=vision_output_size,
+                                               proprioception_output_size=proprioception_output_size,
+                                               fused_output_size=fused_output_size)
   train_fn = functools.partial(
       ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
       madrona_backend=vision,
@@ -274,7 +291,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
       batch_size=batch_size, seed=0,
       log_training_metrics=True,
       restore_params=restore_params,
-      network_factory=custom_network_factory,
+      network_factory=network_factory_function,
       reconstruction_loss_weight=reconstruction_loss_weight,
       )
   ## rule of thumb: num_timesteps ~= (unroll_length * batch_size * num_minibatches) * [desired number of policy updates (internal variabele: "num_training_steps_per_epoch")]; Note: for fixed total env steps (num_timesteps), num_evals and num_resets_per_eval define how often policies are evaluated and the env is reset during training (split into Brax training "epochs")
