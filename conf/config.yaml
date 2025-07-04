@@ -1,0 +1,14 @@
+defaults:
+  - train: train
+  - network: network
+  - env: pointing
+
+  - renderer
+  - _self_
+
+project_id: ???
+experiment_id: ???
+restore_params_path:
+
+# project_id: mjx-training
+# experiment_id: test

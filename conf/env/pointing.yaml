@@ -1,0 +1,18 @@
+defaults:
+  - observations: depth
+  - proprioception: normal
+  - adaptive: disabled
+  - _self_
+
+action_size: 26
+rewards:
+  reach: 1.0
+  bonus: 8.0
+  neural_effort: 0.0
+target_pos_range_min: [0.225, -0.1, -0.3]
+target_pos_range_max: [0.35, 0.1, 0.3]
+target_radius_range: [0.05, 0.05]
+ref_site: 'humphant'
+reset_type: 'range_uniform'
+frame_skip: 25
+eval_mode: false

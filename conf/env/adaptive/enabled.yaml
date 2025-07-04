@@ -1,0 +1,7 @@
+enabled: true
+init_target_area_width_scale: 0.0
+adaptive_increase_success_rate: 0.6
+adaptive_decrease_success_rate: 0.3
+adaptive_change_step_size: 0.05
+adaptive_change_min_trials: 50
+success_log_buffer_length: 500

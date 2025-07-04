@@ -1,0 +1,8 @@
+size: 44
+obs_keys:
+  - qpos # 5
+  - qvel # 5
+  - qacc # 5
+  - ee_pos # 3
+  - act # 26
+  - motor_act # 0

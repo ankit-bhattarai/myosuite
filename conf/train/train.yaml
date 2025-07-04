@@ -1,0 +1,11 @@
+n_train_steps: 100_000_000
+n_eval_eps: 1
+num_envs: 3072
+episode_length: 800
+unroll_length: 10
+num_minibatches: 24
+num_updates_per_batch: 8
+discounting: 0.97
+learning_rate: 3e-4
+entropy_cost: 1e-3
+batch_size: 512

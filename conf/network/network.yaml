@@ -1,0 +1,11 @@
+defaults:
+ - activation: relu
+ - network_factory: unified_extractor
+ - _self_
+
+policy_hidden_layer_sizes: [256, 256]
+value_hidden_layer_sizes: [256, 256]
+normalise_pixels: true
+proprioception_obs_key: proprioception
+proprioception_output_size: 128
+vision_output_size: 36

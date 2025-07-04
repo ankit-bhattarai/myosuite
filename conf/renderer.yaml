@@ -1,0 +1,8 @@
+renderer:
+  gpu_id: 0
+  num_words: 3072
+  width: 120
+  height: 120
+  enabled_geom_groups: [0, 1, 2]
+  enabled_cameras: [0]
+  use_rasterizer: false

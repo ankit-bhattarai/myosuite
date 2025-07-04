@@ -1,0 +1,8 @@
+_target_: networks.make_ppo_networks
+observation_size:
+action_size:
+preprocess_observations_fn:
+policy_hidden_layer_sizes:
+value_hidden_layer_sizes:
+activation:
+normalise_pixels:

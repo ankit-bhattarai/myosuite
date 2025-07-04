@@ -1,0 +1,7 @@
+_target_: networks.make_ppo_networks_unified_extractor
+observation_size: ${env.observations}
+action_size: ${env.action_size}
+policy_hidden_layer_sizes: ${network.policy_hidden_layer_sizes}
+value_hidden_layer_sizes: ${network.value_hidden_layer_sizes}
+activation: ${network.activation}
+normalise_pixels: true
