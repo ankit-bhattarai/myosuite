@@ -90,7 +90,6 @@ celerybeat-schedule
 # Environments
 .env
 .venv
-env/
 venv/
 ENV/
 env.bak/
@@ -130,3 +129,5 @@ docs/source/notebooks_internal/
 myosuite/agents/nohup.out
 myosuite/agents/outputs
 **/checkpoints/
+wandb/
+outputs/
