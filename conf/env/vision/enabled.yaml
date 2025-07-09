@@ -1,4 +1,7 @@
-renderer:
+defaults:
+  - vision_mode: rgdb
+vision:
+  enabled: true
   gpu_id: 0
   num_words: 3072
   width: 120

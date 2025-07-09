@@ -2,8 +2,11 @@ defaults:
   - observations: depth
   - proprioception: normal
   - adaptive: disabled
+  - vision: enabled
   - _self_
 
+_target_: myosuite.envs.myo.myouser.pointing.Pointing
+model_path: 'myosuite/simhive/uitb_sim/pointing.xml'
 action_size: 26
 rewards:
   reach: 1.0

@@ -1,6 +1,6 @@
 proprioception:
   - ${env.proprioception.size}
-'pixels/view_0':
-  - ${renderer.width}
-  - ${renderer.height}
+'pixels/depth':
+  - ${env.vision.width}
+  - ${env.vision.height}
   - 1

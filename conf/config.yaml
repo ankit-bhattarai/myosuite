@@ -2,8 +2,6 @@ defaults:
   - train: train
   - network: network
   - env: pointing
-
-  - renderer
   - _self_
 
 project_id: ???

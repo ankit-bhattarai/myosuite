@@ -27,49 +27,14 @@ from brax.envs.wrappers.training import VmapWrapper
 from brax.io import html, mjcf, model
 
 
-class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
-
-    # DEFAULT_OBS_KEYS = ['reach_dist', 'inside_target', 'steps_inside_target', 'target_success',    'qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']  #TODO: exclude 'reach_dist' etc.
-    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act'] #, 'target_pos', 'target_radius']
-    DEFAULT_RWD_KEYS_AND_WEIGHTS = {
-        "reach": 1.0,
-        "bonus": 8.0,
-        #"penalty": 50,
-        "neural_effort": 0,  #1e-4,
-    }
-
-    def __init__(self, model_path=None, frame_skip=25, # aka physics_steps_per_control_step
-            eval_mode=False,
-            seed=123, **kwargs):
-        # # EzPickle.__init__(**locals()) is capturing the input dictionary of the init method of this class.
-        # # In order to successfully capture all arguments we need to call gym.utils.EzPickle.__init__(**locals())
-        # # at the leaf level, when we do inheritance like we do here.
-        # # kwargs is needed at the top level to account for injection of __class__ keyword.
-        # # Also see: https://github.com/openai/gym/pull/1497
-        # gym.utils.EzPickle.__init__(self, model_path, obsd_model_path, seed, **kwargs)
-
-        # # This two step construction is required for pickling to work correctly. All arguments to all __init__
-        # # calls must be pickle friendly. Things like sim / sim_obsd are NOT pickle friendly. Therefore we
-        # # first construct the inheritance chain, which is just __init__ calls all the way down, with env_base
-        # # creating the sim / sim_obsd instances. Next we run through "setup"  which relies on sim / sim_obsd
-        # # created in __init__ to complete the setup.
-        # super().__init__(model_path=model_path, obsd_model_path=obsd_model_path, seed=seed, env_credits=None)
+class PointingDirectCtrl(PipelineEnv):
+    def __init__(self, **kwargs):
+                #  model_path='myosuite/simhive/uitb_sim/pointing.xml',
+                #  frame_skip=25, eval_mode=False, **kwargs):
+        print(f'kwargs: {kwargs}')
+        breakpoint()
     
-        spec = mujoco.MjSpec.from_file(model_path)
-
-        # b_lunate = spec.body('lunate')
-        # b_lunate_pos = b_lunate.pos.copy()
-
-        # # add site to the parent body
-        # b_radius = spec.body('radius')
-        # b_radius.add_site(
-        # name='wrist',
-        #     pos=b_lunate_pos,
-        #     group=3
-        # )
-
-        # # add a target site
-        # spec.body('world').add_site(name='wrist_target', type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[0.02, 0.02, 0.02], pos=[-0.2, -0.2, 1.2], rgba=[0, 1, 0, .3])
+        spec = mujoco.MjSpec.from_file(env_args.model_path)
 
         mj_model = spec.compile()
 
@@ -81,18 +46,13 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         sys = mjcf.load_model(mj_model)
         super().__init__(sys) # **kwargs)
         
-        self.seed = seed
-        self._n_frames = kwargs.get('n_frames', frame_skip)  #TODO: check that this attribute is used by PipelineEnv
-        # self._n_frames = kwargs['n_frames']
-        kwargs['backend'] = 'mjx'
+        self._n_frames = env_args.frame_skip
 
-        if eval_mode:
-            kwargs['adaptive_task'] = False  #disable adaptive target curriculum for evaluation
+        # TODO: set this up
+        # if eval_mode:
+        #     kwargs['adaptive_task'] = False  #disable adaptive target curriculum for evaluation
 
-        # # self.data = self.pipeline_init(qpos0, qvel0)
-        # data = mjx.make_data(sys)  #this is done by self.reset called in self._prepare_env
-
-        self._prepare_env(**kwargs)
+        self._prepare_env(env_args)
         self.vision = False
         if 'vision' in kwargs:
             self.vision = True
@@ -218,8 +178,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             constantnoise_type = None,   #"white"
             constantnoise_level = 0.185,
             reset_type = "range_uniform",
-            obs_keys:list = DEFAULT_OBS_KEYS,
-            weighted_reward_keys:dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
+            # obs_keys:list = DEFAULT_OBS_KEYS,
+            # weighted_reward_keys:dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
             episode_length = 800,
             frame_skip = 25,  #frame_skip=25 corresponds to 20Hz; with episode_length=800, this results in 40s maximum time per episode
             **kwargs,
@@ -1129,7 +1089,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         self._constantnoise_acc = zero
     
 
-class LLCEEPosAdaptiveEnvMJXV0(LLCEEPosAdaptiveDirectCtrlEnvMJXV0):
+class Pointing(PointingDirectCtrl):
     def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
 
