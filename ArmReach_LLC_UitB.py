@@ -26,6 +26,7 @@ from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
+import wandb
 
 from matplotlib import pyplot as plt
 import mediapy as media
@@ -46,9 +47,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             'target_radius_range': {'fingertip': jp.array([0.01, 0.15]),},
             'ref_site': 'humphant',
             'adaptive_task': True,
-            'init_target_area_width_scale': init_target_area_width_scale,
-            # 'adaptive_increase_success_rate': 0.6,
-            # 'adaptive_decrease_success_rate': 0.3,
+            'init_target_area_width_scale': 1.0,
+            'adaptive_increase_success_rate': 1.1,
+            'adaptive_decrease_success_rate': -0.1,
             # 'adaptive_change_step_size': 0.05,
             # 'adaptive_change_min_trials': 50,
             'success_log_buffer_length': 500,
@@ -57,6 +58,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
             # 'max_trials': 10
         }
   env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
+  wandb.init(project='comparison', name=experiment_id)
 
   cwd = os.path.dirname(os.path.abspath(__file__))
   if restore_params_path is not None:
@@ -131,6 +133,9 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
   def progress(num_steps, metrics):
     
     # print(metrics)
+    if len(times) == 2:
+       print(f'time to jit: {times[1] - times[0]}')
+    wandb.log({'num_steps': num_steps, **metrics})
 
     if 'eval/episode_reward' in metrics:
       ## called during evaluation
@@ -367,8 +372,8 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
 if __name__ == '__main__':
   # jax.config.update('jax_default_matmul_precision', 'highest')
 
-  experiment_id = 'mobl_llc_eepos_v0.1.2'
-  n_train_steps = 100_000_000
+  experiment_id = 'no_adaptive_through_hack_original_florian'
+  n_train_steps = 50_000_000
   n_eval_eps = 1
 
   restore_params_path = None  #"myosuite-mjx-policies/mobl_llc_eepos_v0.1.1b_params"
