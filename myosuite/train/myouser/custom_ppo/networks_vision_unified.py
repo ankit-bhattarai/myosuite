@@ -114,10 +114,13 @@ class PPONetworksUnifiedVision(nnx.Module):
         processor_params: Any,
         only_value_estimates: bool = False,
         only_policy_logits: bool = False,
+        only_vision_aux_feature: bool = False,
     ):
         if self.has_vision:
             vision_obs = {k: v for k, v in obs.items() if k.startswith("pixels/")}
             vision_feature = self.vision_encoder(vision_obs)
+            if only_vision_aux_feature:
+                return {"vision_aux_vector": self.vision_aux_output(vision_feature)}
             gradient_stopped_vision_feature = jax.lax.stop_gradient(vision_feature)
             proprioception_feature = obs[self.proprioception_obs_key]
             state_vector = self.states_combiner(
