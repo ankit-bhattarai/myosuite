@@ -31,7 +31,7 @@ from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import AdaptiveTargetWr
 from brax.mjx.base import State as MjxState
 # from brax.training.agents.ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import train as ppo
-from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as networks
+from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
 from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import LLCEEPosAdaptiveEnvMJXV0
@@ -187,7 +187,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   
   def get_observation_size():
     if 'vision' not in kwargs:
-      return 44
+      return {'proprioception': 48}
     if vision_mode == 'rgb':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
@@ -227,16 +227,22 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
         activation = linen.relu
       else:
         raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
-      return networks.make_ppo_networks_unified_extractor(
-        observation_size=get_observation_size(),
-        action_size=action_size,
-        preprocess_observations_fn=preprocess_observations_fn,
-        policy_hidden_layer_sizes=policy_hidden_layer_sizes,
-        value_hidden_layer_sizes=value_hidden_layer_sizes,
-        vision_output_size=vision_output_size,
-        activation=activation,
-        normalise_pixels=True,
-      )
+      if not vision:
+        return networks.make_ppo_networks_no_vision(
+          proprioception_size=get_observation_size()['proprioception'],
+          action_size=action_size,
+          preprocess_observations_fn=preprocess_observations_fn,
+        )
+      # return networks.make_ppo_networks_unified_extractor(
+      #   observation_size=get_observation_size(),
+      #   action_size=action_size,
+      #   preprocess_observations_fn=preprocess_observations_fn,
+      #   policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+      #   value_hidden_layer_sizes=value_hidden_layer_sizes,
+      #   vision_output_size=vision_output_size,
+      #   activation=activation,
+      #   normalise_pixels=True,
+      # )
       # if vision:
       #   return networks_vision.make_ppo_networks_vision(
       #       observation_size=get_observation_size(),
