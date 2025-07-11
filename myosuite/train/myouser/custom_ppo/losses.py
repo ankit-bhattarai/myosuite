@@ -114,6 +114,7 @@ def compute_ppo_loss(
     gae_lambda: float = 0.95,
     clipping_epsilon: float = 0.3,
     normalize_advantage: bool = True,
+    aux_loss_weight: float = 1.0,
 ) -> Tuple[jnp.ndarray, types.Metrics]:
   """Computes PPO loss.
 
@@ -146,8 +147,6 @@ def compute_ppo_loss(
   network_output = ppo_network.apply(params, data.observation, processor_params=normalizer_params)
   policy_logits = network_output['policy_logits']
   baseline = network_output['value_estimates']
-  if 'vision_aux_vector' in network_output:
-    raise NotImplementedError("Vision aux vector support not implemented")
 
   terminal_obs = jax.tree_util.tree_map(lambda x: x[-1], data.next_observation)
   bootstrap_value = ppo_network.apply(params, terminal_obs, processor_params=normalizer_params, only_value_estimates=True)['value_estimates']
@@ -190,9 +189,19 @@ def compute_ppo_loss(
   entropy_loss = entropy_cost * -entropy
 
   total_loss = policy_loss + v_loss + entropy_loss
-  return total_loss, {
+
+  loss_dict = {
       'total_loss': total_loss,
       'policy_loss': policy_loss,
       'v_loss': v_loss,
       'entropy_loss': entropy_loss,
   }
+  if 'vision_aux_targets' in data.observation:
+    aux_targets = data.observation['vision_aux_targets']
+    aux_preds = network_output['vision_aux_vector']
+    aux_error = aux_preds - aux_targets
+    aux_loss = jnp.mean(aux_error * aux_error)
+    aux_loss = aux_loss * 0.5 * 0.5 * aux_loss_weight
+    total_loss += aux_loss
+    loss_dict['aux_loss'] = aux_loss
+  return total_loss, loss_dict
