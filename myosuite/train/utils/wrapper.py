@@ -88,9 +88,7 @@ def _identity_vision_randomization_fn(
           jp.expand_dims(sys.geom_rgba, 0), num_worlds, axis=0
       ),
       'geom_matid': jp.repeat(
-          jp.expand_dims(jp.repeat(-1, sys.geom_matid.shape[0], 0), 0),
-          num_worlds,
-          axis=0,
+          jp.expand_dims(sys.geom_matid, 0), num_worlds, axis=0
       ),
       'geom_size': jp.repeat(
           jp.expand_dims(sys.geom_size, 0), num_worlds, axis=0
@@ -136,7 +134,7 @@ def _supplement_vision_randomization_fn(
   for field in required_fields:
     if getattr(in_axes, field) is None:
       in_axes = in_axes.tree_replace({field: 0})
-      val = -1 if field == 'geom_matid' else getattr(sys, field)
+      val = getattr(sys, field)
       sys = sys.tree_replace({
           field: jp.repeat(jp.expand_dims(val, 0), num_worlds, axis=0),
       })
