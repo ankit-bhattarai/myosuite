@@ -22,6 +22,7 @@ from typing import Any, Tuple
 from brax.training import types
 from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as ppo_networks
 from brax.training.types import Params
+from brax.training.distribution import NormalTanhDistribution
 import flax
 import jax
 import jax.numpy as jnp
@@ -102,11 +103,11 @@ def compute_gae(
 
 
 def compute_ppo_loss(
-    params: PPONetworkParams,
+    params: Any,
     normalizer_params: Any,
     data: types.Transition,
     rng: jnp.ndarray,
-    ppo_network: ppo_networks.PPONetworksUnifiedExtractor,
+    ppo_network: Any,
     entropy_cost: float = 1e-4,
     discounting: float = 0.9,
     reward_scaling: float = 1.0,
@@ -134,22 +135,22 @@ def compute_ppo_loss(
   Returns:
     A tuple (loss, metrics)
   """
-  parametric_action_distribution = ppo_network.parametric_action_distribution
-  extractor_apply = ppo_network.feature_extractor.apply
-  policy_apply = ppo_network.policy_network.apply
-  value_apply = ppo_network.value_network.apply
+  # TODO: get rid of brax dependency + add general case of vision supp task
+  assert 'action_size' in ppo_network.kwargs, "action_size must be provided to make_inference_function_simple_unified_network"
+  action_size = ppo_network.kwargs['action_size']
+  parametric_action_distribution = NormalTanhDistribution(event_size=action_size)
 
   # Put the time dimension first.
   data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), data)
-  extractor_outputs = extractor_apply(normalizer_params, params.extractor, data.observation)
-  policy_logits = policy_apply(
-      None, params.policy, extractor_outputs
-  )
 
-  baseline = value_apply(None, params.value, extractor_outputs)
+  network_output = ppo_network.apply(params, data.observation, processor_params=normalizer_params)
+  policy_logits = network_output['policy_logits']
+  baseline = network_output['value_estimates']
+  if 'vision_aux_vector' in network_output:
+    raise NotImplementedError("Vision aux vector support not implemented")
+
   terminal_obs = jax.tree_util.tree_map(lambda x: x[-1], data.next_observation)
-  terminal_features = extractor_apply(normalizer_params, params.extractor, terminal_obs)
-  bootstrap_value = value_apply(None, params.value, terminal_features)
+  bootstrap_value = ppo_network.apply(params, terminal_obs, processor_params=normalizer_params, only_value_estimates=True)['value_estimates']
 
   rewards = data.reward * reward_scaling
   truncation = data.extras['state_extras']['truncation']
