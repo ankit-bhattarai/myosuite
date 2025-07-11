@@ -98,7 +98,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             self.vision = True
             from madrona_mjx.renderer import BatchRenderer
             vision_mode = kwargs['vision']['vision_mode']
-            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth', 'rgbd_only', 'depth_only', 'depth')
+            allowed_vision_modes = ('rgbd', 'rgb', 'rgb+depth', 'rgbd_only', 'depth_only', 'depth', 'depth_w_aux_task')
             assert vision_mode in allowed_vision_modes, f"Invalid vision mode: {vision_mode} (allowed modes: {allowed_vision_modes})"
             self.vision_mode = vision_mode
             self.batch_renderer = BatchRenderer(m = self.sys,
@@ -282,6 +282,13 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         if 'weights/bonus' in kwargs:
             print(f'Overriding bonus weight to {kwargs["weights/bonus"]}')
             self.rwd_keys_wt['bonus'] = kwargs['weights/bonus']
+        if 'vision' not in kwargs :
+            print('No vision, so adding target_pos and target_radius to obs_keys')
+            obs_keys.append('target_pos')
+            obs_keys.append('target_radius')
+        else:
+            print('Vision, so not adding target_pos and target_radius to obs_keys')
+        print(f'Obs keys: {obs_keys}')
         self.obs_keys = obs_keys
         if 'reach_metric_coefficient' in kwargs:
             self.reach_metric_coefficient = kwargs['reach_metric_coefficient']
@@ -422,7 +429,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             # combine pixels and depth into a single image
             rgbd = jp.concatenate([pixels, depth], axis=-1)
             update_info.update({"pixels/view_0": rgbd})
-        elif self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth':
+        elif self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth' or self.vision_mode == 'depth_w_aux_task':
             update_info.update({"pixels/view_0": pixels, "pixels/depth": depth})
         else:
             raise ValueError(f"Invalid vision mode: {self.vision_mode}")
@@ -695,7 +702,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
 
         if self.vision:
             obs_dict['pixels/view_0'] = info['pixels/view_0']
-            if self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth':
+            if self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth' or self.vision_mode == 'depth_w_aux_task':
                 obs_dict['pixels/depth'] = info['pixels/depth']
         return obs_dict
     
@@ -705,13 +712,18 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
-            return obsvec
+            return {'proprioception': obsvec}
         if self.vision_mode == 'rgbd_only':
             return {'pixels/view_0': obs_dict['pixels/view_0']}
         elif self.vision_mode == 'depth_only':
             return {'pixels/depth': obs_dict['pixels/depth']}
         elif self.vision_mode == 'depth':
             return {'pixels/depth': obs_dict['pixels/depth'], 'proprioception': obsvec}
+        elif self.vision_mode == 'depth_w_aux_task':
+            target_pos = obs_dict['target_pos']
+            target_radius = obs_dict['target_radius']
+            aux_targets = jp.concatenate([target_pos, target_radius], axis=-1)
+            return {'proprioception': obsvec, 'pixels/depth': obs_dict['pixels/depth'], 'vision_aux_targets': aux_targets}
         vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
         if self.vision_mode == 'rgb+depth':
             vision_obs['pixels/depth'] = obs_dict['pixels/depth']

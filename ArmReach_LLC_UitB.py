@@ -217,6 +217,12 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
           "pixels/depth": (120, 120, 1),  # Depth image
           "proprioception": (44,)          # Vector state
       }
+    elif vision_mode == 'depth_w_aux_task':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (44,),          # Vector state
+          "vision_aux_targets": (4,) # 3D target position + 1D target radius
+      }
     else:
       raise NotImplementedError(f'No observation size known for "{vision_mode}"')
 
@@ -233,6 +239,12 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
           action_size=action_size,
           preprocess_observations_fn=preprocess_observations_fn,
         )
+      return networks.make_ppo_networks_with_vision(
+        proprioception_size=get_observation_size()['proprioception'][0],
+        action_size=action_size,
+        encoder_out_size=4,
+        preprocess_observations_fn=preprocess_observations_fn,
+      )
       # return networks.make_ppo_networks_unified_extractor(
       #   observation_size=get_observation_size(),
       #   action_size=action_size,
