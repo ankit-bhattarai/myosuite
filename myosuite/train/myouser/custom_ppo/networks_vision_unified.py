@@ -286,3 +286,131 @@ def make_inference_function_ppo_networks_unified(network):
         return policy
 
     return make_policy
+
+
+class VisionEncoder(nnx.Module):
+    def __init__(
+        self,
+        rngs: nnx.Rngs,
+        vision_out_size: int = 7200,
+        mlp_out_size: int = 4,
+        mlp_hidden_layers: Optional[Sequence[int]] = [256],
+        use_bias: bool = True,
+        activation: Callable = nnx.leaky_relu,
+    ):
+        self.conv1 = nnx.Conv(
+            1, 8, kernel_size=(3, 3), strides=(2, 2), padding=(1, 1), rngs=rngs
+        )
+        self.conv2 = nnx.Conv(
+            8, 16, kernel_size=(3, 3), strides=(2, 2), padding=(1, 1), rngs=rngs
+        )
+        self.conv3 = nnx.Conv(
+            16, 32, kernel_size=(3, 3), strides=(2, 2), padding=(1, 1), rngs=rngs
+        )
+        self.mlp = MLP(
+            vision_out_size,
+            mlp_out_size,
+            rngs=rngs,
+            hidden_layers=mlp_hidden_layers,
+            use_bias=use_bias,
+            activation=activation,
+        )
+        self.activation = activation
+
+    def __call__(self, x: jnp.ndarray):
+        vision_keys = [k for k in x.keys() if k.startswith("pixels/")]
+        assert len(vision_keys) == 1, "Only one vision key is supported"
+        x = x[vision_keys[0]]
+        x = self.activation(self.conv1(x))
+        x = self.activation(self.conv2(x))
+        x = self.activation(self.conv3(x))
+        spatial_dims = x.ndim - 3
+        x = x.reshape(*x.shape[:spatial_dims], -1)
+        x = self.mlp(x)
+        return x
+
+
+class VisionAuxOutputIdentity(nnx.Module):
+    def __init__(self, rngs: nnx.Rngs):
+        pass
+
+    def __call__(self, x: jnp.ndarray):
+        return x
+
+
+class StatesCombinerPredictStateVariables(nnx.Module):
+
+    def __init__(self, preprocess_observations_fn: Callable):
+        self.preprocess_observations_fn = preprocess_observations_fn
+
+    def __call__(
+        self,
+        proprioception_feature: jnp.ndarray,
+        vision_feature: jnp.ndarray,
+        processor_params: Any,
+    ):
+        proprioception_feature = self.preprocess_observations_fn(
+            proprioception_feature, processor_params
+        )
+        state_vector = jnp.concatenate(
+            [proprioception_feature, vision_feature], axis=-1
+        )
+        return state_vector
+
+
+class NetworkWithVision(PPONetworksUnifiedVision):
+    def __init__(
+        self,
+        proprioception_size: int,
+        action_size: int,
+        encoder_out_size: int,
+        preprocess_observations_fn: Callable,
+        rngs: nnx.Rngs,
+    ):
+        states_combiner = StatesCombinerPredictStateVariables(
+            preprocess_observations_fn
+        )
+        state_vector_size = proprioception_size + encoder_out_size
+        policy_network = MLP(
+            state_vector_size,
+            2 * action_size,
+            hidden_layers=[32, 32, 32, 32],
+            rngs=rngs,
+        )
+        value_network = MLP(
+            state_vector_size, 1, hidden_layers=[256, 256, 256, 256, 256], rngs=rngs
+        )
+        parametric_action_distribution = distribution.NormalTanhDistribution(
+            event_size=action_size
+        )
+        proprioception_obs_key = "proprioception"
+        vision_encoder = VisionEncoder(rngs=rngs)
+        vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
+        states_combiner = StatesCombinerPredictStateVariables(
+            preprocess_observations_fn
+        )
+        super().__init__(
+            states_combiner,
+            policy_network,
+            value_network,
+            parametric_action_distribution,
+            proprioception_obs_key,
+            vision_encoder,
+            vision_aux_output,
+        )
+
+
+def make_ppo_networks_with_vision(
+    proprioception_size: int,
+    action_size: int,
+    encoder_out_size: int,
+    preprocess_observations_fn: Callable,
+):
+    model = nnx.bridge.to_linen(
+        NetworkWithVision,
+        proprioception_size=proprioception_size,
+        action_size=action_size,
+        encoder_out_size=encoder_out_size,
+        preprocess_observations_fn=preprocess_observations_fn,
+    )
+    return model
