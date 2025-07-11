@@ -104,6 +104,9 @@ class PPONetworksUnifiedVision(nnx.Module):
         self.states_combiner = states_combiner
         self.proprioception_obs_key = proprioception_obs_key
 
+    def get_values(self, state_vector):
+        return jnp.squeeze(self.value_network(state_vector), axis=-1)
+
     def __call__(
         self,
         obs: dict,
@@ -133,9 +136,9 @@ class PPONetworksUnifiedVision(nnx.Module):
         if only_policy_logits:
             return {"policy_logits": self.policy_network(state_vector)}
         if only_value_estimates:
-            return {"value_estimates": self.value_network(state_vector)}
+            return {"value_estimates": self.get_values(state_vector)}
 
-        value_estimates = self.value_network(state_vector)
+        value_estimates = self.get_values(state_vector)
         policy_logits = self.policy_network(state_vector)
         if not self.has_vision_aux_output:
             return {"policy_logits": policy_logits, "value_estimates": value_estimates}
