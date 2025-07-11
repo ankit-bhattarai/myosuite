@@ -42,7 +42,7 @@ import wandb
 
 class ProgressLogger:
   def __init__(self):
-    self.times = []
+    self.times = [datetime.now()]
 
   def progress(self, num_steps, metrics):
     self.times.append(datetime.now())
@@ -75,7 +75,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          vision_output_size=20,
          weights_reach=1.0,
          weights_bonus=8.0,
-         reach_metric_coefficient=10.0):
+         reach_metric_coefficient=10.0,
+         get_env_only=False,):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -294,6 +295,9 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
   # Adding custom task specific adaptive target wrapper
   wrapped_env = AdaptiveTargetWrapper(wrapped_env)
+  if get_env_only:
+    return wrapped_env
+  
   progress_logger = ProgressLogger()
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress)
   times = progress_logger.times
