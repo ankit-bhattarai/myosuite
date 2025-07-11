@@ -76,7 +76,9 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          weights_reach=1.0,
          weights_bonus=8.0,
          reach_metric_coefficient=10.0,
-         get_env_only=False,):
+         get_env_only=False,
+         cheat_vision_aux_output=False,
+         ):
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -106,6 +108,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'learning_rate': learning_rate,
     'entropy_cost': entropy_cost,
     'batch_size': batch_size,
+    'cheat_vision_aux_output': cheat_vision_aux_output,
   }
   kwargs = {
             'frame_skip': 25,
@@ -245,6 +248,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
         action_size=action_size,
         encoder_out_size=4,
         preprocess_observations_fn=preprocess_observations_fn,
+        cheat_vision_aux_output=cheat_vision_aux_output,
       )
       # return networks.make_ppo_networks_unified_extractor(
       #   observation_size=get_observation_size(),
@@ -292,7 +296,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
 
   ## TRAINING
-  wrapped_env = wrap_curriculum_training(env, vision=vision, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
+  wrapped_env = wrap_curriculum_training(env, vision=True, num_vision_envs=kwargs['num_envs'], episode_length=episode_length)
   # Adding custom task specific adaptive target wrapper
   wrapped_env = AdaptiveTargetWrapper(wrapped_env)
   if get_env_only:
@@ -429,6 +433,7 @@ if __name__ == '__main__':
   parser.add_argument('--weights_reach', type=float, default=1.0)
   parser.add_argument('--weights_bonus', type=float, default=8.0)
   parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
+  parser.add_argument('--cheat_vision_aux_output', type=bool, default=False)
   args = parser.parse_args()
 
   main(
@@ -462,4 +467,5 @@ if __name__ == '__main__':
     weights_reach=args.weights_reach,
     weights_bonus=args.weights_bonus,
     reach_metric_coefficient=args.reach_metric_coefficient,
+    cheat_vision_aux_output=args.cheat_vision_aux_output,
   )
