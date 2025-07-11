@@ -15,6 +15,7 @@
 """PPO networks unified."""
 
 import jax.numpy as jnp
+import jax
 import flax.nnx as nnx
 from brax.training import distribution  # TODO: get rid of brax dependency
 from brax.training import types
@@ -117,10 +118,11 @@ class PPONetworksUnifiedVision(nnx.Module):
         if self.has_vision:
             vision_obs = {k: v for k, v in obs.items() if k.startswith("pixels/")}
             vision_feature = self.vision_encoder(vision_obs)
+            gradient_stopped_vision_feature = jax.lax.stop_gradient(vision_feature)
             proprioception_feature = obs[self.proprioception_obs_key]
             state_vector = self.states_combiner(
                 proprioception_feature,
-                vision_feature,
+                gradient_stopped_vision_feature,
                 processor_params=processor_params,
             )
         else:
