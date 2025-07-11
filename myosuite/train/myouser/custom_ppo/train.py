@@ -33,7 +33,7 @@ from brax.training.acme import running_statistics
 from brax.training.acme import specs
 from myosuite.train.myouser.custom_ppo import checkpoint
 from myosuite.train.myouser.custom_ppo import losses as ppo_losses
-from myosuite.train.myouser.custom_ppo import networks_vision_multimodal as ppo_networks
+from myosuite.train.myouser.custom_ppo import networks_vision_unified as ppo_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import flax
@@ -54,7 +54,7 @@ class TrainingState:
   """Contains training state for the learner."""
 
   optimizer_state: optax.OptState
-  params: ppo_losses.PPONetworkParams
+  params: Params
   normalizer_params: running_statistics.RunningStatisticsState
   env_steps: types.UInt64
 
@@ -221,9 +221,7 @@ def train(
     gae_lambda: float = 0.95,
     max_grad_norm: Optional[float] = None,
     normalize_advantage: bool = True,
-    network_factory: types.NetworkFactory[
-        ppo_networks.PPONetworksUnifiedExtractor
-    ] = ppo_networks.make_ppo_networks_unified_extractor,
+    network_factory: Any = None,
     seed: int = 0,
     # eval
     num_evals: int = 1,
@@ -361,7 +359,7 @@ def train(
   local_key, key_env, eval_key = jax.random.split(local_key, 3)
   # key_networks should be global, so that networks are initialized the same
   # way for different processes.
-  key_extractor, key_policy, key_value = jax.random.split(global_key, 3)
+  key_params, _ = jax.random.split(global_key, 2)
   del global_key
 
   assert num_envs % device_count == 0
@@ -392,7 +390,7 @@ def train(
   ppo_network = network_factory(
       obs_shape, env.action_size, preprocess_observations_fn=normalize
   )
-  make_policy = ppo_networks.make_inference_fn_unified_extractor(ppo_network)
+  make_policy = ppo_networks.make_inference_function_ppo_networks_unified(ppo_network)
 
   optimizer = optax.adam(learning_rate=learning_rate)
   if max_grad_norm is not None:
@@ -490,9 +488,7 @@ def train(
 
     policy = make_policy((
         training_state.normalizer_params,
-        training_state.params.extractor,
-        training_state.params.policy,
-        training_state.params.value,
+        training_state.params,
     ))
 
     def f(carry, unused_t):
@@ -601,27 +597,27 @@ def train(
     }
     return training_state, env_state, metrics  # pytype: disable=bad-return-type  # py311-upgrade
 
+  dummy_obs = {
+      key: jnp.zeros((1,) + shape) for key, shape in obs_shape.items()
+  }
   # Initialize model params and training state.
-  init_params = ppo_losses.PPONetworkParams(
-      extractor=ppo_network.feature_extractor.init(key_extractor),
-      policy=ppo_network.policy_network.init(key_policy),
-      value=ppo_network.value_network.init(key_value),
-  )
-
   obs_shape = jax.tree_util.tree_map(
       lambda x: specs.Array(x.shape[-1:], jnp.dtype('float32')), env_state.obs
   )
+  normalizer_init_params = running_statistics.init_state(obs_shape['proprioception'])
+  init_params = ppo_network.init(key_params, dummy_obs, normalizer_init_params)
+
   training_state = TrainingState(  # pytype: disable=wrong-arg-types  # jax-ndarray
       optimizer_state=optimizer.init(init_params),  # pytype: disable=wrong-arg-types  # numpy-scalars
       params=init_params,
       #TODO: fix this properly
       # I think the original format is much better, I just need to modify the .apply function in the feature extractor to use it properly!
-      normalizer_params=running_statistics.init_state(obs_shape['proprioception']
-      ),
+      normalizer_params=normalizer_init_params,
       env_steps=types.UInt64(hi=0, lo=0),
   )
 
   if restore_checkpoint_path is not None:
+    raise NotImplementedError("Checkpoint loading not implemented")
     params = checkpoint.load(restore_checkpoint_path)
     value_params = params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
@@ -632,6 +628,7 @@ def train(
     )
 
   if restore_params is not None:
+    raise NotImplementedError("Checkpoint loading not implemented")
     logging.info('Restoring TrainingState from `restore_params`.')
     value_params = restore_params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
@@ -646,9 +643,7 @@ def train(
         make_policy,
         (
             training_state.normalizer_params,
-            training_state.params.extractor,
-            training_state.params.policy,
-            training_state.params.value,
+            training_state.params,
         ),
         {},
     )
@@ -683,9 +678,7 @@ def train(
     metrics = evaluator.run_evaluation(
         _unpmap((
             training_state.normalizer_params,
-            training_state.params.extractor,
-            training_state.params.policy,
-            training_state.params.value,
+            training_state.params,
         )),
         training_metrics={},
     )
@@ -719,9 +712,7 @@ def train(
     # Process id == 0.
     params = _unpmap((
         training_state.normalizer_params,
-        training_state.params.extractor,
-        training_state.params.policy,
-        training_state.params.value,
+        training_state.params,
     ))
 
     policy_params_fn(current_step, make_policy, params)
@@ -751,9 +742,7 @@ def train(
   pmap.assert_is_replicated(training_state)
   params = _unpmap((
       training_state.normalizer_params,
-      training_state.params.extractor,
-      training_state.params.policy,
-      training_state.params.value,
+      training_state.params,
   ))
   logging.info('total steps: %s', total_steps)
   pmap.synchronize_hosts()
