@@ -112,6 +112,20 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                                                 viz_gpu_hdls = None,
                                                 add_cam_debug_geo = False,
                                                 )
+        else:
+            print("Forceful initialisation of batch renderer")
+            from madrona_mjx.renderer import BatchRenderer
+            self.batch_renderer = BatchRenderer(m = self.sys,
+                                                gpu_id=0,
+                                                num_worlds=kwargs['num_envs'],
+                                                batch_render_view_width=120,
+                                                batch_render_view_height=120,
+                                                enabled_geom_groups = np.asarray([0, 1, 2]),
+                                                enabled_cameras = np.asarray([0]),
+                                                use_rasterizer = False,
+                                                viz_gpu_hdls = None,
+                                                add_cam_debug_geo = False,
+                                                )
     
     def _prepare_env(self, **kwargs):
         self._prepare_bm_model()
