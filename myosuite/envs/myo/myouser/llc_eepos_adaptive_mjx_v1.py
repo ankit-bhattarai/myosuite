@@ -436,6 +436,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             _, rgb, depth = self.batch_renderer.render(render_token, data)
         pixels = rgb[0][..., :3].astype(jp.float32) / 255.0
         depth = depth[0].astype(jp.float32)
+        update_info.update({"pixels/view_0": pixels, "pixels/depth": depth})
+        return update_info
 
         if self.vision_mode == 'rgb':
             update_info.update({"pixels/view_0": pixels})
@@ -487,6 +489,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         if self.vision:
             pixels_dict = self.generate_pixels(data, state.info['render_token'])
             state.info.update(pixels_dict)
+        # Manually added
+        pixels_dict = self.generate_pixels(data, state.info['render_token'])
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
@@ -961,6 +965,9 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         data = self.add_target_pos_to_data(data, info['target_pos'])
         if self.vision:
             info.update(self.generate_pixels(data))
+        # Manually added
+        pixels_dict = self.generate_pixels(data)
+        info['render_token'] = pixels_dict['render_token']
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
@@ -1029,6 +1036,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             info['render_token'] = info_before_reset['render_token']
             pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
             info.update(pixels_dict)
+
+        # Manually added
+        info['render_token'] = info_before_reset['render_token']
+        pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
