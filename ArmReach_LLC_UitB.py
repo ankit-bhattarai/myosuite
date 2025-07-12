@@ -237,18 +237,18 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
         activation = linen.relu
       else:
         raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
-      if not vision:
-        return networks.make_ppo_networks_no_vision(
-          proprioception_size=get_observation_size()['proprioception'],
-          action_size=action_size,
-          preprocess_observations_fn=preprocess_observations_fn,
-        )
+      # if not vision:
+      #   return networks.make_ppo_networks_no_vision(
+      #     proprioception_size=get_observation_size()['proprioception'],
+      #     action_size=action_size,
+      #     preprocess_observations_fn=preprocess_observations_fn,
+      #   )
       return networks.make_ppo_networks_with_vision(
-        proprioception_size=get_observation_size()['proprioception'][0],
+        proprioception_size=44,
         action_size=action_size,
         encoder_out_size=4,
         preprocess_observations_fn=preprocess_observations_fn,
-        cheat_vision_aux_output=cheat_vision_aux_output,
+        cheat_vision_aux_output=True,
       )
       # return networks.make_ppo_networks_unified_extractor(
       #   observation_size=get_observation_size(),

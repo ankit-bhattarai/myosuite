@@ -308,6 +308,7 @@ class VisionEncoder(nnx.Module):
     ):
         if cheat_vision_aux_output:
             self.cheat_vision_aux_output = True
+            print('Initialising vision encoder with cheat_vision_aux_output')
             return
         else:
             self.cheat_vision_aux_output = False
@@ -340,6 +341,7 @@ class VisionEncoder(nnx.Module):
 
     def __call__(self, x: dict):
         if self.cheat_vision_aux_output:
+            print(f'Using vision encoder but cheating by outputting the aux targets which have shape {x["vision_aux_targets"].shape}')
             return x['vision_aux_targets']
         vision_keys = [k for k in x.keys() if k.startswith("pixels/")]
         assert len(vision_keys) == 1, "Only one vision key is supported"
@@ -362,6 +364,7 @@ class VisionAuxOutputIdentity(nnx.Module):
         pass
 
     def __call__(self, x: jnp.ndarray):
+        print(f'Using identity vision aux output with input of shape {x.shape}, returning it as is')
         return x
 
 
@@ -376,12 +379,16 @@ class StatesCombinerPredictStateVariables(nnx.Module):
         vision_feature: jnp.ndarray,
         processor_params: Any,
     ):
-        proprioception_feature = self.preprocess_observations_fn(
-            proprioception_feature, processor_params
+        print(f'Using states combiner with proprioception feature of shape {proprioception_feature.shape} and vision feature of shape {vision_feature.shape}')
+        
+        state_vector = proprioception_feature.at[...,-4:].set(vision_feature)
+        print(f'State vector which was produced by replacing the last 4 elements of the proprioception feature with the vision feature has shape {state_vector.shape}')
+
+        state_vector = self.preprocess_observations_fn(
+            state_vector, processor_params
         )
-        state_vector = jnp.concatenate(
-            [proprioception_feature, vision_feature], axis=-1
-        )
+        print(f'State vector with shape {state_vector.shape} was preprocessed')
+        
         return state_vector
 
 

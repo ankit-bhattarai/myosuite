@@ -196,12 +196,13 @@ def compute_ppo_loss(
       'v_loss': v_loss,
       'entropy_loss': entropy_loss,
   }
-  if 'vision_aux_targets' in data.observation:
-    aux_targets = data.observation['vision_aux_targets']
-    aux_preds = network_output['vision_aux_vector']
-    aux_error = aux_preds - aux_targets
-    aux_loss = jnp.mean(aux_error * aux_error)
-    aux_loss = aux_loss * 0.5 * 0.5 * aux_loss_weight
-    total_loss += aux_loss
-    loss_dict['aux_loss'] = aux_loss
+  # Using cheat method for now - currently disabled
+  # if 'vision_aux_targets' in data.observation:
+  #   aux_targets = data.observation['vision_aux_targets']
+  #   aux_preds = network_output['vision_aux_vector']
+  #   aux_error = aux_preds - aux_targets
+  #   aux_loss = jnp.mean(aux_error * aux_error)
+  #   aux_loss = aux_loss * 0.5 * 0.5 * aux_loss_weight
+  #   total_loss += aux_loss
+  #   loss_dict['aux_loss'] = aux_loss
   return total_loss, loss_dict

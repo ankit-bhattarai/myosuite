@@ -732,7 +732,10 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
-            return {'proprioception': obsvec, 'pixels/depth': obs_dict['pixels/depth']}
+            target_pos = obs_dict['target_pos']
+            target_radius = obs_dict['target_radius']
+            aux_targets = jp.concatenate([target_pos, target_radius], axis=-1)
+            return {'proprioception': obsvec, 'pixels/depth': obs_dict['pixels/depth'], 'vision_aux_targets': aux_targets}
         raise ValueError(f"Invalid vision mode: {self.vision_mode}")
         if self.vision_mode == 'rgbd_only':
             return {'pixels/view_0': obs_dict['pixels/view_0']}
