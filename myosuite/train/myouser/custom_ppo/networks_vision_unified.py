@@ -326,8 +326,8 @@ class VisionEncoder(nnx.Module):
         self.conv5 = nnx.Conv(
             2 * c_hid, 2 * c_hid, kernel_size=(3, 3), strides=2, rngs=rngs, use_bias=use_bias
         )
-        self.linear1 = nnx.Linear(vision_out_size, mlp_between_size, rngs=rngs)
-        self.linear2 = nnx.Linear(mlp_between_size, mlp_out_size, rngs=rngs)
+        self.linear1 = nnx.Linear(vision_out_size, mlp_between_size, use_bias=use_bias, rngs=rngs)
+        self.linear2 = nnx.Linear(mlp_between_size, mlp_out_size, use_bias=use_bias, rngs=rngs)
         # self.mlp = MLP(
         #     vision_out_size,
         #     mlp_out_size,
