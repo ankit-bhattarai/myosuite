@@ -491,6 +491,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             state.info.update(pixels_dict)
         # Manually added
         pixels_dict = self.generate_pixels(data, state.info['render_token'])
+        state.info['pixels/depth'] = pixels_dict['pixels/depth']
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
@@ -722,6 +723,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_dict['pixels/view_0'] = info['pixels/view_0']
             if self.vision_mode == 'rgb+depth' or self.vision_mode == 'depth_only' or self.vision_mode == 'depth' or self.vision_mode == 'depth_w_aux_task':
                 obs_dict['pixels/depth'] = info['pixels/depth']
+        obs_dict['pixels/depth'] = info['pixels/depth']
         return obs_dict
     
     def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
@@ -730,7 +732,8 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
-            return {'proprioception': obsvec}
+            return {'proprioception': obsvec, 'pixels/depth': obs_dict['pixels/depth']}
+        raise ValueError(f"Invalid vision mode: {self.vision_mode}")
         if self.vision_mode == 'rgbd_only':
             return {'pixels/view_0': obs_dict['pixels/view_0']}
         elif self.vision_mode == 'depth_only':
@@ -968,6 +971,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # Manually added
         pixels_dict = self.generate_pixels(data)
         info['render_token'] = pixels_dict['render_token']
+        info['pixels/depth'] = pixels_dict['pixels/depth']
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
@@ -1040,6 +1044,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
         # Manually added
         info['render_token'] = info_before_reset['render_token']
         pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
+        info['pixels/depth'] = pixels_dict['pixels/depth']
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)

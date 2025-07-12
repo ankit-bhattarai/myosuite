@@ -116,6 +116,7 @@ class PPONetworksUnifiedVision(nnx.Module):
         only_policy_logits: bool = False,
         only_vision_aux_feature: bool = False,
     ):
+        print("obs keys", obs.keys())
         if self.has_vision:
             vision_feature = self.vision_encoder(obs)
             if only_vision_aux_feature:
