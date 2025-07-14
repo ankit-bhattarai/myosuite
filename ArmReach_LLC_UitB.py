@@ -40,6 +40,18 @@ from matplotlib import pyplot as plt
 import mediapy as media
 import wandb
 
+import random
+import numpy as np
+
+
+def set_all_seeds(seed):
+  random.seed(seed)
+  np.random.seed(seed)
+  os.environ['PYTHONHASHSEED'] = str(seed)
+
+
+set_all_seeds(42)
+
 class ProgressLogger:
   def __init__(self):
     self.times = [datetime.now()]
