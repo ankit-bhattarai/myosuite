@@ -60,7 +60,7 @@
       <geom name="fixed-eye" quat="0.7106 0.25537 0.616985 0.221728" type="mesh" rgba="1 1 1 1" mesh="eye"/>
       <camera name="fixed-eye" pos="0 0 0" fovy="120"/>
     </body>
-    <light name="scene_directional_light" pos="0.9 0.3 2.5" dir="0 0 -1" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0"/>
+    <light name="scene_directional_light" pos="0.9 0.3 2.5" dir="0 0 -1" type="directional" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0"/>
     <body name="target" pos="0.5 0.14 1.1"> 
       <geom name="target_sphere" type="sphere" size="0.05" rgba="0.1 0.8 0.1 1"/>
       <!-- <site name="fingertip_target" size="0.025" rgba="0.1 0.8 0.1 1" pos="0.5 0 0.8"/> -->
