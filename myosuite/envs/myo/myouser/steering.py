@@ -135,11 +135,7 @@ class Steering(MyoUserBase):
         )
 
     def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
-        ee_pos = obs_dict['fingertip']
-        screen_pos = obs_dict['screen_pos']
-        # startline_coordinates = obs_dict['screen_pos'].at[1].set(startline_y)
-        diff = ee_pos - screen_pos
-        dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
+        dist = obs_dict['dist']
         reach_reward = (jp.exp(-dist*10) - 1.)/10
         done = 1.0 * (dist <= 0.01)
         success_bonus = 10 * done
@@ -179,8 +175,15 @@ class Steering(MyoUserBase):
         obs_dict['top_line_z'] = jp.array(data.site_xpos[self.top_line_id][2], ndmin=1)
         obs_dict['bottom_line_z'] = jp.array(data.site_xpos[self.bottom_line_id][2], ndmin=1)
 
+        ee_pos = obs_dict['fingertip']
+        screen_pos = obs_dict['screen_pos']
+        # startline_coordinates = obs_dict['screen_pos'].at[1].set(startline_y)
+        diff = ee_pos - screen_pos
+        dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
+        obs_dict['dist'] = dist
+
         #TODO: actually implmenet properly
-        obs_dict['phase'] = 0.0
+        obs_dict['phase'] = jp.select([dist <= 0.01], [1.0], 0.0)
         obs_dict['success'] = -1.0
 
         #TODO: more things to add here
