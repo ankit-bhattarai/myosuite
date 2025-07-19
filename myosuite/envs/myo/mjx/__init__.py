@@ -4,7 +4,7 @@ from ml_collections import config_dict
 import copy
 from etils import epath
 from jax import numpy as jp
-import myo_registry as registry
+from . import myo_registry as registry
 from mujoco_playground._src import mjx_env
 import mujoco
 
