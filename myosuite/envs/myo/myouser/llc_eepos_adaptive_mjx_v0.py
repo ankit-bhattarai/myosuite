@@ -831,7 +831,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(PipelineEnv):
                 'trial_idx': trial_idx,
                 # 'trial_success_log_pointer_index': trial_success_log_pointer_index,  #TODO: do not reset to initial value at the beginning of each episode!!!
                 # 'trial_success_log': trial_success_log,  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float64),  #TODO: do not reset to initial value at the beginning of each episode!!!
+                'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float32),  #TODO: do not reset to initial value at the beginning of each episode!!!
                 'rng': rng,
                 'target_success': jp.array(False),
                 'target_fail': jp.array(False),

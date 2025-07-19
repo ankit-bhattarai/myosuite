@@ -20,7 +20,6 @@ from brax.base import Base, Motion, Transform, System
 from brax.base import State as PipelineState
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
 from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
-from myosuite_florian.myosuite.envs.myo.myouser._llc_eepos_adaptive_mjx_v0 import AdaptiveTargetWrapper
 from brax.mjx.base import State as MjxState
 from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
@@ -128,7 +127,7 @@ def main(experiment_id='ArmReach', n_train_steps=20_000_000, n_eval_eps=10,
     if 'eval/episode_reward' in metrics:
       ## called during evaluation
       print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
-          task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
+          success rate: {metrics['eval/episode_success_rate']}, \
           episode length: {metrics['eval/avg_episode_length']}")
       times.append(datetime.now())
       x_data.append(num_steps)
