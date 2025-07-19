@@ -140,7 +140,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
             }
   all_config = {**kwargs, **argument_kwargs}
   wandb.init(project=project_id, name=experiment_id, config=all_config)
-  env = envs.get_environment(env_name, model_path=path, auto_reset=False, **kwargs)
+  env = envs.get_environment(env_name)  #, model_path=path, auto_reset=False, **kwargs)
 
   cwd = os.path.dirname(os.path.abspath(__file__))
   if restore_params_path is not None:
