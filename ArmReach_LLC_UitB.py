@@ -3,9 +3,9 @@ import argparse
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["MUJOCO_GL"]="egl"
-xla_flags = os.environ.get('XLA_FLAGS', '')
-xla_flags += ' --xla_gpu_triton_gemm_any=True'
-os.environ['XLA_FLAGS'] = xla_flags
+# xla_flags = os.environ.get('XLA_FLAGS', '')
+# xla_flags += ' --xla_gpu_triton_gemm_any=True'
+# os.environ['XLA_FLAGS'] = xla_flags
 
 from datetime import datetime
 from etils import epath
@@ -50,6 +50,19 @@ class ProgressLogger:
         print(f'time to jit: {self.times[1] - self.times[0]}')
     wandb.log({'num_steps': num_steps, **metrics})
 
+def set_global_seed(seed=0):
+    """Set global random seeds for reproducible results."""
+    import random
+    import numpy as np
+        
+    # Set Python random seed
+    random.seed(seed)
+    
+    # Set NumPy random seed
+    np.random.seed(seed)
+    
+    print(f"Global random seed set to {seed} for reproducible results")
+
 def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_eval_eps=1,
          restore_params_path=None, init_target_area_width_scale=0.,
          num_envs=3072,
@@ -78,7 +91,11 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          reach_metric_coefficient=10.0,
          get_env_only=False,
          cheat_vision_aux_output=False,
+         global_seed=0,  # Add global seed parameter
          ):
+
+  # Set global seed for reproducibility
+  set_global_seed(global_seed)
 
   env_name = 'mobl_arms_index_llc_eepos_adaptive_mjx-v0'
   envs.register_environment(env_name, LLCEEPosAdaptiveEnvMJXV0)
@@ -434,6 +451,7 @@ if __name__ == '__main__':
   parser.add_argument('--weights_bonus', type=float, default=8.0)
   parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
   parser.add_argument('--cheat_vision_aux_output', type=bool, default=False)
+  parser.add_argument('--global_seed', type=int, default=0)
   args = parser.parse_args()
 
   main(
@@ -468,4 +486,5 @@ if __name__ == '__main__':
     weights_bonus=args.weights_bonus,
     reach_metric_coefficient=args.reach_metric_coefficient,
     cheat_vision_aux_output=args.cheat_vision_aux_output,
+    global_seed=args.global_seed,
   )
