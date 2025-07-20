@@ -56,6 +56,7 @@ class Steering(MyoUserBase):
         self.start_line_id = self._mj_model.site("start_line").id
         self.end_line_id = self._mj_model.site("end_line").id
         self.fingertip_id = self._mj_model.site("fingertip").id
+        self.screen_touch_id = self._mj_model.sensor("screen_touch").id
         #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
 
     def _prepare_after_init(self, data):
@@ -104,6 +105,7 @@ class Steering(MyoUserBase):
             'phase': 0.0, # 0 means that the user hasn't touched the screen yet, 1 means that the user has touched the
              # screen at the start pos and has begun steering
              'dist': 0.0,
+             'touching_screen': jp.bool_(False),
         }
 
         return mjx_env.State(data, obs, reward, done, metrics, info)
@@ -124,6 +126,7 @@ class Steering(MyoUserBase):
             success_rate=done,
             phase=obs_dict['phase'],
             dist=dist,
+            touching_screen=obs_dict['touching_screen'],
         )
         return mjx_env.State(
             data=data,
@@ -174,6 +177,7 @@ class Steering(MyoUserBase):
         obs_dict['end_line_y'] = jp.array(data.site_xpos[self.end_line_id][1], ndmin=1)
         obs_dict['top_line_z'] = jp.array(data.site_xpos[self.top_line_id][2], ndmin=1)
         obs_dict['bottom_line_z'] = jp.array(data.site_xpos[self.bottom_line_id][2], ndmin=1)
+        obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
 
         ee_pos = obs_dict['fingertip']
         screen_pos = obs_dict['screen_pos']
@@ -203,6 +207,7 @@ class Steering(MyoUserBase):
         info['last_ctrl'] = obs_dict['last_ctrl']
         info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
+        info['touching_screen'] = obs_dict['touching_screen']
         return info
     
     def get_ctrl(self, state: mjx_env.State, action: jp.ndarray, rng: jp.ndarray):
