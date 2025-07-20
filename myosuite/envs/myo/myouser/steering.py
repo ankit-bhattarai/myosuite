@@ -181,8 +181,9 @@ class Steering(MyoUserBase):
 
         ee_pos = obs_dict['fingertip']
         screen_pos = obs_dict['screen_pos']
+        start_line = obs_dict['start_line']
         # startline_coordinates = obs_dict['screen_pos'].at[1].set(startline_y)
-        diff = ee_pos - screen_pos
+        diff = ee_pos - start_line
         dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
         obs_dict['dist'] = dist
 
