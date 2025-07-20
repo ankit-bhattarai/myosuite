@@ -46,7 +46,7 @@ class Steering(MyoUserBase):
             self.reset_type in valid_reset_types
         ), f"Invalid reset type '{self.reset_type} (valid types are {valid_reset_types})."
 
-        self.obs_keys =['qpos', 'qvel', 'qacc', 'fingertip', 'act', 'motor_act', 'screen_pos', 'start_line_y', 'end_line_y', 'top_line_z', 'bottom_line_z'] 
+        self.obs_keys =['qpos', 'qvel', 'qacc', 'fingertip', 'act', 'motor_act', 'screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line'] 
 
 
         self._episode_length = self._config.episode_length
@@ -173,10 +173,10 @@ class Steering(MyoUserBase):
         obs_dict['screen_pos'] = data.site_xpos[self.screen_id]
 
         # Read positions directly from current data instead of stale info
-        obs_dict['start_line_y'] = jp.array(data.site_xpos[self.start_line_id][1], ndmin=1)
-        obs_dict['end_line_y'] = jp.array(data.site_xpos[self.end_line_id][1], ndmin=1)
-        obs_dict['top_line_z'] = jp.array(data.site_xpos[self.top_line_id][2], ndmin=1)
-        obs_dict['bottom_line_z'] = jp.array(data.site_xpos[self.bottom_line_id][2], ndmin=1)
+        obs_dict['start_line'] = data.site_xpos[self.start_line_id]
+        obs_dict['end_line'] = data.site_xpos[self.end_line_id]
+        obs_dict['top_line'] = data.site_xpos[self.top_line_id]
+        obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
         obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
 
         ee_pos = obs_dict['fingertip']
