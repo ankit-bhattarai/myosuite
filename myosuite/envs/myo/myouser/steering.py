@@ -9,7 +9,7 @@ import jax.numpy as jp
 import numpy as np
 
 
-from myosuite.envs.myo.myouser.llc_eepos_adaptive_mjx_v1 import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase
 
 
 
