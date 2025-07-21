@@ -617,25 +617,17 @@ def train(
   )
 
   if restore_checkpoint_path is not None:
-    raise NotImplementedError("Checkpoint loading not implemented")
     params = checkpoint.load(restore_checkpoint_path)
-    value_params = params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=params[0],
-        params=training_state.params.replace(
-            policy=params[1], value=value_params
-        ),
+        params=params[1],
     )
 
   if restore_params is not None:
-    raise NotImplementedError("Checkpoint loading not implemented")
     logging.info('Restoring TrainingState from `restore_params`.')
-    value_params = restore_params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=restore_params[0],
-        params=training_state.params.replace(
-            policy=restore_params[1], value=value_params
-        ),
+        params=restore_params[1],
     )
 
   if num_timesteps == 0:
