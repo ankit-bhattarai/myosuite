@@ -33,7 +33,7 @@ from myosuite.envs.myo.fatigue import CumulativeFatigue
 def default_config() -> config_dict.ConfigDict:
     #TODO: update/make use of env_config parameters!
     env_config = config_dict.create(
-        ctrl_dt=0.02,
+        ctrl_dt=0.05,
         sim_dt=0.002,
         # episode_length=400,
         max_duration=4., # timelimit per target, in seconds
@@ -41,10 +41,9 @@ def default_config() -> config_dict.ConfigDict:
             reset_noise_scale=1e-1,
         ),
         reward_config=config_dict.create(
-            angle_reward_weight=1,
-            ctrl_cost_weight=1,
-            pose_thd=0.35,
-            bonus_weight=4
+            reach=1,
+            bonus=8,
+            neural_effort=0,  #1e-4,
         )
     )
 
@@ -58,23 +57,23 @@ def default_config() -> config_dict.ConfigDict:
     )
 
     rl_config = config_dict.create(
-        num_timesteps=200_000_000,  #50_000_000,
-        num_evals=30,  #16,
+        num_timesteps=15_000_000,  #50_000_000,
+        num_evals=0,  #16,
         reward_scaling=0.1,
         # episode_length=env_config.episode_length,
-        episode_length=int(env_config.max_duration / env_config.ctrl_dt),
+        episode_length=int(env_config.max_duration / env_config.ctrl_dt),  #TODO: fix, as this dependency is not automatically updated...
         clipping_epsilon=0.3,
         normalize_observations=True,
         action_repeat=1,
         unroll_length=10,
-        num_minibatches=128,  #32
-        num_updates_per_batch=2,  #8
+        num_minibatches=8,  #128,  #32
+        num_updates_per_batch=8,  #2,  #8
         num_resets_per_eval=1,
         discounting=0.97,
         learning_rate=3e-4,
         entropy_cost=0.001,
-        num_envs=8192,
-        batch_size=512,
+        num_envs=1024,  #8192,
+        batch_size=128,  #512,
         max_grad_norm=1.0,
         network_factory=config_dict.create(
             policy_hidden_layer_sizes=(256, 256),
@@ -91,13 +90,12 @@ def default_config() -> config_dict.ConfigDict:
 
 class PlaygroundArmPointing(mjx_env.MjxEnv):
     DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']
-    #TODO: use env_config.reward_config instead
-    DEFAULT_RWD_KEYS_AND_WEIGHTS = {
-        "reach": 1.0,
-        "bonus": 8.0,
-        #"penalty": 50,
-        "neural_effort": 1e-4,
-    }
+    # DEFAULT_RWD_KEYS_AND_WEIGHTS = {
+    #     "reach": 1.0,
+    #     "bonus": 8.0,
+    #     #"penalty": 50,
+    #     "neural_effort": 0,  #1e-4,
+    # }
 
     def __init__(
             self,
@@ -121,6 +119,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         self._mj_model.opt.disableflags = self._mj_model.opt.disableflags | mjx.DisableBit.EULERDAMP
 
         self.max_duration = config.max_duration
+        self.weighted_reward_keys = config.reward_config
 
         self._prepare_bm_model()
         
@@ -244,7 +243,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             constantnoise_level = 0.185,
             reset_type = "range_uniform",
             obs_keys:list = DEFAULT_OBS_KEYS,
-            weighted_reward_keys:dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
+            # weighted_reward_keys:dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
             # episode_length = 800,
             # frame_skip = 25,  #NOTE: deprecated; use ctrl_dt and sim_dt instead; frame_skip=25 corresponds to 20Hz; with episode_length=800, this results in 40s maximum time per episode
             **kwargs,
@@ -299,7 +298,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # self.dwell_threshold = zero  #0.
         
         # Setup reward function and observation components, and other meta-parameters
-        self.rwd_keys_wt = weighted_reward_keys
+        self.rwd_keys_wt = self.weighted_reward_keys
         self.obs_keys = obs_keys
 
         self.tip_sids = []
