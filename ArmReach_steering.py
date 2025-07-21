@@ -63,7 +63,7 @@ def set_global_seed(seed=0):
     
     print(f"Global random seed set to {seed} for reproducible results")
 
-def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_eval_eps=1,
+def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_eval_eps=10,
          restore_params_path=None, init_target_area_width_scale=0.,
          num_envs=3072,
          vision=True,
@@ -348,12 +348,12 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   times = [datetime.now()]
 
   render_fn = _create_render(eval_env)
-  rollouts = evaluate(eval_env, inference_fn, n_eps=10, times=times, render_fn=render_fn, experiment_id=experiment_id)
+  rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn, experiment_id=experiment_id)
 
   _render(rollouts, experiment_id=experiment_id)
 
 
-def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single', experiment_id='ArmReach'):
+def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single', experiment_id='Steering'):
   if rng is None:
     rng = jax.random.PRNGKey(seed=0)
   
