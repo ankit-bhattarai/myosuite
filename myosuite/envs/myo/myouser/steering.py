@@ -120,6 +120,7 @@ class Steering(MyoUserBase):
         
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
+        state.info['completed_phase_0'] = jp.bool_(False)
         rwd, done, update_info, metrics = self.get_rewards_and_done(obs_dict, state.info)
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
