@@ -82,8 +82,8 @@ def default_config() -> config_dict.ConfigDict:
         network_factory=config_dict.create(
             policy_hidden_layer_sizes=(256, 256),
             value_hidden_layer_sizes=(256, 256),
-            policy_obs_key="state",
-            value_obs_key="state",
+            # policy_obs_key="state",
+            # value_obs_key="state",
             # distribution_type="tanh",
         )
     )
@@ -110,7 +110,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             vision=False,  #TODO: define vision in config
     ) -> None:
         super().__init__(config, config_overrides)
-        xml_path = "../../../simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml"  #rf"../assets/arm/myoarm_relocate.xml"
+        xml_path = "../../../simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml"  #rf"../assets/arm/myoarm_relocate.xml"  #TODO: use 'wrapper' xml file in assets rather than raw simhive file
+        # xml_path = '../assets/arm/myoarm_pose.xml'  #rf"../assets/arm/myoarm_relocate.xml"
         self._mj_model = mujoco.MjModel.from_xml_path(xml_path)
         self._mj_model.opt.timestep = self.sim_dt
 
@@ -229,9 +230,12 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         self._independent_qpos, self._independent_dofs = get_dofs(self._independent_joints)
 
     def _setup(self,
+            # target_pos_range:dict = {'IFtip': jp.array([[-0.1, 0.225, -0.3], [0.1, 0.35, 0.3]]),}
             target_pos_range:dict = {'fingertip': jp.array([[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]]),},
+            # target_radius_range:dict = {'IFtip': jp.array([0.05, 0.05]),},
             target_radius_range:dict = {'fingertip': jp.array([0.05, 0.05]),},
             target_origin_rel:list = jp.zeros(3),  #[0.225, -0.1, 0.05],  #NOTE: target area offset should be directly added to target_pos_range
+            # ref_site = 'R.Shoulder_marker',
             ref_site = 'humphant',
             adaptive_task = True,
             init_target_area_width_scale = 1.,
@@ -315,8 +319,10 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
                 self.tip_sids.append(mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site))
                 self.target_sids.append(mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target'))
         # self._episode_length = episode_length
-        self.target_body_id = self.mj_model.body('target').id
-        self.target_geom_id = self.mj_model.geom('target_sphere').id
+        
+        # self.target_body_id = self.mj_model.body('target').id
+        # self.target_geom_id = self.mj_model.geom('target_sphere').id
+
         # self._normalize_act = normalize_act
 
         #### Task-specific settings (data-dependent settings need to be defined in _prepare_after_init) ####
@@ -619,6 +625,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
+            # return obsvec
             return {"proprioception": obsvec}
         vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
         if self.vision_mode == 'rgb+depth':
@@ -779,7 +786,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
-        data = self.add_target_pos_to_data(data, info['target_pos'])
+        # data = self.add_target_pos_to_data(data, info['target_pos'])
         if self.vision:
             info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
@@ -845,7 +852,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
-        data = self.add_target_pos_to_data(data, info['target_pos'])
+        # data = self.add_target_pos_to_data(data, info['target_pos'])
 
         if self.vision:
             info['render_token'] = info_before_reset['render_token']
@@ -1021,7 +1028,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
         # )
         data = mjx_env.step(self.mjx_model, data0, new_ctrl, n_substeps=self.n_substeps)
-        data = self.add_target_pos_to_data(data, state.info['target_pos'])
+        # data = self.add_target_pos_to_data(data, state.info['target_pos'])
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
@@ -1037,12 +1044,13 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         
         _, state.info['rng'] = jax.random.split(rng, 2)  #update rng after each step to ensure variability across steps
 
+        done = rwd_dict['done']
         state.metrics.update(
-            target_area_dynamic_width_scale=obs_dict['task_completed']*obs_dict['target_area_dynamic_width_scale'],
-            success_rate=obs_dict['task_completed']*obs_dict['success_rate'],
+            target_area_dynamic_width_scale=done*obs_dict['target_area_dynamic_width_scale'],
+            success_rate=done*obs_dict['success_rate'],
             # bonus=rwd_dict['bonus'],
             # ctrl=data.ctrl[-1],  #TODO: remove [for debugging purposes only]
-            reach_dist=obs_dict['task_completed']*jp.linalg.norm(obs_dict['reach_dist']),
+            reach_dist=done*jp.linalg.norm(obs_dict['reach_dist']),
         )
 
         # return self.forward(**kwargs)

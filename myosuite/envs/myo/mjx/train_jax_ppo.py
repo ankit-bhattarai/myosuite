@@ -28,8 +28,8 @@ import jax
 from absl import app
 from absl import flags
 from absl import logging
-from brax.training.agents.ppo import networks as ppo_networks
-from brax.training.agents.ppo import networks_vision as ppo_networks_vision
+# from brax.training.agents.ppo import networks as ppo_networks
+# from brax.training.agents.ppo import networks_vision as ppo_networks_vision
 # from brax.training.agents.ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
@@ -345,6 +345,7 @@ def set_global_seed(seed=0):
 ##TODO: do not hardcode this, but obtain from observation size/shape
 def get_observation_size(vision=False):
     if not vision:
+      # return 48
       return {'proprioception': 48}
     if vision == 'rgb':
       return {
@@ -595,8 +596,8 @@ def main(argv):
   #     cheat_vision_aux_output=cheat_vision_aux_output,
   #   )
   # network_factory = custom_network_factory
-  network_factory = functools.partial(networks.custom_network_factory, vision=_VISION.value, get_observation_size=functools.partial(get_observation_size, vision=_VISION.value))
 
+  network_factory = functools.partial(networks.custom_network_factory, vision=_VISION.value, get_observation_size=functools.partial(get_observation_size, vision=_VISION.value), **getattr(ppo_params, "network_factory", {}))
 
   if _DOMAIN_RANDOMIZATION.value:
     training_params["randomization_fn"] = registry.get_domain_randomizer(

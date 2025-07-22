@@ -634,22 +634,19 @@ def train(
     #TODO: fix this properly
 
     params = checkpoint.load(restore_checkpoint_path)
-    policy_params = params[1]["params"]["policy_network"]
-    value_params = params[1]["params"]["value_network"] if restore_value_fn else init_params.value
+    # policy_params = params[1]["params"]["policy_network"]
+    # value_params = params[1]["params"]["value_network"] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=params[0],
-        params=dict(training_state.params["params"], **{"policy_network": policy_params, "value_network": value_params}),
+        params=params[1],  #dict(training_state.params["params"], **{"policy_network": policy_params, "value_network": value_params}),
     )
 
   if restore_params is not None:
-    raise NotImplementedError("Checkpoint loading not implemented")
     logging.info('Restoring TrainingState from `restore_params`.')
-    value_params = restore_params[2] if restore_value_fn else init_params.value
+    # value_params = restore_params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=restore_params[0],
-        params=training_state.params.replace(
-            policy=restore_params[1], value=value_params
-        ),
+        params=restore_params[1],
     )
 
   if num_timesteps == 0:
