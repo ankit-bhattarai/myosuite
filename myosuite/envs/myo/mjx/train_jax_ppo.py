@@ -205,7 +205,8 @@ class ProgressLogger:
   def progress(self, num_steps, metrics):
     self.times.append(datetime.now())
     if len(self.times) == 2:
-        print(f'time to jit: {self.times[1] - self.times[0]}')
+        print(f'time to JIT compile: {self.times[1] - self.times[0]}')
+        print(f'Starting training...')
       
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
@@ -701,7 +702,7 @@ def main(argv):
   progress_logger = ProgressLogger(writer=writer, ppo_params=ppo_params, logdir=logdir,
                                    local_plotting=False)
   
-  print("Starting training...")
+  print("Starting to JIT compile...")
 
   # Train or load the model
   make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
