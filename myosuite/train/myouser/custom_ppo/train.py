@@ -682,16 +682,16 @@ def train(
 
   # Run initial eval
   metrics = {}
-  if process_id == 0 and num_evals > 1:
-    metrics = evaluator.run_evaluation(
-        _unpmap((
-            training_state.normalizer_params,
-            training_state.params,
-        )),
-        training_metrics={},
-    )
-    logging.info(metrics)
-    progress_fn(0, metrics)
+  # if process_id == 0 and num_evals > 1:
+  #   metrics = evaluator.run_evaluation(
+  #       _unpmap((
+  #           training_state.normalizer_params,
+  #           training_state.params,
+  #       )),
+  #       training_metrics={},
+  #   )
+  #   logging.info(metrics)
+  #   progress_fn(0, metrics)
 
   training_metrics = {}
   training_walltime = 0
@@ -730,13 +730,13 @@ def train(
           save_checkpoint_path, current_step, params, ckpt_config
       )
 
-    if num_evals > 0:
-      metrics = evaluator.run_evaluation(
-          params,
-          training_metrics,
-      )
-      logging.info(metrics)
-      progress_fn(current_step, metrics)
+    # if num_evals > 0:
+    #   metrics = evaluator.run_evaluation(
+    #       params,
+    #       training_metrics,
+    #   )
+    #   logging.info(metrics)
+    #   progress_fn(current_step, metrics)
 
   total_steps = current_step
   if not total_steps >= num_timesteps:

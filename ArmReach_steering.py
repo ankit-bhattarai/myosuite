@@ -173,7 +173,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     env_name,
     config_overrides={
       'model_path': path,
-      'episode_length': 300,
+      'episode_length': episode_length,
       'distance_reach_metric_coefficient': distance_reach_metric_coefficient,
       'x_reach_metric_coefficient': x_reach_metric_coefficient,
       'x_reach_weight': x_reach_weight,
@@ -288,7 +288,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
 
   train_fn = functools.partial(
-      ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
+      ppo.train, num_timesteps=n_train_steps, num_evals=n_eval_eps, reward_scaling=0.1,
       madrona_backend=vision,
       wrap_env=False, episode_length=episode_length, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
@@ -312,25 +312,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     return wrapped_env
   
   progress_logger = ProgressLogger(use_wandb=use_wandb)
-  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress)
-  times = progress_logger.times
-  if n_train_steps > 0 and len(times) > 2:
-    print(f'time to jit: {times[1] - times[0]}')
-    print(f'time to train: {times[-1] - times[1]}')
 
-  cwd = os.path.dirname(os.path.abspath(__file__))
-  os.makedirs(cwd + '/myosuite-mjx-policies/', exist_ok=True)
-
-  param_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_params')
-  if n_train_steps > 0:
-    model.save_params(param_path, params)
-
-  # TODO: store metrics as well
-  print(metrics)
-
-  ## EVALUATION
-  ##TODO: load internal env state ('target_area_dynamic_width_scale')
-  backend = 'positional' # @param ['generalized', 'positional', 'spring']
   eval_env = envs.get_environment(env_name=env_name, config_overrides={
     'model_path': path,
     'episode_length': 300,
@@ -343,17 +325,56 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'episode_length': 300,
   })
 
-  params = model.load_params(param_path)
-  inference_fn = make_inference_fn(params)
+  policy_params_fn = functools.partial(runtime_fn, eval_env=eval_env, render_env=render_env, experiment_id=experiment_id, n_eps=n_eval_eps)
+  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress, policy_params_fn=policy_params_fn)
+  times = progress_logger.times
+  if n_train_steps > 0 and len(times) > 2:
+    print(f'time to jit: {times[1] - times[0]}')
+    print(f'time to train: {times[-1] - times[1]}')
 
-  times = [datetime.now()]
+  if n_train_steps == 0:
+    runtime_fn(0, make_inference_fn, params, eval_env, render_env, experiment_id, n_eps=n_eval_eps)  
+    return
 
-  rollouts = evaluate(eval_env, render_env, inference_fn, n_eps=n_eval_eps, times=times, experiment_id=experiment_id)
+  cwd = os.path.dirname(os.path.abspath(__file__))
+  os.makedirs(cwd + '/myosuite-mjx-policies/', exist_ok=True)
 
-  # _render(rollouts, experiment_id=experiment_id)
+  param_path = os.path.join(cwd, f'myosuite-mjx-policies/{experiment_id}_params')
+  if n_train_steps > 0:
+    model.save_params(param_path, params)
+
+  # TODO: store metrics as well
+  print(metrics)
 
 
-def evaluate(env, render_env, inference_fn, n_eps=10, rng=None, times=[], experiment_id='Steering'):
+def runtime_fn(current_step, make_policy, params, eval_env, render_env, experiment_id, n_eps=10):
+  inference_fn = make_policy(params)
+  cwd = os.path.dirname(os.path.abspath(__file__))
+  eval_path = cwd + f'/myosuite-checkpoints/{experiment_id}/{current_step}'
+  os.makedirs(eval_path, exist_ok=True)
+  model.save_params(eval_path + '/params', params)
+  evaluate(eval_env, render_env, inference_fn, eval_path, n_eps=n_eps, times=[datetime.now()], current_step=current_step)
+  print(f'Succesfully saved params and evaluated policy at step {current_step}')
+
+def touching_screen_in_phase_1(states):
+  """
+  Returns the mean of the timesteps at which the screen is touched in phase 1.
+  """
+  timesteps = []
+  for state in states:
+    if bool(state.info['completed_phase_0']):
+      timesteps.append(bool(state.info['touching_screen']))
+  return jp.mean(jp.array(timesteps))
+
+def log_eval_metrics(timestep, metrics, video_path=None, fps=None):
+  metrics_dict = {f'eval/{k}': jp.mean(jp.array(v)) for k, v in metrics.items()}
+  wandb.log({'num_steps': timestep,
+             'video': wandb.Video(video_path, fps=fps),
+              **metrics_dict})
+  # if video_path is not None:
+  #   wandb.log({'video': wandb.Video(video_path, fps=fps)})
+
+def evaluate(env, render_env, inference_fn, save_path, n_eps=10, rng=None, times=[], current_step=0):  
   if rng is None:
     rng = jax.random.PRNGKey(seed=0)
   
@@ -369,6 +390,14 @@ def evaluate(env, render_env, inference_fn, n_eps=10, rng=None, times=[], experi
 
   rollouts = []
   videos = []
+  metrics = {
+    'touching_screen_in_phase_1': [],
+    # 'time_to_complete_phase_0': [],
+    # 'time_to_complete_phase_1': [],
+    # 'time_to_completion': [],
+    'success_rate_phase_0': [],
+    'success_rate': [],
+    }
   for episode in range(n_eps):
     rng = jax.random.PRNGKey(seed=episode)
     state = jit_env_reset(rng=rng)
@@ -376,6 +405,7 @@ def evaluate(env, render_env, inference_fn, n_eps=10, rng=None, times=[], experi
     render_fn = functools.partial(render_env.render, camera='fixed-eye', height=480, width=640)
     rollout = {}
     states = []
+
     states_pointer = 0
     frame_collection = []
     done = state.done
@@ -388,6 +418,11 @@ def evaluate(env, render_env, inference_fn, n_eps=10, rng=None, times=[], experi
 
       if done:
         # print('RENDER', rollout_pointer, len(rollout), obs_dict['target_pos'])
+        metrics['touching_screen_in_phase_1'].append(touching_screen_in_phase_1(states))
+        metrics['success_rate'].append(state.metrics['success_rate'])
+        metrics['success_rate_phase_0'].append(state.metrics['completed_phase_0'])
+        
+
         if render_fn is not None:
           frame_collection.extend(render_fn(states[states_pointer:])) #with render_mode="rgb_array_list", env.render() returns a list of all frames since last call of reset()
           states_pointer = len(states)
@@ -400,13 +435,10 @@ def evaluate(env, render_env, inference_fn, n_eps=10, rng=None, times=[], experi
       states_pointer = len(states)
       videos += frame_collection
   
-  cwd = os.path.dirname(os.path.abspath(__file__))
-  os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
-  eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
-
-  media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
-
-
+  video_path = f'{save_path}/video.mp4'
+  fps = 1.0 / env.dt
+  media.write_video(video_path, videos, fps=fps)
+  log_eval_metrics(current_step, metrics, video_path, fps)
   return rollouts
 
 
@@ -415,7 +447,7 @@ if __name__ == '__main__':
   parser.add_argument('--experiment_id', type=str, required=True)
   parser.add_argument('--project_id', type=str, default='mjx-training')
   parser.add_argument('--n_train_steps', type=int, default=100_000_000)
-  parser.add_argument('--n_eval_eps', type=int, default=1)
+  parser.add_argument('--n_eval_eps', type=int, default=10)
   parser.add_argument('--restore_params_path', type=str, default=None)
   parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
   parser.add_argument('--num_envs', type=int, default=3072)
