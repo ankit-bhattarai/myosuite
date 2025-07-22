@@ -156,11 +156,6 @@ _DETERMINISTIC_RSCOPE = flags.DEFINE_boolean(
     True,
     "Run deterministic rollouts for the rscope viewer",
 )
-_RUN_EVALS = flags.DEFINE_boolean(
-    "run_evals",
-    True,
-    "Run evaluation rollouts between policy updates.",
-)
 _LOG_TRAINING_METRICS = flags.DEFINE_boolean(
     "log_training_metrics",
     True,
@@ -487,8 +482,6 @@ def main(argv):
     env_cfg.vision = True
     env_cfg.vision_config.render_batch_size = ppo_params.num_envs
   env = registry.load(_ENV_NAME.value, config=env_cfg)
-  if _RUN_EVALS.present:
-    ppo_params.run_evals = _RUN_EVALS.value
   if _LOG_TRAINING_METRICS.present:
     ppo_params.log_training_metrics = _LOG_TRAINING_METRICS.value
   if _TRAINING_METRICS_STEPS.present:
