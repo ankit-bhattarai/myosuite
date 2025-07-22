@@ -30,15 +30,18 @@ from absl import flags
 from absl import logging
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import networks_vision as ppo_networks_vision
-from brax.training.agents.ppo import train as ppo
+# from brax.training.agents.ppo import train as ppo
+from myosuite.train.myouser.custom_ppo import train as ppo
+from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
 from etils import epath
-# from flax.training import orbax_utils
 import jax
 import jax.numpy as jp
+import matplotlib.pyplot as plt
 import mediapy as media
 from ml_collections import config_dict
 import mujoco
-# from orbax import checkpoint as ocp
+from orbax import checkpoint as ocp
+from flax.training import orbax_utils
 
 from tensorboardX import SummaryWriter
 import wandb
@@ -50,7 +53,8 @@ from mujoco_playground.config import dm_control_suite_params
 from mujoco_playground.config import locomotion_params
 from mujoco_playground.config import manipulation_params
 
-
+# for adaptive task curriculum
+from myosuite.train.utils.wrapper import wrap_curriculum_training
 from playground_myoElbow import PlaygroundElbow #, default_config
 from playground_myoUser_pointing import PlaygroundArmPointing, default_config  #TODO: import default_config from here
 
@@ -79,7 +83,7 @@ _ENV_NAME = flags.DEFINE_string(
     "MyoElbow",
     f"Name of the environment. One of {', '.join(registry.ALL_ENVS)}",
 )
-_VISION = flags.DEFINE_boolean("vision", False, "Use vision input")
+_VISION = flags.DEFINE_string("vision", '', "Whether and which type of vision input to use")
 _LOAD_CHECKPOINT_PATH = flags.DEFINE_string(
     "load_checkpoint_path", None, "Path to load checkpoint from"
 )
@@ -159,7 +163,7 @@ _RUN_EVALS = flags.DEFINE_boolean(
 )
 _LOG_TRAINING_METRICS = flags.DEFINE_boolean(
     "log_training_metrics",
-    False,
+    True,
     "Whether to log training metrics and callback to progress_fn. Significantly"
     " slows down training if too frequent.",
 )
@@ -169,6 +173,215 @@ _TRAINING_METRICS_STEPS = flags.DEFINE_integer(
     "Number of steps between logging training metrics. Increase if training"
     " experiences slowdown.",
 )
+
+class ProgressLogger:
+  def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None):
+    self.times = [datetime.now()]
+    self.writer = writer
+    self.ppo_params = ppo_params
+    self.local_plotting = local_plotting
+
+    if self.local_plotting:
+      assert logdir is not None, "logdir must be provided if local_plotting is True"
+      self.logdir = logdir
+
+      class PlotParams(object):
+        def __init__(self, ppo_params):
+          self.x_data = []
+          self.y_data = []
+          self.ydataerr = []
+          self.times = [datetime.now()]
+
+          self.x_data_train = []
+          self.y_data_train = []
+          self.y_data_train_length = []
+          self.y_data_train_success = []
+          self.y_data_train_curriculum_state = []
+
+          self.max_y, self.min_y = 150, 0
+          self.max_episode_length = ppo_params.episode_length
+      self._plt_params = PlotParams(self.ppo_params)
+  
+  def progress(self, num_steps, metrics):
+    self.times.append(datetime.now())
+    if len(self.times) == 2:
+        print(f'time to jit: {self.times[1] - self.times[0]}')
+      
+    # Log to Weights & Biases
+    if _USE_WANDB.value and not _PLAY_ONLY.value:
+      wandb.log({'num_steps': num_steps, **metrics}, step=num_steps)
+
+    # Log to TensorBoard
+    if _USE_TB.value and not _PLAY_ONLY.value and self.writer is not None:
+      for key, value in metrics.items():
+        self.writer.add_scalar(key, value, num_steps)
+      self.writer.flush()
+
+    # if 'eval/episode_reward' in metrics:
+    if self.ppo_params.num_evals > 0:
+      print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
+    if not _USE_WANDB.value and not _USE_TB.value and self.ppo_params.log_training_metrics:
+      if "episode/sum_reward" in metrics:
+        print(
+            f"{num_steps}: mean episode"
+            f" reward={metrics['episode/sum_reward']:.3f}"
+        )
+    
+    if self.local_plotting:
+      if self.ppo_params.num_evals > 0 and 'eval/episode_reward' in metrics:
+        ## called during evaluation
+        # print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
+        #     task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
+        #     episode length: {metrics['eval/avg_episode_length']}")
+        self._plt_params.times.append(datetime.now())
+        self._plt_params.x_data.append(num_steps)
+        self._plt_params.y_data.append(metrics['eval/episode_reward'])
+        self._plt_params.ydataerr.append(metrics['eval/episode_reward_std'])
+
+        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
+        plt.ylim([self._plt_params.min_y, self._plt_params.max_y])
+
+        plt.xlabel('# environment steps')
+        plt.ylabel('reward per episode')
+        plt.title(f'y={self._plt_params.y_data[-1]:.3f}')
+
+        plt.errorbar(
+            self._plt_params.x_data, self._plt_params.y_data, yerr=self._plt_params.ydataerr)
+        plt.show()
+        
+        fig_path = self.logdir / 'progress.png'
+        plt.savefig(fig_path)
+      elif self.ppo_params.log_training_metrics and 'episode/sum_reward' in metrics:
+        ## called during training
+            # print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
+            # task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
+            # episode length: {metrics['eval/avg_episode_length']}")
+        self._plt_params.times.append(datetime.now())
+        self._plt_params.x_data_train.append(num_steps)
+        self._plt_params.y_data_train.append(metrics['episode/sum_reward'])
+        self._plt_params.y_data_train_length.append(metrics['episode/length'])
+        self._plt_params.y_data_train_success.append(metrics['episode/success_rate'])
+        self._plt_params.y_data_train_curriculum_state.append(metrics['episode/target_area_dynamic_width_scale'])
+
+        ## Reward
+        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
+        plt.ylim([self._plt_params.min_y, self._plt_params.max_y])
+
+        plt.xlabel('# environment steps')
+        plt.ylabel('reward per episode')
+        plt.title(f'y={self._plt_params.y_data_train[-1]:.3f}')
+
+        plt.errorbar(
+            self._plt_params.x_data_train, self._plt_params.y_data_train) # yerr=ydataerr)
+        plt.show()
+
+        fig_path = self.logdir / 'progress_train_reward.png'
+        plt.savefig(fig_path)
+        plt.close()
+
+        ## Episode length
+        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
+        plt.ylim([0, self._plt_params.max_episode_length * 1.1])
+
+        plt.xlabel('# environment steps')
+        plt.ylabel('episode length')
+        plt.title(f'length={self._plt_params.y_data_train_length[-1]:.3f}')
+        plt.errorbar(
+            self._plt_params.x_data_train, self._plt_params.y_data_train_length) # yerr=ydataerr)
+        plt.show()
+        plt.show()
+
+        fig_path = self.logdir / 'progress_train_length.png'
+        plt.savefig(fig_path)
+        plt.close()
+        
+        ## Success rate
+        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
+        plt.ylim([0, 1])
+
+        plt.xlabel('# environment steps')
+        plt.ylabel('success rate')
+        plt.title(f'success={self._plt_params.y_data_train_success[-1]:.3f}')
+        plt.errorbar(
+            self._plt_params.x_data_train, self._plt_params.y_data_train_success) # yerr=ydataerr)
+        plt.show()
+
+        fig_path = self.logdir / 'progress_train_success.png'
+        plt.savefig(fig_path)
+        plt.close()
+        
+        ## Curriculum state
+        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
+        plt.ylim([0, 1])
+
+        plt.xlabel('# environment steps')
+        plt.ylabel('curriculum state')
+        plt.title(f'width={self._plt_params.y_data_train_curriculum_state[-1]:.3f}')
+        plt.errorbar(
+            self._plt_params.x_data_train, self._plt_params.y_data_train_curriculum_state) # yerr=ydataerr)
+        plt.show()
+
+        fig_path = self.logdir / 'progress_train_curriculum.png'
+        try:
+          plt.savefig(fig_path)
+          plt.close()
+        except:
+          pass
+
+def set_global_seed(seed=0):
+    """Set global random seeds for reproducible results."""
+    import random
+    import numpy as np
+        
+    # Set Python random seed
+    random.seed(seed)
+    
+    # Set NumPy random seed
+    np.random.seed(seed)
+    
+    print(f"Global random seed set to {seed} for reproducible results")
+
+##TODO: do not hardcode this, but obtain from observation size/shape
+def get_observation_size(vision=False):
+    if not vision:
+      return {'proprioception': 48}
+    if vision == 'rgb':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "proprioception": (44,)          # Vector state
+          }
+    elif vision == 'rgbd':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+          "proprioception": (44,)          # Vector state
+      }
+    elif vision == 'rgb+depth':
+      return {
+          "pixels/view_0": (120, 120, 3),  # RGB image
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (44,)          # Vector state
+          }
+    elif vision == 'rgbd_only':
+      return {
+          "pixels/view_0": (120, 120, 4),  # RGBD image
+      }
+    elif vision == 'depth_only':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+      }
+    elif vision == 'depth':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (44,)          # Vector state
+      }
+    elif vision == 'depth_w_aux_task':
+      return {
+          "pixels/depth": (120, 120, 1),  # Depth image
+          "proprioception": (44,),          # Vector state
+          "vision_aux_targets": (4,) # 3D target position + 1D target radius
+      }
+    else:
+      raise NotImplementedError(f'No observation size known for "{vision}"')
 
 
 def get_rl_config(env_name: str) -> config_dict.ConfigDict:
@@ -304,6 +517,8 @@ def main(argv):
   # Initialize TensorBoard if required
   if _USE_TB.value and not _PLAY_ONLY.value:
     writer = SummaryWriter(logdir)
+  else:
+    writer = None
 
   # Handle checkpoint loading
   if _LOAD_CHECKPOINT_PATH.value is not None:
@@ -332,28 +547,55 @@ def main(argv):
   with open(ckpt_path / "config.json", "w", encoding="utf-8") as fp:
     json.dump(env_cfg.to_dict(), fp, indent=4)
 
-  # # Define policy parameters function for saving checkpoints
-  # def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
-  #   orbax_checkpointer = ocp.PyTreeCheckpointer()
-  #   save_args = orbax_utils.save_args_from_target(params)
-  #   path = ckpt_path / f"{current_step}"
-  #   orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+  # Define policy parameters function for saving checkpoints
+  #TODO: merge with function defined in myosuite.envs.myo.mjx.utils.load_checkpoint
+  def policy_params_fn_checkpoints(current_step, make_policy, params):  # pylint: disable=unused-argument
+    print(f"Saving policy parameters (step: {current_step})")
+    orbax_checkpointer = ocp.PyTreeCheckpointer()
+    save_args = orbax_utils.save_args_from_target(params)
+    path = ckpt_path / f"{current_step}"
+    orbax_checkpointer.save(path, params, force=True, save_args=save_args)
 
   training_params = dict(ppo_params)
   if "network_factory" in training_params:
     del training_params["network_factory"]
 
-  network_fn = (
-      ppo_networks_vision.make_ppo_networks_vision
-      if _VISION.value
-      else ppo_networks.make_ppo_networks
-  )
-  if hasattr(ppo_params, "network_factory"):
-    network_factory = functools.partial(
-        network_fn, **ppo_params.network_factory
-    )
-  else:
-    network_factory = network_fn
+  # network_fn = (
+  #     ppo_networks_vision.make_ppo_networks_vision
+  #     if _VISION.value
+  #     else ppo_networks.make_ppo_networks
+  # )
+  # if hasattr(ppo_params, "network_factory"):
+  #   network_factory = functools.partial(
+  #       network_fn, **ppo_params.network_factory
+  #   )
+  # else:
+  #   network_factory = network_fn
+
+  # def custom_network_factory(obs_shape, action_size, preprocess_observations_fn,
+  #                            cheat_vision_aux_output=False):
+  #   # if activation_function == 'swish':
+  #   #   activation = linen.swish
+  #   # elif activation_function == 'relu':
+  #   #   activation = linen.relu
+  #   # else:
+  #   #   raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
+  #   if not _VISION.value:
+  #     return networks.make_ppo_networks_no_vision(
+  #       proprioception_size=get_observation_size()['proprioception'],
+  #       action_size=action_size,
+  #       preprocess_observations_fn=preprocess_observations_fn,
+  #     )
+  #   return networks.make_ppo_networks_with_vision(
+  #     proprioception_size=get_observation_size()['proprioception'][0],
+  #     action_size=action_size,
+  #     encoder_out_size=4,
+  #     preprocess_observations_fn=preprocess_observations_fn,
+  #     cheat_vision_aux_output=cheat_vision_aux_output,
+  #   )
+  # network_factory = custom_network_factory
+  network_factory = functools.partial(networks.custom_network_factory, vision=_VISION.value, get_observation_size=functools.partial(get_observation_size, vision=_VISION.value))
+
 
   if _DOMAIN_RANDOMIZATION.value:
     training_params["randomization_fn"] = registry.get_domain_randomizer(
@@ -361,7 +603,7 @@ def main(argv):
     )
 
   if _VISION.value:
-    env = wrapper.wrap_for_brax_training(
+    env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
         env,
         vision=True,
         num_vision_envs=env_cfg.vision_config.render_batch_size,
@@ -386,50 +628,51 @@ def main(argv):
       # policy_params_fn=policy_params_fn,
       seed=_SEED.value,
       restore_checkpoint_path=restore_checkpoint_path,
-      save_checkpoint_path=ckpt_path,
-      wrap_env_fn=None if _VISION.value else wrapper.wrap_for_brax_training,
+      # save_checkpoint_path=ckpt_path,
+      # wrap_env_fn=None if _VISION.value else wrapper.wrap_for_brax_training,
+      wrap_env_fn=None if _VISION.value else wrap_curriculum_training,
       num_eval_envs=num_eval_envs,
   )
 
-  times = [time.monotonic()]
+  # times = [time.monotonic()]
 
-  # Progress function for logging
-  def progress(num_steps, metrics):
-    times.append(time.monotonic())
+  # # Progress function for logging
+  # def progress(num_steps, metrics):
+    
+  #   times.append(time.monotonic())
 
-    # Log to Weights & Biases
-    if _USE_WANDB.value and not _PLAY_ONLY.value:
-      wandb.log(metrics, step=num_steps)
+  #   # Log to Weights & Biases
+  #   if _USE_WANDB.value and not _PLAY_ONLY.value:
+  #     wandb.log(metrics, step=num_steps)
 
-    # Log to TensorBoard
-    if _USE_TB.value and not _PLAY_ONLY.value:
-      for key, value in metrics.items():
-        writer.add_scalar(key, value, num_steps)
-      writer.flush()
+  #   # Log to TensorBoard
+  #   if _USE_TB.value and not _PLAY_ONLY.value:
+  #     for key, value in metrics.items():
+  #       writer.add_scalar(key, value, num_steps)
+  #     writer.flush()
 
-    # if 'eval/episode_reward' in metrics:
-    if _RUN_EVALS.value:
-      print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
-    if _LOG_TRAINING_METRICS.value:
-      if "episode/sum_reward" in metrics:
-        print(
-            f"{num_steps}: mean episode"
-            f" reward={metrics['episode/sum_reward']:.3f}"
-        )
+  #   # if 'eval/episode_reward' in metrics:
+  #   if _RUN_EVALS.value:
+  #     print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
+  #   if _LOG_TRAINING_METRICS.value:
+  #     if "episode/sum_reward" in metrics:
+  #       print(
+  #           f"{num_steps}: mean episode"
+  #           f" reward={metrics['episode/sum_reward']:.3f}"
+  #       )
 
   # Load evaluation environment
   eval_env = (
       None if _VISION.value else registry.load(_ENV_NAME.value, config=env_cfg)
   )
 
-  policy_params_fn = lambda *args: None
   if _RSCOPE_ENVS.value:
     # Interactive visualisation of policy checkpoints
     from rscope import brax as rscope_utils
 
     if not _VISION.value:
       rscope_env = registry.load(_ENV_NAME.value, config=env_cfg)
-      rscope_env = wrapper.wrap_for_brax_training(
+      rscope_env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
           rscope_env,
           episode_length=ppo_params.episode_length,
           action_repeat=ppo_params.action_repeat,
@@ -449,21 +692,36 @@ def main(argv):
     )
 
     def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
+      policy_params_fn_checkpoints(current_step, make_policy, params)
       rscope_handle.set_make_policy(make_policy)
       rscope_handle.dump_rollout(params)
+  else:
+    policy_params_fn = policy_params_fn_checkpoints
+
+  progress_logger = ProgressLogger(writer=writer, ppo_params=ppo_params, logdir=logdir,
+                                   local_plotting=False)
+  
+  print("Starting training...")
 
   # Train or load the model
   make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
       environment=env,
-      progress_fn=progress,
+      progress_fn=progress_logger.progress,
       policy_params_fn=policy_params_fn,
       eval_env=None if _VISION.value else eval_env,
   )
 
-  print("Done training.")
-  if len(times) > 1:
-    print(f"Time to JIT compile: {times[1] - times[0]}")
-    print(f"Time to train: {times[-1] - times[1]}")
+  # print("Done training.")
+  # if len(times) > 1:
+  #   print(f"Time to JIT compile: {times[1] - times[0]}")
+  #   print(f"Time to train: {times[-1] - times[1]}")
+  times = progress_logger.times
+  if ppo_params.num_timesteps > 0 and len(times) > 2:
+    print(f'time to JIT compile: {times[1] - times[0]}')
+    print(f'time to train: {times[-1] - times[1]}')
+
+  with open(logdir / 'playground_params.pickle', 'wb') as handle:
+      pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
   print("Starting inference...")
 
@@ -494,7 +752,7 @@ def main(argv):
   rollout = [state0]
 
   # Run evaluation rollout
-  for _ in range(env_cfg.episode_length):
+  for _ in range(env_cfg.ppo_config.episode_length): #TODO: fix where episode_length should be defined
     act_rng, rng = jax.random.split(rng)
     ctrl, _ = jit_inference_fn(state.obs, act_rng)
     state = jit_step(state, ctrl)
@@ -521,8 +779,6 @@ def main(argv):
       h5f.close()
   with open(logdir / 'traj.pickle', 'wb') as handle:
       pickle.dump(traj, handle, protocol=pickle.HIGHEST_PROTOCOL)
-  with open(logdir / 'playground_params.pickle', 'wb') as handle:
-      pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
   
   scene_option = mujoco.MjvOption()
   scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False

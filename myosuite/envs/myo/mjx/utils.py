@@ -7,6 +7,10 @@ from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import networks_vision as ppo_networks_vision
 from brax.training.agents.ppo import train as ppo
 
+from myosuite.envs.myo.mjx.train_jax_ppo import get_observation_size  #TODO: remove this dependency
+from myosuite.train.myouser.custom_ppo import train as ppo
+from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
+
 def get_latest_run_path(base_path="logs/"):
     subdirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d)) and os.path.isdir(os.path.join(base_path, d, "checkpoints")) and len(os.listdir(os.path.join(base_path, d, "checkpoints"))) > 1]
     if not subdirs:
@@ -16,6 +20,7 @@ def get_latest_run_path(base_path="logs/"):
 
 def load_checkpoint(env_name, checkpoint_path,
                     ppo_params=None,
+                    policy_params_fn=None,
                     vision=False,
                     domain_randomization=False,
                     seed=1,):
@@ -42,21 +47,35 @@ def load_checkpoint(env_name, checkpoint_path,
         env_cfg.vision_config.render_batch_size = ppo_params.num_envs
     env = registry.load(env_name, config=env_cfg)
 
+    if policy_params_fn is None:
+        from orbax import checkpoint as ocp
+        from flax.training import orbax_utils
+
+        # Define policy parameters function for saving checkpoints
+        def policy_params_fn(current_step, make_policy, params):
+            """Function to save policy parameters."""
+            orbax_checkpointer = ocp.PyTreeCheckpointer()
+            save_args = orbax_utils.save_args_from_target(params)
+            path = ckpt_path / f"{current_step}"
+            orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+
     training_params = dict(ppo_params)
     if "network_factory" in training_params:
         del training_params["network_factory"]
 
-    network_fn = (
-        ppo_networks_vision.make_ppo_networks_vision
-        if vision
-        else ppo_networks.make_ppo_networks
-    )
-    if hasattr(ppo_params, "network_factory"):
-        network_factory = functools.partial(
-            network_fn, **ppo_params.network_factory
-        )
-    else:
-        network_factory = network_fn
+    # network_fn = (
+    #     ppo_networks_vision.make_ppo_networks_vision
+    #     if vision
+    #     else ppo_networks.make_ppo_networks
+    # )
+    # if hasattr(ppo_params, "network_factory"):
+    #     network_factory = functools.partial(
+    #         network_fn, **ppo_params.network_factory
+    #     )
+    # else:
+    #     network_factory = network_fn
+
+    network_factory = functools.partial(networks.custom_network_factory, vision=vision, get_observation_size=functools.partial(get_observation_size, vision=vision))
 
     if domain_randomization:
         training_params["randomization_fn"] = registry.get_domain_randomizer(
@@ -86,10 +105,10 @@ def load_checkpoint(env_name, checkpoint_path,
         ppo.train,
         **training_params,
         network_factory=network_factory,
-        # policy_params_fn=policy_params_fn,
+        policy_params_fn=policy_params_fn,
         seed=seed,
         restore_checkpoint_path=restore_checkpoint_path,
-        save_checkpoint_path=ckpt_path,
+        # save_checkpoint_path=ckpt_path,
         wrap_env_fn=None if vision else wrapper.wrap_for_brax_training,
         num_eval_envs=num_eval_envs,
     )
@@ -103,7 +122,7 @@ def load_checkpoint(env_name, checkpoint_path,
     make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
         environment=env,
         # progress_fn=progress,
-        policy_params_fn=lambda *args: None,
+        policy_params_fn=policy_params_fn,  #lambda *args: None,
         eval_env=None if vision else eval_env,
     )
     if vision:

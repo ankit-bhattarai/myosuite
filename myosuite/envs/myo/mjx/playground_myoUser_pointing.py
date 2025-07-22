@@ -44,6 +44,9 @@ def default_config() -> config_dict.ConfigDict:
             reach=1,
             bonus=8,
             neural_effort=0,  #1e-4,
+        ),
+        adaptive_task_config=config_dict.create(
+            init_target_area_width_scale=1.,
         )
     )
 
@@ -58,6 +61,7 @@ def default_config() -> config_dict.ConfigDict:
 
     rl_config = config_dict.create(
         num_timesteps=15_000_000,  #50_000_000,
+        log_training_metrics=True,
         num_evals=0,  #16,
         reward_scaling=0.1,
         # episode_length=env_config.episode_length,
@@ -121,9 +125,11 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         self.max_duration = config.max_duration
         self.weighted_reward_keys = config.reward_config
 
+        init_target_area_width_scale = config.adaptive_task_config.init_target_area_width_scale
+
         self._prepare_bm_model()
         
-        self._setup(adaptive_task=adaptive_task)  #**kwargs)
+        self._setup(adaptive_task=adaptive_task, init_target_area_width_scale=init_target_area_width_scale)  #**kwargs)
 
         # Do a forward step so stuff like geom and body positions are calculated [using MjData rather than mjx.Data, to reduce computational overheat]
         # rng_init = jax.random.PRNGKey(self.seed)
@@ -227,8 +233,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             target_radius_range:dict = {'fingertip': jp.array([0.05, 0.05]),},
             target_origin_rel:list = jp.zeros(3),  #[0.225, -0.1, 0.05],  #NOTE: target area offset should be directly added to target_pos_range
             ref_site = 'humphant',
-            adaptive_task = False,
-            init_target_area_width_scale = 0,
+            adaptive_task = True,
+            init_target_area_width_scale = 1.,
             adaptive_increase_success_rate = 0.6,
             adaptive_decrease_success_rate = 0.3,
             adaptive_change_step_size = 0.05,
@@ -613,7 +619,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
-            return obsvec
+            return {"proprioception": obsvec}
         vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
         if self.vision_mode == 'rgb+depth':
             vision_obs['pixels/depth'] = obs_dict['pixels/depth']
