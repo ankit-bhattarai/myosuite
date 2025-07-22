@@ -161,6 +161,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
                                                 viz_gpu_hdls = None,
                                                 add_cam_debug_geo = False,
                                                 )
+            
+        self.eval_mode = False
 
     def preprocess_spec(self, spec:mujoco.MjSpec):
         for geom in spec.geoms:
@@ -366,6 +368,13 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         elif self.muscle_condition == "reafferentation":
             self.EPLpos = self.mjx_model.actuator_name2id("EPL")
             self.EIPpos = self.mjx_model.actuator_name2id("EIP")
+
+    def enable_eval_mode(self):
+        # TODO: eval wrapper should call this function at initialization
+        self.eval_mode = True
+
+    def disable_eval_mode(self):
+        self.eval_mode = False
 
     def get_ctrl(self, state: State, action: jp.ndarray, rng: jp.ndarray):
         new_ctrl = action.copy()
@@ -786,8 +795,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             info['trial_success_log'] = trial_success_log
         info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
-        # data = self.add_target_pos_to_data(data, info['target_pos'])
-        if self.vision:
+        if self.vision or self.eval_mode:
+            data = self.add_target_pos_to_data(data, info['target_pos'])
             info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
@@ -852,9 +861,10 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
         info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
-        # data = self.add_target_pos_to_data(data, info['target_pos'])
+        if self.vision or self.eval_mode:
+            data = self.add_target_pos_to_data(data, info['target_pos'])
 
-        if self.vision:
+        if self.vision or self.eval_mode:
             info['render_token'] = info_before_reset['render_token']
             pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
             info.update(pixels_dict)
@@ -1028,7 +1038,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         #     render_cbk=self.mj_render if self.mujoco_render_frames else None,
         # )
         data = mjx_env.step(self.mjx_model, data0, new_ctrl, n_substeps=self.n_substeps)
-        # data = self.add_target_pos_to_data(data, state.info['target_pos'])
+        if self.vision or self.eval_mode:
+            data = self.add_target_pos_to_data(data, state.info['target_pos'])
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
