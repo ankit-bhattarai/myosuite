@@ -102,8 +102,6 @@ class Steering(MyoUserBase):
         obs, info = self.get_obs_vec(data, info)
         metrics = {
             'success_rate': 0.0,
-            'phase': 0.0, # 0 means that the user hasn't touched the screen yet, 1 means that the user has touched the
-             # screen at the start pos and has begun steering
              'dist': 0.0,
              'touching_screen': jp.bool_(False),
         }
@@ -124,7 +122,6 @@ class Steering(MyoUserBase):
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.metrics.update(
             success_rate=done,
-            phase=obs_dict['phase'],
             dist=dist,
             touching_screen=obs_dict['touching_screen'],
         )
@@ -138,6 +135,13 @@ class Steering(MyoUserBase):
         )
 
     def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
+        ee_pos = obs_dict['fingertip']
+        start_line = obs_dict['start_line']
+        diff = ee_pos - start_line
+        dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
+        obs_dict['dist'] = dist
+
+        #TODO: actually implmenet properly
         dist = obs_dict['dist']
         reach_reward = (jp.exp(-dist*10) - 1.)/10
         done = 1.0 * (dist <= 0.01)
@@ -178,18 +182,6 @@ class Steering(MyoUserBase):
         obs_dict['top_line'] = data.site_xpos[self.top_line_id]
         obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
         obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
-
-        ee_pos = obs_dict['fingertip']
-        screen_pos = obs_dict['screen_pos']
-        start_line = obs_dict['start_line']
-        # startline_coordinates = obs_dict['screen_pos'].at[1].set(startline_y)
-        diff = ee_pos - start_line
-        dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
-        obs_dict['dist'] = dist
-
-        #TODO: actually implmenet properly
-        obs_dict['phase'] = jp.select([dist <= 0.01], [1.0], 0.0)
-        obs_dict['success'] = -1.0
 
         #TODO: more things to add here
         return obs_dict
