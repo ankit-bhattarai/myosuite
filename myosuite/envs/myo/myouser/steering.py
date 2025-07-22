@@ -103,7 +103,7 @@ class Steering(MyoUserBase):
         metrics = {
             'success_rate': 0.0,
              'dist': 0.0,
-             'touching_screen': jp.bool_(False),
+             'touching_screen': 0.0,
         }
 
         return mjx_env.State(data, obs, reward, done, metrics, info)
@@ -181,7 +181,7 @@ class Steering(MyoUserBase):
         obs_dict['end_line'] = data.site_xpos[self.end_line_id]
         obs_dict['top_line'] = data.site_xpos[self.top_line_id]
         obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
-        obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
+        obs_dict['touching_screen'] = 1.0 * (data.sensordata[self.screen_touch_id] > 0.0)
 
         #TODO: more things to add here
         return obs_dict
