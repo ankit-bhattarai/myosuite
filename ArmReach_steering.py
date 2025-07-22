@@ -161,7 +161,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     env_name,
     config_overrides={
       'model_path': path,
-      'episode_length': 300,
+      'episode_length': episode_length,
     }
   )
 
@@ -191,10 +191,10 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
 
     if video_type == 'single':
-      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
+      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / (env.sim_dt * env.frame_skip)) 
     elif video_type == 'multiple':
       for i, video in enumerate(videos):
-        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
+        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / (env.sim_dt * env.frame_skip)) 
 
     return None
   
@@ -292,7 +292,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
 
   train_fn = functools.partial(
-      ppo.train, num_timesteps=n_train_steps, num_evals=0, reward_scaling=0.1,
+      ppo.train, num_timesteps=n_train_steps, num_evals=n_eval_eps, reward_scaling=0.1,
       madrona_backend=vision,
       wrap_env=False, episode_length=episode_length, #when wrap_curriculum_training is used, 'episode_length' only determines length of eval episodes
       normalize_observations=True, action_repeat=1,
@@ -316,11 +316,26 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     return wrapped_env
   
   progress_logger = ProgressLogger()
-  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress)
+
+  eval_env = envs.get_environment(env_name=env_name, config_overrides={
+    'model_path': path,
+    'episode_length': 800, # TODO: don't hard code this!
+    'ctrl_dt': 0.002, # Setting ctrl_dt to 0.002 during evaluation
+  })
+  eval_env = EpisodeWrapper(eval_env, episode_length=episode_length, action_repeat=1)
+  eval_env = wrapper.BraxAutoResetWrapper(eval_env)
+  render_fn = _create_render(eval_env)
+
+  policy_params_fn = functools.partial(runtime_fn, eval_env=eval_env, experiment_id=experiment_id, render_fn=render_fn, n_eps=n_eval_eps)
+  make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress, policy_params_fn=policy_params_fn)
   times = progress_logger.times
   if n_train_steps > 0 and len(times) > 2:
     print(f'time to jit: {times[1] - times[0]}')
     print(f'time to train: {times[-1] - times[1]}')
+
+  if n_train_steps == 0:
+    runtime_fn(0, make_inference_fn, params, eval_env, experiment_id, render_fn, n_eps=n_eval_eps)  
+  return
 
   cwd = os.path.dirname(os.path.abspath(__file__))
   os.makedirs(cwd + '/myosuite-mjx-policies/', exist_ok=True)
@@ -335,12 +350,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   ## EVALUATION
   ##TODO: load internal env state ('target_area_dynamic_width_scale')
   backend = 'positional' # @param ['generalized', 'positional', 'spring']
-  eval_env = envs.get_environment(env_name=env_name, config_overrides={
-    'model_path': path,
-    'episode_length': 300,
-  })
-  eval_env = EpisodeWrapper(eval_env, episode_length=episode_length, action_repeat=1)
-  eval_env = wrapper.BraxAutoResetWrapper(eval_env)
+
 
   params = model.load_params(param_path)
   inference_fn = make_inference_fn(params)
@@ -348,12 +358,21 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   times = [datetime.now()]
 
   render_fn = _create_render(eval_env)
-  rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn, experiment_id=experiment_id)
+  # rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn, experiment_id=experiment_id)
 
-  _render(rollouts, experiment_id=experiment_id)
+  # _render(rollouts, experiment_id=experiment_id)
 
 
-def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single', experiment_id='Steering'):
+def runtime_fn(current_step, make_policy, params, eval_env, experiment_id, render_fn=None, n_eps=10):
+  inference_fn = make_policy(params)
+  cwd = os.path.dirname(os.path.abspath(__file__))
+  eval_path = cwd + f'/myosuite-checkpoints/{experiment_id}/{current_step}'
+  os.makedirs(eval_path, exist_ok=True)
+  model.save_params(eval_path + '/params', params)
+  evaluate(eval_env, inference_fn, eval_path, n_eps=n_eps, times=[datetime.now()], render_fn=render_fn)
+  print(f'Succesfully saved params and evaluated policy at step {current_step}')
+
+def evaluate(env, inference_fn, save_path, n_eps=10, rng=None, times=[], render_fn=None, video_type='single'):
   if rng is None:
     rng = jax.random.PRNGKey(seed=0)
   
@@ -404,15 +423,12 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
       states_pointer = len(states)
       videos += frame_collection
   
-  cwd = os.path.dirname(os.path.abspath(__file__))
-  os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
-  eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
-
+  fps = 1.0 / (env.sim_dt)
   if video_type == 'single':
-    media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
+    media.write_video(f'{save_path}/rollout.mp4', videos, fps=fps) 
   elif video_type == 'multiple':
     for i, video in enumerate(videos):
-      media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
+      media.write_video(f'{save_path}/rollout_{i}.mp4', video, fps=fps)
 
   return rollouts
 
@@ -422,7 +438,7 @@ if __name__ == '__main__':
   parser.add_argument('--experiment_id', type=str, required=True)
   parser.add_argument('--project_id', type=str, default='mjx-training')
   parser.add_argument('--n_train_steps', type=int, default=100_000_000)
-  parser.add_argument('--n_eval_eps', type=int, default=1)
+  parser.add_argument('--n_eval_eps', type=int, default=10)
   parser.add_argument('--restore_params_path', type=str, default=None)
   parser.add_argument('--init_target_area_width_scale', type=float, default=0.)
   parser.add_argument('--num_envs', type=int, default=3072)
