@@ -3,10 +3,11 @@
 Authors  :: Florian Fischer (fjf33@cam.ac.uk); Vikash Kumar (vikashplus@gmail.com), Vittorio Caggiano (caggiano@gmail.com)
 ================================================= """
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import collections
 import functools
 import abc
+import tqdm
 
 # from myosuite.utils import gym
 import mujoco
@@ -105,9 +106,9 @@ class MyoUserBase(mjx_env.MjxEnv):
 
         mj_model = spec.compile()
 
-        mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
-        mj_model.opt.iterations = 6
-        mj_model.opt.ls_iterations = 6
+        mj_model.opt.solver = mujoco.mjtSolver.mjSOL_NEWTON
+        mj_model.opt.iterations = 100
+        mj_model.opt.ls_iterations = 50
         mj_model.opt.disableflags = mj_model.opt.disableflags | mjx.DisableBit.EULERDAMP
         mj_model.opt.timestep = self._config.sim_dt
         self._mj_model = mj_model
@@ -188,7 +189,7 @@ class MyoUserBase(mjx_env.MjxEnv):
             {
                 self._joint_names[idx]
                 for idx in np.unique(
-                    self._mjx_model.eq_obj1id[self._mjx_model.eq_active0.astype(bool)]
+                    self._mj_model.eq_obj1id[self._mj_model.eq_active0.astype(bool)]
                 )
             }
             if self._mjx_model.eq_obj1id is not None
@@ -538,7 +539,7 @@ class MyoUserBase(mjx_env.MjxEnv):
         # self._motor_act = (1 - self._motor_alpha) * self._motor_act \
         #                         + self._motor_alpha * np.clip(_selected_motor_control, 0, 1)
         motor_act = _selected_motor_control
-        new_ctrl = new_ctrl.at[self._motor_actuators].set(self.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + motor_act*(self.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
+        new_ctrl = new_ctrl.at[self._motor_actuators].set(self._mj_model.actuator_ctrlrange[self._motor_actuators, 0] + motor_act*(self._mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self._mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
         new_ctrl = new_ctrl.at[self._muscle_actuators].set(jp.clip(_selected_muscle_control, 0, 1))
         
         # implement abnormalities
@@ -583,3 +584,77 @@ class MyoUserBase(mjx_env.MjxEnv):
         else:
             raise ValueError(f"Invalid vision mode: {self.vision_mode}")
         return update_info
+    
+    def render(
+        self,
+        trajectory: List[State],
+        height: int = 240,
+        width: int = 320,
+        camera: Optional[str] = None,
+        scene_option: Optional[mujoco.MjvOption] = None,
+        modify_scene_fns: Optional[
+            Sequence[Callable[[mujoco.MjvScene], None]]
+        ] = None,
+    ) -> Sequence[np.ndarray]:
+        return self.render_array(
+            self.mj_model,
+            trajectory,
+            height,
+            width,
+            camera,
+            scene_option=scene_option,
+            modify_scene_fns=modify_scene_fns,
+        )
+    
+    def update_target_visuals(self, mj_model, target_pos, target_radius):
+        mj_model.body_pos[self.target_body_id, :] = target_pos
+        mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
+
+    def render_array(self,
+        mj_model: mujoco.MjModel,
+        trajectory: Union[List[State], State],
+        height: int = 480,
+        width: int = 640,
+        camera: Optional[str] = None,
+        scene_option: Optional[mujoco.MjvOption] = None,
+        modify_scene_fns: Optional[
+            Sequence[Callable[[mujoco.MjvScene], None]]
+        ] = None,
+        hfield_data: Optional[jax.Array] = None,
+    ):
+        """Renders a trajectory as an array of images."""
+        renderer = mujoco.Renderer(mj_model, height=height, width=width)
+        camera = camera if camera is not None else -1
+
+        if hfield_data is not None:
+            mj_model.hfield_data = hfield_data.reshape(mj_model.hfield_data.shape)
+            mujoco.mjr_uploadHField(mj_model, renderer._mjr_context, 0)
+
+        def get_image(state, modify_scn_fn=None) -> np.ndarray:
+            d = mujoco.MjData(mj_model)
+            d.qpos, d.qvel = state.data.qpos, state.data.qvel
+            d.mocap_pos, d.mocap_quat = state.data.mocap_pos, state.data.mocap_quat
+            d.xfrc_applied = state.data.xfrc_applied
+            self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
+            # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
+            # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
+            # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
+            mujoco.mj_forward(mj_model, d)
+            renderer.update_scene(d, camera=camera, scene_option=scene_option)
+            if modify_scn_fn is not None:
+                modify_scn_fn(renderer.scene)
+            return renderer.render()
+
+        if isinstance(trajectory, list):
+            out = []
+            for i, state in enumerate(tqdm.tqdm(trajectory)):
+                if modify_scene_fns is not None:
+                    modify_scene_fn = modify_scene_fns[i]
+                else:
+                    modify_scene_fn = None
+                out.append(get_image(state, modify_scene_fn))
+        else:
+            out = get_image(trajectory)
+
+        renderer.close()
+        return out
