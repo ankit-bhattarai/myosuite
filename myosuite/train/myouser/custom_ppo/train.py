@@ -360,6 +360,7 @@ def train(
   # key_networks should be global, so that networks are initialized the same
   # way for different processes.
   key_params, _ = jax.random.split(global_key, 2)
+  # key_policy, key_value = jax.random.split(global_key)
   del global_key
 
   assert num_envs % device_count == 0
@@ -606,6 +607,10 @@ def train(
   )
   normalizer_init_params = running_statistics.init_state(obs_shape['proprioception'])
   init_params = ppo_network.init(key_params, dummy_obs, normalizer_init_params)
+  # init_params = ppo_losses.PPONetworkParams(
+  #       policy=ppo_network.policy_network.init(key_policy),
+  #       value=ppo_network.value_network.init(key_value),
+  #   )
 
   training_state = TrainingState(  # pytype: disable=wrong-arg-types  # jax-ndarray
       optimizer_state=optimizer.init(init_params),  # pytype: disable=wrong-arg-types  # numpy-scalars
@@ -616,15 +621,29 @@ def train(
       env_steps=types.UInt64(hi=0, lo=0),
   )
 
-  if restore_checkpoint_path is not None:
+  if restore_checkpoint_path is not None:    
+    # params = checkpoint.load(restore_checkpoint_path)
+    # value_params = params[2] if restore_value_fn else init_params.value
+    # training_state = training_state.replace(
+    #     normalizer_params=params[0],
+    #     params=training_state.params.replace(
+    #         policy=params[1], value=value_params
+    #     ),
+    # )
+
+    #TODO: fix this properly
+
     params = checkpoint.load(restore_checkpoint_path)
+    # policy_params = params[1]["params"]["policy_network"]
+    # value_params = params[1]["params"]["value_network"] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=params[0],
-        params=params[1],
+        params=params[1],  #dict(training_state.params["params"], **{"policy_network": policy_params, "value_network": value_params}),
     )
 
   if restore_params is not None:
     logging.info('Restoring TrainingState from `restore_params`.')
+    # value_params = restore_params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=restore_params[0],
         params=restore_params[1],
