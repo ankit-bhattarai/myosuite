@@ -44,9 +44,6 @@ def default_config() -> config_dict.ConfigDict:
             reach=1,
             bonus=8,
             neural_effort=0,  #1e-4,
-        ),
-        adaptive_task_config=config_dict.create(
-            init_target_area_width_scale=1.,
         )
     )
 
@@ -93,7 +90,7 @@ def default_config() -> config_dict.ConfigDict:
 
 
 class PlaygroundArmPointing(mjx_env.MjxEnv):
-    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'motor_act', 'target_pos', 'target_radius']
+    DEFAULT_OBS_KEYS = ['qpos', 'qvel', 'qacc', 'ee_pos', 'act', 'target_pos', 'target_radius']
     # DEFAULT_RWD_KEYS_AND_WEIGHTS = {
     #     "reach": 1.0,
     #     "bonus": 8.0,
@@ -106,11 +103,10 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             config: config_dict.ConfigDict = default_config(),
             config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
             is_msk=True,
-            adaptive_task=False,
             vision=False,  #TODO: define vision in config
     ) -> None:
         super().__init__(config, config_overrides)
-        xml_path = "../../../simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml"  #rf"../assets/arm/myoarm_relocate.xml"  #TODO: use 'wrapper' xml file in assets rather than raw simhive file
+        xml_path = "myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml"  #rf"../assets/arm/myoarm_relocate.xml"  #TODO: use 'wrapper' xml file in assets rather than raw simhive file
         # xml_path = '../assets/arm/myoarm_pose.xml'  #rf"../assets/arm/myoarm_relocate.xml"
         self._mj_model = mujoco.MjModel.from_xml_path(xml_path)
         self._mj_model.opt.timestep = self.sim_dt
@@ -126,11 +122,11 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         self.max_duration = config.max_duration
         self.weighted_reward_keys = config.reward_config
 
-        init_target_area_width_scale = config.adaptive_task_config.init_target_area_width_scale
+        # init_target_area_width_scale = config.adaptive_task_config.init_target_area_width_scale
 
         self._prepare_bm_model()
         
-        self._setup(adaptive_task=adaptive_task, init_target_area_width_scale=init_target_area_width_scale)  #**kwargs)
+        self._setup()  #**kwargs)
 
         # Do a forward step so stuff like geom and body positions are calculated [using MjData rather than mjx.Data, to reduce computational overheat]
         # rng_init = jax.random.PRNGKey(self.seed)
@@ -181,7 +177,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
 
         # Number of motor actuators
         self._nm = self._nu - self._na
-        self._motor_act = jp.zeros((self._nm,))
+        # self._motor_act = jp.zeros((self._nm,))
         self._motor_alpha = 0.9*jp.ones(1)
 
         # Get actuator names (muscle and motor)
@@ -239,13 +235,6 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             target_origin_rel:list = jp.zeros(3),  #[0.225, -0.1, 0.05],  #NOTE: target area offset should be directly added to target_pos_range
             # ref_site = 'R.Shoulder_marker',
             ref_site = 'humphant',
-            adaptive_task = True,
-            init_target_area_width_scale = 1.,
-            adaptive_increase_success_rate = 0.6,
-            adaptive_decrease_success_rate = 0.3,
-            adaptive_change_step_size = 0.05,
-            adaptive_change_min_trials = 50,
-            success_log_buffer_length = 500,
             muscle_condition = None,
             sex = None,
             max_trials = 1,
@@ -253,7 +242,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             sigdepnoise_level = 0.103,
             constantnoise_type = None,   #"white"
             constantnoise_level = 0.185,
-            reset_type = "range_uniform",
+            reset_type = "range_uniform",  #TODO: move to config
             obs_keys:list = DEFAULT_OBS_KEYS,
             # weighted_reward_keys:dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
             # episode_length = 800,
@@ -275,18 +264,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # Define a maximum number of trials per episode (if needed for e.g. evaluation / visualisation)
         self.max_trials = max_trials
 
-        self.adaptive_task = adaptive_task
-        if self.adaptive_task:
-            # Additional variables needed for adaptive adjustment of target limits based on success rates since last target limit adjustment
-            self.init_target_area_width_scale = init_target_area_width_scale  #scale factor for target area width (between 0 and 1), i.e., the percentage of the target limit range defined above that is currently used when spawning targets
-            self.adaptive_increase_success_rate = adaptive_increase_success_rate  #success rate above which target area width is increased
-            self.adaptive_decrease_success_rate = adaptive_decrease_success_rate  #success rate below which target area width is decreased
-            self.adaptive_change_step_size = adaptive_change_step_size  #increase of target area width per adjustment (in percent of total range)
-            self.adaptive_change_min_trials = adaptive_change_min_trials  #minimum number of trials with the latest target area width required before the next adjustment; should be chosen considerably larger than self.max_trials
-            self.success_log_buffer_length = success_log_buffer_length #maximum number of trials (since last adjustment) to consider for success rate calculation (default: consider all values since last adjustment)
-            assert self.adaptive_change_min_trials >= 1, f"At least one trial is required to assess the success rate for adaptively adjusting the target area width. Set 'adaptive_change_min_trials' >= 1 (current value: {self.adaptive_change_min_trials})."
-        else:
-            self.init_target_area_width_scale = 1.  #sample from full target area for non-adaptive tasks
+        # self.init_target_area_width_scale = 1.  #sample from full target area for non-adaptive tasks
 
         # Define signal-dependent noise
         self.sigdepnoise_type = sigdepnoise_type
@@ -322,8 +300,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
                 self.target_sids.append(mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target'))
         # self._episode_length = episode_length
         
-        # self.target_body_id = self.mj_model.body('target').id
-        # self.target_geom_id = self.mj_model.geom('target_sphere').id
+        self.target_body_id = self.mj_model.body('target').id
+        self.target_geom_id = self.mj_model.geom('target_sphere').id
 
         # self._normalize_act = normalize_act
 
@@ -412,9 +390,9 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # # Update smoothed online estimate of motor actuation
         # self._motor_act = (1 - self._motor_alpha) * self._motor_act \
         #                         + self._motor_alpha * np.clip(_selected_motor_control, 0, 1)
-        self._motor_act = _selected_motor_control
+        motor_act = _selected_motor_control
 
-        new_ctrl = new_ctrl.at[self._motor_actuators].set(self.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + self._motor_act*(self.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
+        new_ctrl = new_ctrl.at[self._motor_actuators].set(self.mj_model.actuator_ctrlrange[self._motor_actuators, 0] + motor_act*(self.mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self.mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
         new_ctrl = new_ctrl.at[self._muscle_actuators].set(jp.clip(_selected_muscle_control, 0, 1))
 
         isNormalized = False  #TODO: check whether we can integrate the default normalization from BaseV0.step
@@ -467,7 +445,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
         return data
     
-    def generate_target_pos(self, rng, target_area_dynamic_width_scale, target_pos=None):
+    def generate_target_pos(self, rng, target_pos=None):
         # jax.debug.print(f"Generate new target (target area scale={target_area_dynamic_width_scale})")
 
         # Set target location
@@ -477,8 +455,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             # Sample target position
             rng, *rngs = jax.random.split(rng, len(self.target_pos_range)+1)
             for (site, span), _rng in zip(self.target_pos_range.items(), rngs):
-                if self.adaptive_task:
-                    span = self.get_current_target_pos_range(span, target_area_dynamic_width_scale)
+                # if self.adaptive_task:
+                #     span = self.get_current_target_pos_range(span, target_area_dynamic_width_scale)
                 # sid = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
                 new_position = self.target_coordinates_origin + jax.random.uniform(_rng, shape=self.target_coordinates_origin.shape, minval=span[0], maxval=span[1])
                 target_pos = jp.append(target_pos, new_position.copy())
@@ -538,8 +516,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         if self._na > 0:
             obs_dict['act']  = (data.act - 0.5) * 2
         
-        # Smoothed average of motor actuation (only for motor actuators)  #; normalise
-        obs_dict['motor_act'] = info['motor_act']  #(self._motor_act.copy() - 0.5) * 2
+        # # Smoothed average of motor actuation (only for motor actuators)  #; normalise
+        # obs_dict['motor_act'] = info['motor_act']  #(self._motor_act.copy() - 0.5) * 2
 
         # Store current control input
         obs_dict['last_ctrl'] = data.ctrl.copy()
@@ -572,55 +550,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # print("trial_idx", obs_dict['trial_idx'])
         obs_dict['task_completed'] = obs_dict['trial_idx'] >= self.max_trials
 
-        if self.adaptive_task:
-            # log success/failure
-            # ## TODO: check dimensions (is at[idx].set() needed?)
-            # @jax.jit
-            # def _update_success_log_entry(data, idx, value):
-            #     _data = data.copy()
-            #     _data.at[idx].set(jp.select([value != -1], [value], _data[idx]))
-            #     return _data
-            _trial_success_log_pointer_value = jp.select([obs_dict['target_success'], obs_dict['target_fail']], [1, 0], -1)
-            idx = jp.arange(info['trial_success_log'].shape[-1])
-            obs_dict['trial_success_log'] = jp.where((idx == info['trial_success_log_pointer_index']) & (_trial_success_log_pointer_value != -1), _trial_success_log_pointer_value, info['trial_success_log']).copy()
-            obs_dict['trial_success_log_pointer_index'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [(info['trial_success_log_pointer_index'] + 1) % self.success_log_buffer_length], info['trial_success_log_pointer_index']).astype(jp.int32).copy()
-            # _trial_success_log_updated = jp.select([_trial_success_log_pointer_value != -1], [_trial_success_log_pointer_value], info['trial_success_log'].at[obs_dict['trial_success_log_pointer_index']])
-            # obs_dict['trial_success_log'] = _trial_success_log_updated
-            # obs_dict['trial_success_log'] = _update_success_log_entry(info['trial_success_log'], obs_dict['trial_success_log_pointer_index'], _trial_success_log_pointer_value)
-            # obs_dict['trial_success_log'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [_trial_success_log_pointer_value], info['trial_success_log'])   #TODO: check dimensions?!
-
-            # Check if target area width should be updated
-            n_targets_adj = jp.sum(obs_dict['trial_success_log'] != -1, axis=-1)
-            n_hits_adj = jp.sum(obs_dict['trial_success_log'] == 1, axis=-1)
-            success_rate = jp.where((n_targets_adj != 0), n_hits_adj / jp.where(n_targets_adj != 0, n_targets_adj, 1), 0)
-            # print(f"SUCCESS RATE: {self.success_rate*100}% ({self.n_hits_adj}/{self.n_targets_adj}) -- Last Adj. #{self.n_adjs}")
-            obs_dict['target_area_dynamic_width_scale'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
-                                (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
-                                [info['target_area_dynamic_width_scale'] + self.adaptive_change_step_size,
-                                info['target_area_dynamic_width_scale'] - self.adaptive_change_step_size], 
-                                info['target_area_dynamic_width_scale']).copy()
-            ##TODO: check dimensions of arguments in above conditional function call
-            # obs_dict = jp.select([n_targets_adj >= self.adaptive_change_min_trials], [self.update_adaptive_target_area_width(info, obs_dict, success_rate)], obs_dict)
-            
-            ## Erase previous success rates when target curriculum state switches
-            zero = jp.zeros(1)
-            # obs_dict['trial_success_log'].at[:].set(-1) #= jp.zeros([self.success_log_buffer_length], dtype=jp.int32)
-            # obs_dict['trial_success_log_pointer_index'] = zero  #jp.array([], dtype=jp.int32)
-            obs_dict['trial_success_log'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
-                                (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
-                                # [jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"]),
-                                #  jp.where((idx == info['trial_success_log_pointer_index']), -1*jp.ones(1, dtype=jp.int32), obs_dict["trial_success_log"])],
-                                [-1*jp.ones_like(obs_dict["trial_success_log"], dtype=jp.int32),
-                                 -1*jp.ones_like(obs_dict["trial_success_log"], dtype=jp.int32)],
-                                obs_dict["trial_success_log"])
-            obs_dict['trial_success_log_pointer_index'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate >= self.adaptive_increase_success_rate) & (info['target_area_dynamic_width_scale'] < 1),
-                                (obs_dict['target_success'] | obs_dict['target_fail']) & (n_targets_adj >= self.adaptive_change_min_trials) & (success_rate <= self.adaptive_decrease_success_rate) & (info['target_area_dynamic_width_scale'] > 0)],
-                                [zero, zero],
-                                obs_dict["trial_success_log_pointer_index"]).astype(jp.int32)
-            obs_dict['success_rate'] = success_rate
-        else:
-            obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
-            obs_dict['success_rate'] = jp.array(obs_dict['target_success'], dtype=jp.float32)  #-1.  #unknown ##TODO: measure success rate if adaptive is not enabled
+        # obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
 
         if self.vision:
             obs_dict['pixels/view_0'] = info['pixels/view_0']
@@ -644,14 +574,9 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
     def update_info(self, info, obs_dict):
         ## Update state info of internal variables at the end of each env step
         info['last_ctrl'] = obs_dict['last_ctrl']
-        info['motor_act'] = obs_dict['motor_act']
         info['steps_since_last_hit'] = obs_dict['steps_since_last_hit']
         info['steps_inside_target'] = obs_dict['steps_inside_target']
         info['trial_idx'] = obs_dict['trial_idx'].copy()
-        if self.adaptive_task:
-            info['trial_success_log_pointer_index'] = obs_dict['trial_success_log_pointer_index']
-            info['trial_success_log'] = obs_dict['trial_success_log']
-        info['target_area_dynamic_width_scale'] = obs_dict['target_area_dynamic_width_scale']
         info['reach_dist'] = obs_dict['reach_dist']
 
         # Also store variables useful for evaluation
@@ -690,32 +615,32 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
 
         return rwd_dict
     
-    def get_env_infos(self, state: State, data: mjx.Data):
-        """
-        Get information about the environment.
-        """
-        ## TODO: update this function!!
+    # def get_env_infos(self, state: State, data: mjx.Data):
+    #     """
+    #     Get information about the environment.
+    #     """
+    #     ## TODO: update this function!!
 
-        # # resolve if current visuals are available
-        # if self.visual_dict and "time" in self.visual_dict.keys() and self.visual_dict['time']==self.obs_dict['time']:
-        #     visual_dict = self.visual_dict
-        # else:
-        #     visual_dict = {}
+    #     # # resolve if current visuals are available
+    #     # if self.visual_dict and "time" in self.visual_dict.keys() and self.visual_dict['time']==self.obs_dict['time']:
+    #     #     visual_dict = self.visual_dict
+    #     # else:
+    #     #     visual_dict = {}
 
-        env_info = {
-            'time': self.obs_dict['time'][()],          # MDP(t)
-            'rwd_dense': self.rwd_dict['dense'][()],    # MDP(t)
-            'rwd_sparse': self.rwd_dict['sparse'][()],  # MDP(t)
-            'solved': self.rwd_dict['solved'][()],      # MDP(t)
-            'done': self.rwd_dict['done'][()],          # MDP(t)
-            'obs_dict': self.obs_dict,                  # MDP(t)
-            # 'visual_dict': visual_dict,                 # MDP(t), will be {} if user hasn't explicitly updated self.visual_dict at the current time
-            # 'proprio_dict': self.proprio_dict,          # MDP(t)
-            'rwd_dict': self.rwd_dict,                  # MDP(t)
-            'state': state.data,              # MDP(t)
-        }
+    #     env_info = {
+    #         'time': self.obs_dict['time'][()],          # MDP(t)
+    #         'rwd_dense': self.rwd_dict['dense'][()],    # MDP(t)
+    #         'rwd_sparse': self.rwd_dict['sparse'][()],  # MDP(t)
+    #         'solved': self.rwd_dict['solved'][()],      # MDP(t)
+    #         'done': self.rwd_dict['done'][()],          # MDP(t)
+    #         'obs_dict': self.obs_dict,                  # MDP(t)
+    #         # 'visual_dict': visual_dict,                 # MDP(t), will be {} if user hasn't explicitly updated self.visual_dict at the current time
+    #         # 'proprio_dict': self.proprio_dict,          # MDP(t)
+    #         'rwd_dict': self.rwd_dict,                  # MDP(t)
+    #         'state': state.data,              # MDP(t)
+    #     }
 
-        return env_info
+    #     return env_info
 
     # def reset(self, rng: jp.ndarray) -> State:
     #     """Resets the environment to an initial state."""
@@ -751,9 +676,6 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
 
         # Reset counters
         steps_since_last_hit, steps_inside_target, trial_idx = jp.zeros(3)
-        if self.adaptive_task:
-            trial_success_log_pointer_index = jp.zeros(1, dtype=jp.int32)
-            trial_success_log = -1*jp.ones(self.success_log_buffer_length, dtype=jp.int32)
         # self._target_success = jp.array(False)
         
         # Reset last control (used for observations only)
@@ -767,36 +689,31 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
             reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng)
         elif self.reset_type == "range_uniform":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
-            data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
+            data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act)
             reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng, data)
         else:
             reset_qpos, reset_qvel, reset_act = None, None, None
 
-        data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act, ctrl=last_ctrl)
+        data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act)
 
         self._reset_bm_model(rng)
 
-        info = {'last_ctrl': last_ctrl,
-                'motor_act': self._motor_act,
-                'steps_since_last_hit': steps_since_last_hit,
+        info = {'rng': rng,
+                'last_ctrl': last_ctrl,
                 'steps_inside_target': steps_inside_target,
-                'trial_idx': trial_idx,
-                # 'trial_success_log_pointer_index': trial_success_log_pointer_index,  #TODO: do not reset to initial value at the beginning of each episode!!!
-                # 'trial_success_log': trial_success_log,  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'target_area_dynamic_width_scale': jp.array(self.init_target_area_width_scale, dtype=jp.float32),  #TODO: do not reset to initial value at the beginning of each episode!!!
                 'reach_dist': jp.array(0.),
-                'rng': rng,
                 'target_success': jp.array(False),
+                'steps_since_last_hit': steps_since_last_hit,
                 'target_fail': jp.array(False),
+                'trial_idx': trial_idx,
                 'task_completed': jp.array(False),
                 }
-        if self.adaptive_task:
-            info['trial_success_log_pointer_index'] = trial_success_log_pointer_index
-            info['trial_success_log'] = trial_success_log
-        info['target_pos'] = self.generate_target_pos(rng, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
+        info['target_pos'] = self.generate_target_pos(rng, target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng, target_radius=kwargs.get("target_radius", None))
         if self.vision or self.eval_mode:
             data = self.add_target_pos_to_data(data, info['target_pos'])
+        
+        if self.vision:
             info.update(self.generate_pixels(data))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
@@ -805,14 +722,19 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # self.generate_target(rng, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
-                    'success_rate': 0., #obs_dict['success_rate'],
+        metrics = {'success_rate': 0.,
                     'reach_dist': 0.,
+                    'target_success_sum': 0.,  #TODO: remove this and following lines
+                    'target_fail_sum': 0.,
+                    'target_success_final': 0.,
+                    'target_fail_final': 0.,
                 }  #'bonus': zero}
         
         return State(data, obs, reward, done, metrics, info)
     
     def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
+        return self.reset(rng, **kwargs)
+    
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
 
         rng, rng_reset = jax.random.split(rng, 2)
@@ -843,28 +765,22 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
 
         self._reset_bm_model(rng_reset)
 
-        info = {'last_ctrl': last_ctrl,
-                'motor_act': self._motor_act,
-                'steps_since_last_hit': steps_since_last_hit,
+        info = {'rng': rng_reset,
+                'last_ctrl': last_ctrl,
                 'steps_inside_target': steps_inside_target,
-                'trial_idx': trial_idx,
-                # 'trial_success_log_pointer_index': obs_dict_before_reset["trial_success_log_pointer_index"],  #TODO: do not reset to initial value at the beginning of each episode!!!
-                # 'trial_success_log': obs_dict_before_reset["trial_success_log"],  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'target_area_dynamic_width_scale': info_before_reset["target_area_dynamic_width_scale"].copy(),  #TODO: do not reset to initial value at the beginning of each episode!!!
-                'rng': rng_reset,
+                'reach_dist': jp.array(0.),
                 'target_success': jp.array(False),
+                'steps_since_last_hit': steps_since_last_hit,
                 'target_fail': jp.array(False),
+                'trial_idx': trial_idx,
                 'task_completed': jp.array(False),
                 }
-        if self.adaptive_task:
-            info['trial_success_log_pointer_index'] = info_before_reset["trial_success_log_pointer_index"].copy()
-            info['trial_success_log'] = info_before_reset["trial_success_log"].copy()
-        info['target_pos'] = self.generate_target_pos(rng_reset, info['target_area_dynamic_width_scale'], target_pos=kwargs.get("target_pos", None))
+        info['target_pos'] = self.generate_target_pos(rng_reset, target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
         if self.vision or self.eval_mode:
             data = self.add_target_pos_to_data(data, info['target_pos'])
 
-        if self.vision or self.eval_mode:
+        if self.vision:
             info['render_token'] = info_before_reset['render_token']
             pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
             info.update(pixels_dict)
@@ -877,8 +793,8 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # self.generate_target(rng1, obs_dict)
 
         reward, done = jp.zeros(2)
-        metrics = {'target_area_dynamic_width_scale': 0., #info['target_area_dynamic_width_scale'],
-                    'success_rate': 0., #obs_dict['success_rate'],
+        metrics = {'success_rate': 0., #obs_dict['success_rate'],
+                    'reach_dist': 0.,
                    }  #'bonus': zero}
         
         return State(data, obs, reward, done, metrics, info)
@@ -999,8 +915,9 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         #TODO: do not store anything in self in this function, as its values should mostly be discarded after it is called (no permanent env changes!)
 
         # Sample random initial values for motor activation
-        rng, rng1 = jax.random.split(rng, 2)
-        self._motor_act = jax.random.uniform(rng1, shape=(self._nm,), minval=jp.zeros((self._nm,)), maxval=jp.ones((self._nm,)))
+        # rng, rng1 = jax.random.split(rng, 2)
+        # self._motor_act = jax.random.uniform(rng1, shape=(self._nm,), minval=jp.zeros((self._nm,)), maxval=jp.ones((self._nm,)))
+
         # Reset smoothed average of motor actuator activation
         self._motor_smooth_avg = jp.zeros((self._nm,))
 
@@ -1020,7 +937,7 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
         # Generate new target
         ##TODO: update data0 when target is updated?
         rng, rng1, rng2 = jax.random.split(rng, 3)
-        state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1, state.info['target_area_dynamic_width_scale'])], state.info['target_pos'])
+        state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
         state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
         # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
         # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
@@ -1057,11 +974,13 @@ class PlaygroundArmPointing(mjx_env.MjxEnv):
 
         done = rwd_dict['done']
         state.metrics.update(
-            target_area_dynamic_width_scale=done*obs_dict['target_area_dynamic_width_scale'],
-            success_rate=done*obs_dict['success_rate'],
-            # bonus=rwd_dict['bonus'],
-            # ctrl=data.ctrl[-1],  #TODO: remove [for debugging purposes only]
+            success_rate=done*obs_dict['target_success'],
             reach_dist=done*jp.linalg.norm(obs_dict['reach_dist']),
+            # bonus=rwd_dict['bonus'],
+            target_success_sum = jp.array(obs_dict['target_success'], dtype=jp.float32),  #TODO: remove this and following lines
+            target_fail_sum = jp.array(obs_dict['target_fail'], dtype=jp.float32),
+            target_success_final = done*obs_dict['target_success'],
+            target_fail_final = done*obs_dict['target_fail'],
         )
 
         # return self.forward(**kwargs)

@@ -33,6 +33,7 @@ from absl import logging
 # from brax.training.agents.ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
+from myosuite.envs.myo.mjx.utils import load_checkpoint
 from etils import epath
 import jax
 import jax.numpy as jp
@@ -53,11 +54,12 @@ from mujoco_playground.config import dm_control_suite_params
 from mujoco_playground.config import locomotion_params
 from mujoco_playground.config import manipulation_params
 
-# for adaptive task curriculum
-from myosuite.train.utils.wrapper import wrap_curriculum_training
-from playground_myoElbow import PlaygroundElbow #, default_config
-from playground_myoUser_pointing import PlaygroundArmPointing, default_config  #TODO: import default_config from here
+# # for adaptive task curriculum
+# from myosuite.train.utils.wrapper import wrap_curriculum_training
 
+# from playground_myoElbow import PlaygroundElbow #, default_config
+# from playground_myoUser_pointing import PlaygroundArmPointing, default_config  #TODO: remove
+from myosuite.envs.myo.myouser.myoarm_pointing_v0 import MyoArmPointing, default_config
 
 # xla_flags = os.environ.get("XLA_FLAGS", "")
 # xla_flags += " --xla_gpu_triton_gemm_any=True"
@@ -202,7 +204,7 @@ class ProgressLogger:
     if len(self.times) == 2:
         print(f'time to JIT compile: {self.times[1] - self.times[0]}')
         print(f'Starting training...')
-      
+
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
       wandb.log({'num_steps': num_steps, **metrics}, step=num_steps)
@@ -381,49 +383,33 @@ def get_observation_size(vision=False):
       raise NotImplementedError(f'No observation size known for "{vision}"')
 
 
-def get_rl_config(env_name: str) -> config_dict.ConfigDict:
-  if env_name in mujoco_playground.manipulation._envs:
-    if _VISION.value:
-      return manipulation_params.brax_vision_ppo_config(env_name)
-    return manipulation_params.brax_ppo_config(env_name)
-  elif env_name in mujoco_playground.locomotion._envs:
-    if _VISION.value:
-      return locomotion_params.brax_vision_ppo_config(env_name)
-    return locomotion_params.brax_ppo_config(env_name)
-  elif env_name in mujoco_playground.dm_control_suite._envs:
-    if _VISION.value:
-      return dm_control_suite_params.brax_vision_ppo_config(env_name)
-    return dm_control_suite_params.brax_ppo_config(env_name)
+# def get_rl_config(env_name: str) -> config_dict.ConfigDict:
+#   if env_name in mujoco_playground.manipulation._envs:
+#     if _VISION.value:
+#       return manipulation_params.brax_vision_ppo_config(env_name)
+#     return manipulation_params.brax_ppo_config(env_name)
+#   elif env_name in mujoco_playground.locomotion._envs:
+#     if _VISION.value:
+#       return locomotion_params.brax_vision_ppo_config(env_name)
+#     return locomotion_params.brax_ppo_config(env_name)
+#   elif env_name in mujoco_playground.dm_control_suite._envs:
+#     if _VISION.value:
+#       return dm_control_suite_params.brax_vision_ppo_config(env_name)
+#     return dm_control_suite_params.brax_ppo_config(env_name)
 
-  raise ValueError(f"Env {env_name} not found in {registry.ALL_ENVS}.")
-
-
-def rscope_fn(full_states, obs, rew, done):
-  """
-  All arrays are of shape (unroll_length, rscope_envs, ...)
-  full_states: dict with keys 'qpos', 'qvel', 'time', 'metrics'
-  obs: nd.array or dict obs based on env configuration
-  rew: nd.array rewards
-  done: nd.array done flags
-  """
-  # Calculate cumulative rewards per episode, stopping at first done flag
-  done_mask = jp.cumsum(done, axis=0)
-  valid_rewards = rew * (done_mask == 0)
-  episode_rewards = jp.sum(valid_rewards, axis=0)
-  print(
-      "Collected rscope rollouts with reward"
-      f" {episode_rewards.mean():.3f} +- {episode_rewards.std():.3f}"
-  )
+#   raise ValueError(f"Env {env_name} not found in {registry.ALL_ENVS}.")
 
 
 def main(argv):
   """Run training and evaluation for the specified environment."""
 
+  # Set global seed for reproducibility
+  set_global_seed(_SEED.value)
 
   del argv
   print(f"Current backend: {jax.default_backend()}")
-  registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
-  registry.manipulation.register_environment("MyoUserPointing", PlaygroundArmPointing, default_config)
+  # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
+  registry.manipulation.register_environment("MyoUserPointing", MyoArmPointing, default_config)
   # Load environment configuration
   env_cfg = registry.get_default_config(_ENV_NAME.value)  #default_config()
 
@@ -481,7 +467,8 @@ def main(argv):
   if _VISION.value:
     env_cfg.vision = True
     env_cfg.vision_config.render_batch_size = ppo_params.num_envs
-  env = registry.load(_ENV_NAME.value, config=env_cfg)
+  
+  # env = registry.load(_ENV_NAME.value, config=env_cfg)
   if _LOG_TRAINING_METRICS.present:
     ppo_params.log_training_metrics = _LOG_TRAINING_METRICS.value
   if _TRAINING_METRICS_STEPS.present:
@@ -489,6 +476,9 @@ def main(argv):
 
   print(f"Environment Config:\n{env_cfg}")
   print(f"PPO Training Parameters:\n{ppo_params}")
+
+
+
 
   # Generate unique experiment name
   now = datetime.now()
@@ -514,197 +504,191 @@ def main(argv):
     writer = SummaryWriter(logdir)
   else:
     writer = None
-
-  # Handle checkpoint loading
-  if _LOAD_CHECKPOINT_PATH.value is not None:
-    # Convert to absolute path
-    ckpt_path = epath.Path(_LOAD_CHECKPOINT_PATH.value).resolve()
-    if ckpt_path.is_dir():
-      latest_ckpts = list(ckpt_path.glob("*"))
-      latest_ckpts = [ckpt for ckpt in latest_ckpts if ckpt.is_dir()]
-      latest_ckpts.sort(key=lambda x: int(x.name))
-      latest_ckpt = latest_ckpts[-1]
-      restore_checkpoint_path = latest_ckpt
-      print(f"Restoring from: {restore_checkpoint_path}")
-    else:
-      restore_checkpoint_path = ckpt_path
-      print(f"Restoring from checkpoint: {restore_checkpoint_path}")
-  else:
-    print("No checkpoint path provided, not restoring from checkpoint")
-    restore_checkpoint_path = None
-
-  # Set up checkpoint directory
-  ckpt_path = logdir / "checkpoints"
-  ckpt_path.mkdir(parents=True, exist_ok=True)
-  print(f"Checkpoint path: {ckpt_path}")
-
-  # Save environment configuration
-  with open(ckpt_path / "config.json", "w", encoding="utf-8") as fp:
-    json.dump(env_cfg.to_dict(), fp, indent=4)
-
-  # Define policy parameters function for saving checkpoints
-  #TODO: merge with function defined in myosuite.envs.myo.mjx.utils.load_checkpoint
-  def policy_params_fn_checkpoints(current_step, make_policy, params):  # pylint: disable=unused-argument
-    print(f"Saving policy parameters (step: {current_step})")
-    orbax_checkpointer = ocp.PyTreeCheckpointer()
-    save_args = orbax_utils.save_args_from_target(params)
-    path = ckpt_path / f"{current_step}"
-    orbax_checkpointer.save(path, params, force=True, save_args=save_args)
-
-  training_params = dict(ppo_params)
-  if "network_factory" in training_params:
-    del training_params["network_factory"]
-
-  # network_fn = (
-  #     ppo_networks_vision.make_ppo_networks_vision
-  #     if _VISION.value
-  #     else ppo_networks.make_ppo_networks
-  # )
-  # if hasattr(ppo_params, "network_factory"):
-  #   network_factory = functools.partial(
-  #       network_fn, **ppo_params.network_factory
-  #   )
-  # else:
-  #   network_factory = network_fn
-
-  # def custom_network_factory(obs_shape, action_size, preprocess_observations_fn,
-  #                            cheat_vision_aux_output=False):
-  #   # if activation_function == 'swish':
-  #   #   activation = linen.swish
-  #   # elif activation_function == 'relu':
-  #   #   activation = linen.relu
-  #   # else:
-  #   #   raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
-  #   if not _VISION.value:
-  #     return networks.make_ppo_networks_no_vision(
-  #       proprioception_size=get_observation_size()['proprioception'],
-  #       action_size=action_size,
-  #       preprocess_observations_fn=preprocess_observations_fn,
-  #     )
-  #   return networks.make_ppo_networks_with_vision(
-  #     proprioception_size=get_observation_size()['proprioception'][0],
-  #     action_size=action_size,
-  #     encoder_out_size=4,
-  #     preprocess_observations_fn=preprocess_observations_fn,
-  #     cheat_vision_aux_output=cheat_vision_aux_output,
-  #   )
-  # network_factory = custom_network_factory
-
-  network_factory = functools.partial(networks.custom_network_factory, vision=_VISION.value, get_observation_size=functools.partial(get_observation_size, vision=_VISION.value), **getattr(ppo_params, "network_factory", {}))
-
-  if _DOMAIN_RANDOMIZATION.value:
-    training_params["randomization_fn"] = registry.get_domain_randomizer(
-        _ENV_NAME.value
-    )
-
-  if _VISION.value:
-    env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
-        env,
-        vision=True,
-        num_vision_envs=env_cfg.vision_config.render_batch_size,
-        episode_length=ppo_params.episode_length,
-        action_repeat=ppo_params.action_repeat,
-        randomization_fn=training_params.get("randomization_fn"),
-    )
-
-  num_eval_envs = (
-      ppo_params.num_envs
-      if _VISION.value
-      else ppo_params.get("num_eval_envs", 128)
-  )
-
-  if "num_eval_envs" in training_params:
-    del training_params["num_eval_envs"]
-
-  train_fn = functools.partial(
-      ppo.train,
-      **training_params,
-      network_factory=network_factory,
-      # policy_params_fn=policy_params_fn,
-      seed=_SEED.value,
-      restore_checkpoint_path=restore_checkpoint_path,
-      # save_checkpoint_path=ckpt_path,
-      # wrap_env_fn=None if _VISION.value else wrapper.wrap_for_brax_training,
-      wrap_env_fn=None if _VISION.value else wrap_curriculum_training,
-      num_eval_envs=num_eval_envs,
-  )
-
-  # times = [time.monotonic()]
-
-  # # Progress function for logging
-  # def progress(num_steps, metrics):
-    
-  #   times.append(time.monotonic())
-
-  #   # Log to Weights & Biases
-  #   if _USE_WANDB.value and not _PLAY_ONLY.value:
-  #     wandb.log(metrics, step=num_steps)
-
-  #   # Log to TensorBoard
-  #   if _USE_TB.value and not _PLAY_ONLY.value:
-  #     for key, value in metrics.items():
-  #       writer.add_scalar(key, value, num_steps)
-  #     writer.flush()
-
-  #   # if 'eval/episode_reward' in metrics:
-  #   if _RUN_EVALS.value:
-  #     print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
-  #   if _LOG_TRAINING_METRICS.value:
-  #     if "episode/sum_reward" in metrics:
-  #       print(
-  #           f"{num_steps}: mean episode"
-  #           f" reward={metrics['episode/sum_reward']:.3f}"
-  #       )
-
-  # Load evaluation environment
-  eval_env = (
-      None if _VISION.value else registry.load(_ENV_NAME.value, config=env_cfg)
-  )
-
-  if _RSCOPE_ENVS.value:
-    # Interactive visualisation of policy checkpoints
-    from rscope import brax as rscope_utils
-
-    if not _VISION.value:
-      rscope_env = registry.load(_ENV_NAME.value, config=env_cfg)
-      rscope_env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
-          rscope_env,
-          episode_length=ppo_params.episode_length,
-          action_repeat=ppo_params.action_repeat,
-          randomization_fn=training_params.get("randomization_fn"),
-      )
-    else:
-      rscope_env = env
-
-    rscope_handle = rscope_utils.BraxRolloutSaver(
-        rscope_env,
-        ppo_params,
-        _VISION.value,
-        _RSCOPE_ENVS.value,
-        _DETERMINISTIC_RSCOPE.value,
-        jax.random.PRNGKey(_SEED.value),
-        rscope_fn,
-    )
-
-    def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
-      policy_params_fn_checkpoints(current_step, make_policy, params)
-      rscope_handle.set_make_policy(make_policy)
-      rscope_handle.dump_rollout(params)
-  else:
-    policy_params_fn = policy_params_fn_checkpoints
-
+  
   progress_logger = ProgressLogger(writer=writer, ppo_params=ppo_params, logdir=logdir,
                                    local_plotting=False)
-  
-  print("Starting to JIT compile...")
+  progress_fn = progress_logger.progress
 
   # Train or load the model
-  make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
-      environment=env,
-      progress_fn=progress_logger.progress,
-      policy_params_fn=policy_params_fn,
-      eval_env=None if _VISION.value else eval_env,
-  )
+  env, make_inference_fn, params = load_checkpoint(_ENV_NAME.value, env_cfg, get_observation_size,
+                    ppo_params=ppo_params,
+                    logdir=logdir,
+                    checkpoint_path= _LOAD_CHECKPOINT_PATH.value,
+                    progress_fn=progress_fn,
+                    vision=_VISION.value,
+                    domain_randomization=_DOMAIN_RANDOMIZATION.value,
+                    rscope_envs=_RSCOPE_ENVS.value,
+                    deterministic_rscope=_DETERMINISTIC_RSCOPE.value,
+                    seed=_SEED.value)
+
+
+  # # Handle checkpoint loading
+  # if _LOAD_CHECKPOINT_PATH.value is not None:
+  #   # Convert to absolute path
+  #   ckpt_path = epath.Path(_LOAD_CHECKPOINT_PATH.value).resolve()
+  #   if ckpt_path.is_dir():
+  #     latest_ckpts = list(ckpt_path.glob("*"))
+  #     latest_ckpts = [ckpt for ckpt in latest_ckpts if ckpt.is_dir()]
+  #     latest_ckpts.sort(key=lambda x: int(x.name))
+  #     latest_ckpt = latest_ckpts[-1]
+  #     restore_checkpoint_path = latest_ckpt
+  #     print(f"Restoring from: {restore_checkpoint_path}")
+  #   else:
+  #     restore_checkpoint_path = ckpt_path
+  #     print(f"Restoring from checkpoint: {restore_checkpoint_path}")
+  # else:
+  #   print("No checkpoint path provided, not restoring from checkpoint")
+  #   restore_checkpoint_path = None
+
+  # # Set up checkpoint directory
+  # ckpt_path = logdir / "checkpoints"
+  # ckpt_path.mkdir(parents=True, exist_ok=True)
+  # print(f"Checkpoint path: {ckpt_path}")
+
+  # # Save environment configuration
+  # with open(ckpt_path / "config.json", "w", encoding="utf-8") as fp:
+  #   json.dump(env_cfg.to_dict(), fp, indent=4)
+
+  # # Define policy parameters function for saving checkpoints
+  # #TODO: merge with function defined in myosuite.envs.myo.mjx.utils.load_checkpoint
+  # def policy_params_fn_checkpoints(current_step, make_policy, params):  # pylint: disable=unused-argument
+  #   print(f"Saving policy parameters (step: {current_step})")
+  #   orbax_checkpointer = ocp.PyTreeCheckpointer()
+  #   save_args = orbax_utils.save_args_from_target(params)
+  #   path = ckpt_path / f"{current_step}"
+  #   orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+
+  # training_params = dict(ppo_params)
+  # if "network_factory" in training_params:
+  #   del training_params["network_factory"]
+
+  # # network_fn = (
+  # #     ppo_networks_vision.make_ppo_networks_vision
+  # #     if _VISION.value
+  # #     else ppo_networks.make_ppo_networks
+  # # )
+  # # if hasattr(ppo_params, "network_factory"):
+  # #   network_factory = functools.partial(
+  # #       network_fn, **ppo_params.network_factory
+  # #   )
+  # # else:
+  # #   network_factory = network_fn
+
+  # network_factory = functools.partial(networks.custom_network_factory, vision=_VISION.value, get_observation_size=functools.partial(get_observation_size, vision=_VISION.value), **getattr(ppo_params, "network_factory", {}))
+
+  # if _DOMAIN_RANDOMIZATION.value:
+  #   training_params["randomization_fn"] = registry.get_domain_randomizer(
+  #       _ENV_NAME.value
+  #   )
+
+  # if _VISION.value:
+  #   env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
+  #       env,
+  #       vision=True,
+  #       num_vision_envs=env_cfg.vision_config.render_batch_size,
+  #       episode_length=ppo_params.episode_length,
+  #       action_repeat=ppo_params.action_repeat,
+  #       randomization_fn=training_params.get("randomization_fn"),
+  #   )
+
+  # num_eval_envs = (
+  #     ppo_params.num_envs
+  #     if _VISION.value
+  #     else ppo_params.get("num_eval_envs", 128)
+  # )
+
+  # if "num_eval_envs" in training_params:
+  #   del training_params["num_eval_envs"]
+
+  # train_fn = functools.partial(
+  #     ppo.train,
+  #     **training_params,
+  #     network_factory=network_factory,
+  #     # policy_params_fn=policy_params_fn,
+  #     seed=_SEED.value,
+  #     restore_checkpoint_path=restore_checkpoint_path,
+  #     # save_checkpoint_path=ckpt_path,
+  #     # wrap_env_fn=None if _VISION.value else wrapper.wrap_for_brax_training,
+  #     wrap_env_fn=None if _VISION.value else wrap_curriculum_training,
+  #     num_eval_envs=num_eval_envs,
+  # )
+
+  # # times = [time.monotonic()]
+
+  # # # Progress function for logging
+  # # def progress(num_steps, metrics):
+    
+  # #   times.append(time.monotonic())
+
+  # #   # Log to Weights & Biases
+  # #   if _USE_WANDB.value and not _PLAY_ONLY.value:
+  # #     wandb.log(metrics, step=num_steps)
+
+  # #   # Log to TensorBoard
+  # #   if _USE_TB.value and not _PLAY_ONLY.value:
+  # #     for key, value in metrics.items():
+  # #       writer.add_scalar(key, value, num_steps)
+  # #     writer.flush()
+
+  # #   # if 'eval/episode_reward' in metrics:
+  # #   if _RUN_EVALS.value:
+  # #     print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
+  # #   if _LOG_TRAINING_METRICS.value:
+  # #     if "episode/sum_reward" in metrics:
+  # #       print(
+  # #           f"{num_steps}: mean episode"
+  # #           f" reward={metrics['episode/sum_reward']:.3f}"
+  # #       )
+
+  # # Load evaluation environment
+  # eval_env = (
+  #     None if _VISION.value else registry.load(_ENV_NAME.value, config=env_cfg)
+  # )
+
+  # if _RSCOPE_ENVS.value:
+  #   # Interactive visualisation of policy checkpoints
+  #   from rscope import brax as rscope_utils
+
+  #   if not _VISION.value:
+  #     rscope_env = registry.load(_ENV_NAME.value, config=env_cfg)
+  #     rscope_env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
+  #         rscope_env,
+  #         episode_length=ppo_params.episode_length,
+  #         action_repeat=ppo_params.action_repeat,
+  #         randomization_fn=training_params.get("randomization_fn"),
+  #     )
+  #   else:
+  #     rscope_env = env
+
+  #   rscope_handle = rscope_utils.BraxRolloutSaver(
+  #       rscope_env,
+  #       ppo_params,
+  #       _VISION.value,
+  #       _RSCOPE_ENVS.value,
+  #       _DETERMINISTIC_RSCOPE.value,
+  #       jax.random.PRNGKey(_SEED.value),
+  #       rscope_fn,
+  #   )
+
+  #   def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
+  #     policy_params_fn_checkpoints(current_step, make_policy, params)
+  #     rscope_handle.set_make_policy(make_policy)
+  #     rscope_handle.dump_rollout(params)
+  # else:
+  #   policy_params_fn = policy_params_fn_checkpoints
+
+  
+  # print("Starting to JIT compile...")
+
+  # # Train or load the model
+  # make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
+  #     environment=env,
+  #     progress_fn=progress_logger.progress,
+  #     policy_params_fn=policy_params_fn,
+  #     eval_env=None if _VISION.value else eval_env,
+  # )
+
+
 
   # print("Done training.")
   # if len(times) > 1:
@@ -732,6 +716,7 @@ def main(argv):
   if _VISION.value:
     eval_env = env
     num_envs = env_cfg.vision_config.render_batch_size
+  eval_env.enable_eval_mode()
 
   jit_reset = jax.jit(eval_env.reset)
   jit_step = jax.jit(eval_env.step)
@@ -759,7 +744,7 @@ def main(argv):
     rollout.append(state0)
     if state0.done:
       break
-  print(f"Return: {jp.sum([r.reward for r in rollout])}")
+  print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
 
   # Render and save the rollout
   render_every = 2
@@ -787,4 +772,5 @@ def main(argv):
   print("Rollout video saved as 'rollout.mp4'.")
 
 if __name__ == "__main__":
+  jax.config.parse_flags_with_absl()  #allow for debugging flags such as --jax_debug_nans=True or --jax_disable_jit=True
   app.run(main)
