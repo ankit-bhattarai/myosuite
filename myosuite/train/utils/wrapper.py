@@ -33,7 +33,7 @@ from brax import base
 from myosuite.envs.myo.myouser.utils import AdaptiveTargetWrapper
 
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.wrapper import Wrapper, BraxDomainRandomizationVmapWrapper
+from mujoco_playground._src.wrapper import Wrapper, BraxDomainRandomizationVmapWrapper, BraxAutoResetWrapper
 
 # class BraxDomainRandomizationVmapWrapper(Wrapper):
 #   """Brax wrapper for domain randomization."""
@@ -232,4 +232,8 @@ def wrap_curriculum_training(
     env = EpisodeWrapper(env, episode_length, action_repeat)
     if adaptive_target_wrapper:
       env = AdaptiveTargetWrapper(env)
+    # else:
+    #   env = BraxAutoResetWrapper(env)
+    #TODO: why does this not work without AdaptiveTargetWrapper? make sure that info is reset correctly!
+
     return env
