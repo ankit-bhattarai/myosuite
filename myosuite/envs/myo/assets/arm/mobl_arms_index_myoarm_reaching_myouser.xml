@@ -1,0 +1,24 @@
+<mujoco model="MoBL Arms Index model for target reaching">
+    <include file="../../../../simhive/uitb_sim/assets/mobl_arms_index_myoarm_assets.xml"/>
+    <compiler meshdir='../../../../simhive/uitb_sim/' texturedir='../../../../simhive/uitb_sim/'/>
+
+    <asset>
+        <!-- pick a body mesh below -->
+        <!-- <mesh file="../../../../simhive/myo_sim/meshes/human_lowpoly_norighthand.stl" name="human_body"/> -->
+        <mesh file="assets/human_lowpoly_nohand.stl" name="human_body"/>
+    </asset>
+
+    <worldbody>
+
+        <geom name="body" type="mesh" mesh="human_body" euler="0 0 3.14" contype="0" conaffinity="0"/>
+        <body name="full_body" pos="0 0 1">
+            <include file="../../../../simhive/uitb_sim/assets/mobl_arms_index_body.xml"/>
+        </body>
+
+        <body name="target" pos="0.5 0.14 1.1"> 
+            <geom name="target_sphere" type="sphere" size="0.05" rgba="0.1 0.8 0.1 1"/>
+            <!-- <site name="fingertip_target" size="0.025" rgba="0.1 0.8 0.1 1" pos="0.5 0 0.8"/> -->
+        </body>
+    </worldbody>
+
+</mujoco>

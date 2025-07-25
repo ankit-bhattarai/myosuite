@@ -59,7 +59,8 @@ from mujoco_playground.config import manipulation_params
 
 # from playground_myoElbow import PlaygroundElbow #, default_config
 # from playground_myoUser_pointing import PlaygroundArmPointing, default_config  #TODO: remove
-from myosuite.envs.myo.myouser.myoarm_pointing_v0 import MyoArmPointing, default_config
+# from myosuite.envs.myo.myouser.myoarm_pointing_v0 import MyoArmPointing, default_config
+from myosuite.envs.myo.myouser.myoarm_steering_v0 import MyoArmSteering, default_config
 
 # xla_flags = os.environ.get("XLA_FLAGS", "")
 # xla_flags += " --xla_gpu_triton_gemm_any=True"
@@ -343,7 +344,7 @@ def set_global_seed(seed=0):
 def get_observation_size(vision=False):
     if not vision:
       # return 48
-      return {'proprioception': 48}  #112}  #151}  #48}
+      return {'proprioception': 59}
     if vision == 'rgb':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
@@ -409,7 +410,7 @@ def main(argv):
   del argv
   print(f"Current backend: {jax.default_backend()}")
   # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
-  registry.manipulation.register_environment("MyoUserPointing", MyoArmPointing, default_config)
+  registry.manipulation.register_environment("MyoUserSteering", MyoArmSteering, default_config)
   # Load environment configuration
   env_cfg = registry.get_default_config(_ENV_NAME.value)  #default_config()
 

@@ -96,21 +96,23 @@ class Steering(MyoUserBase):
         reward, done = jp.zeros(2)
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
-                "motor_act": self._motor_act}
+                "motor_act": self._motor_act,
+                "completed_phase_0": jp.bool_(False),
+                "completed_phase_1": jp.bool_(False),
+                }
         info.update(self.get_relevant_positions(data))
         # obs = self.get_obs(data, info)
         obs, info = self.get_obs_vec(data, info)
         metrics = {
-            'success_rate': 0.0,
-            'phase': 0.0, # 0 means that the user hasn't touched the screen yet, 1 means that the user has touched the
-             # screen at the start pos and has begun steering
-             'dist': 0.0,
-             'touching_screen': jp.bool_(False),
+            'phase_0_done': 0.0,
+            'phase_1_done': 0.0,
+            'dist': 0.0
         }
 
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
+        jax.debug.print('Step start - completed_phase_0: {}', state.info['completed_phase_0'])
         rng = state.info['rng']
         rng, rng_ctrl = jax.random.split(rng, 2)
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
@@ -119,15 +121,11 @@ class Steering(MyoUserBase):
         
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
-        rwd, done, dist = self.get_rewards_and_done(obs_dict)
+        rwd, done, update_info, metrics = self.get_rewards_and_done(obs_dict, state.info)
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
-        state.metrics.update(
-            success_rate=done,
-            phase=obs_dict['phase'],
-            dist=dist,
-            touching_screen=obs_dict['touching_screen'],
-        )
+        state.metrics.update(**metrics)
+        _updated_info.update(**update_info)
         return mjx_env.State(
             data=data,
             obs=obs,
@@ -137,13 +135,58 @@ class Steering(MyoUserBase):
             info=_updated_info
         )
 
-    def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
-        dist = obs_dict['dist']
-        reach_reward = (jp.exp(-dist*10) - 1.)/10
-        done = 1.0 * (dist <= 0.01)
-        success_bonus = 10 * done
-        reward = reach_reward + success_bonus
-        return reward, done, dist
+    def in_phase_1(self, obs_dict: dict, info) -> jax.Array:
+        completed_phase_0 = info['completed_phase_0']
+        jax.debug.print('In phase 1; completed_phase_0: {}', completed_phase_0)
+        jax.debug.print('In phase 1; type of completed_phase_0: {}', type(completed_phase_0))
+        reward = 0.0
+        done = 0.0
+        update_info = {'completed_phase_1': jp.bool_(False),
+                       'completed_phase_0': jp.bool_(False),
+                       }
+        metrics = {'phase_0_done': 0.0,
+                   'phase_1_done': 0.0,
+                   'dist': 0.0,
+                   }
+        return reward, done, update_info, metrics
+
+    def in_phase_0(self, obs_dict: dict, info) -> jax.Array:
+        ## Still in the air!
+        start_line = obs_dict['start_line']
+        fingertip = obs_dict['fingertip']
+        end_line = obs_dict['end_line']
+
+        distance_between_lines = jp.linalg.norm(start_line - end_line, axis=-1)
+        distance_to_start_line = jp.linalg.norm(fingertip - start_line, axis=-1)
+
+        distance = distance_to_start_line + distance_between_lines
+        reach_reward = (jp.exp(-distance*10) - 1.)/10
+        phase_0_done = distance_to_start_line <= 0.01
+
+        reward = reach_reward
+        done = phase_0_done.astype(jp.float32)
+        update_info = {
+            'completed_phase_0': jp.bool_(False),
+            #TODO: remove this hardcoded value
+            # this currently is checking that phase operations are done correctly!
+            'completed_phase_1': jp.bool_(False),
+        }
+        metrics = {
+            'phase_0_done': phase_0_done.astype(jp.float32),
+            'phase_1_done': 0.0,
+            'dist': distance,
+        }
+        return reward, done, update_info, metrics
+    
+    def get_rewards_and_done(self, obs_dict: dict, info: dict) -> jax.Array:
+        completed_phase_0 = info['completed_phase_0']
+        jax.debug.print('completed_phase_0 value: {}', completed_phase_0)
+        jax.debug.print('type of completed_phase_0: {}', type(completed_phase_0))
+        (reward, done, update_info, metrics) = jax.lax.cond(completed_phase_0, self.in_phase_1, self.in_phase_0, obs_dict, info)
+        jax.debug.print('update_info completed_phase_0: {}', update_info['completed_phase_0'])
+        jax.debug.print('type of update_info completed_phase_0: {}', type(update_info['completed_phase_0']))
+        return reward, done, update_info, metrics
+
     
     def get_obs_dict(self, data: mjx.Data, info: dict) -> jax.Array:
         obs_dict = {}
@@ -177,19 +220,7 @@ class Steering(MyoUserBase):
         obs_dict['end_line'] = data.site_xpos[self.end_line_id]
         obs_dict['top_line'] = data.site_xpos[self.top_line_id]
         obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
-        obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
-
-        ee_pos = obs_dict['fingertip']
-        screen_pos = obs_dict['screen_pos']
-        start_line = obs_dict['start_line']
-        # startline_coordinates = obs_dict['screen_pos'].at[1].set(startline_y)
-        diff = ee_pos - start_line
-        dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
-        obs_dict['dist'] = dist
-
-        #TODO: actually implmenet properly
-        obs_dict['phase'] = jp.select([dist <= 0.01], [1.0], 0.0)
-        obs_dict['success'] = -1.0
+        obs_dict['touching_screen'] = 1.0 * (data.sensordata[self.screen_touch_id] > 0.0)
 
         #TODO: more things to add here
         return obs_dict
@@ -291,4 +322,3 @@ class Steering(MyoUserBase):
             new_ctrl = new_ctrl.at[self.EIPpos].set(0)
 
         return new_ctrl
-
