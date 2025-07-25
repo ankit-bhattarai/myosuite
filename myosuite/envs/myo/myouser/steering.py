@@ -112,6 +112,7 @@ class Steering(MyoUserBase):
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
+        jax.debug.print('Step start - completed_phase_0: {}', state.info['completed_phase_0'])
         rng = state.info['rng']
         rng, rng_ctrl = jax.random.split(rng, 2)
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
@@ -120,7 +121,6 @@ class Steering(MyoUserBase):
         
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
-        state.info['completed_phase_0'] = jp.bool_(False)
         rwd, done, update_info, metrics = self.get_rewards_and_done(obs_dict, state.info)
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
@@ -135,8 +135,10 @@ class Steering(MyoUserBase):
             info=_updated_info
         )
 
-    def in_phase_1(self, obs_dict: dict) -> jax.Array:
-        jax.debug.print('In phase 1')
+    def in_phase_1(self, obs_dict: dict, info) -> jax.Array:
+        completed_phase_0 = info['completed_phase_0']
+        jax.debug.print('In phase 1; completed_phase_0: {}', completed_phase_0)
+        jax.debug.print('In phase 1; type of completed_phase_0: {}', type(completed_phase_0))
         reward = 0.0
         done = 0.0
         update_info = {'completed_phase_1': jp.bool_(False),
@@ -148,7 +150,7 @@ class Steering(MyoUserBase):
                    }
         return reward, done, update_info, metrics
 
-    def in_phase_0(self, obs_dict: dict) -> jax.Array:
+    def in_phase_0(self, obs_dict: dict, info) -> jax.Array:
         ## Still in the air!
         start_line = obs_dict['start_line']
         fingertip = obs_dict['fingertip']
@@ -178,7 +180,11 @@ class Steering(MyoUserBase):
     
     def get_rewards_and_done(self, obs_dict: dict, info: dict) -> jax.Array:
         completed_phase_0 = info['completed_phase_0']
-        (reward, done, update_info, metrics) = jax.lax.cond(completed_phase_0, self.in_phase_1, self.in_phase_0, obs_dict)
+        jax.debug.print('completed_phase_0 value: {}', completed_phase_0)
+        jax.debug.print('type of completed_phase_0: {}', type(completed_phase_0))
+        (reward, done, update_info, metrics) = jax.lax.cond(completed_phase_0, self.in_phase_1, self.in_phase_0, obs_dict, info)
+        jax.debug.print('update_info completed_phase_0: {}', update_info['completed_phase_0'])
+        jax.debug.print('type of update_info completed_phase_0: {}', type(update_info['completed_phase_0']))
         return reward, done, update_info, metrics
 
     
