@@ -302,3 +302,35 @@ class Steering(MyoUserBase):
 
         return new_ctrl
 
+class Steering_Cheat(Steering):
+
+    def _reset_range_uniform(self, rng, data):
+        qpos = jp.array([-4.4993529e-04, -2.0891316e-01,  8.8479556e-02, -8.8497005e-02,
+        2.0891567e-01, -4.2286020e-02,  3.4187350e-01,  1.5365790e-01,
+       -1.5366049e-01, -3.4186423e-01,  4.2300060e-02,  1.8401126e+00,
+        8.6331731e-01, -1.8401110e+00,  3.5031942e-01,  6.8144262e-01,
+       -4.0263432e-01])
+        qvel = jp.zeros_like(qpos)
+        act = jp.array([0.736914, 0.        , 0.        , 0.        , 0.        ,
+       0.        , 0.        , 0.        , 0.491236  , 0.062633  ,
+       0.318566  , 0.        , 0.231446  , 0.77142197, 0.868577  ,
+       0.005275  , 0.335965  , 0.636831  , 0.158622  , 0.        ,
+       0.        , 0.777745  , 0.2798    , 0.        , 0.158079  ,
+       0.        ])
+        return qpos, qvel, act
+    
+    def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
+        completed_phase_0 = 1.0
+        
+        ee_pos = obs_dict['fingertip']
+        end_line = obs_dict['end_line']
+
+        dist_to_end_line = jp.linalg.norm(ee_pos - end_line, axis=-1)
+        
+        dist_reward = (jp.exp(-dist_to_end_line*10) - 1.)/10    
+        done = 1.0 * (dist_to_end_line <= 0.01)
+
+        success_bonus = 10. * done
+        reward = dist_reward + success_bonus
+
+        return reward, done, dist_to_end_line, completed_phase_0

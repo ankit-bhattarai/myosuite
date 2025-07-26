@@ -33,7 +33,7 @@ from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
 from brax.training.agents.sac import train as sac
 from brax.io import html, mjcf, model
-from myosuite.envs.myo.myouser.steering import Steering
+from myosuite.envs.myo.myouser.steering import Steering, Steering_Cheat
 from mujoco_playground import wrapper
 
 from matplotlib import pyplot as plt
@@ -95,13 +95,15 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          cheat_vision_aux_output=False,
          global_seed=0,  # Add global seed parameter
          use_wandb=True,
+         cheat_halfway_env=False,
          ):
 
   # Set global seed for reproducibility
   set_global_seed(global_seed)
 
-  env_name = 'steering'
-  envs.register_environment(env_name, Steering)
+  envs.register_environment('steering', Steering)
+  envs.register_environment('steering_cheat', Steering_Cheat)
+  env_name = 'steering' if not cheat_halfway_env else 'steering_cheat'
   
   model_path = 'simhive/uitb_sim/steering.xml'
   path = (epath.Path(epath.resource_path('myosuite')) / (model_path)).as_posix()
@@ -459,6 +461,8 @@ if __name__ == '__main__':
   parser.add_argument('--global_seed', type=int, default=0)
   parser.add_argument('--no_wandb', dest='use_wandb', action='store_false', help='Type this if you want to disable wandb, default is true')
   parser.set_defaults(use_wandb=True)
+  parser.add_argument('--cheat_halfway_env', dest='cheat_halfway_env', action='store_true', help='Type this if you want to use the halfway environment, default is false')
+  parser.set_defaults(cheat_halfway_env=False)
   args = parser.parse_args()
 
   main(
@@ -495,4 +499,5 @@ if __name__ == '__main__':
     cheat_vision_aux_output=args.cheat_vision_aux_output,
     global_seed=args.global_seed,
     use_wandb=args.use_wandb,
+    cheat_halfway_env=args.cheat_halfway_env,
   )
