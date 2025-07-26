@@ -97,7 +97,7 @@ class Steering(MyoUserBase):
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
                 "motor_act": self._motor_act,
-                "completed_phase_0": jp.bool_(False)}
+                "completed_phase_0": 0.0}
         info.update(self.get_relevant_positions(data))
         # obs = self.get_obs(data, info)
         obs, info = self.get_obs_vec(data, info)
@@ -105,6 +105,7 @@ class Steering(MyoUserBase):
             'success_rate': 0.0,
              'dist': 0.0,
              'touching_screen': jp.bool_(False),
+             'completed_phase_0': 0.0,
         }
 
         return mjx_env.State(data, obs, reward, done, metrics, info)
@@ -118,13 +119,17 @@ class Steering(MyoUserBase):
         
         obs_dict = self.get_obs_dict(data, state.info)
         obs = self.obsdict2obsvec(obs_dict)
-        rwd, done, dist = self.get_rewards_and_done(obs_dict)
+        rwd, done, dist, completed_phase_0 = self.get_rewards_and_done(obs_dict)
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
+        _updated_info['completed_phase_0'] = completed_phase_0
+
+        metric_completed_phase_0 = (1. - done) * completed_phase_0 + done * 1.
         state.metrics.update(
             success_rate=done,
             dist=dist,
             touching_screen=obs_dict['touching_screen'],
+            completed_phase_0=metric_completed_phase_0
         )
         return mjx_env.State(
             data=data,
@@ -137,17 +142,28 @@ class Steering(MyoUserBase):
 
     def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
         completed_phase_0 = obs_dict['completed_phase_0']
+        
         ee_pos = obs_dict['fingertip']
         start_line = obs_dict['start_line']
         end_line = obs_dict['end_line']
-        diff = ee_pos - start_line
-        dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
 
-        reach_reward = (jp.exp(-dist*10) - 1.)/10
-        done = 1.0 * (dist <= 0.01)
-        success_bonus = 10 * done
-        reward = reach_reward + success_bonus
-        return reward, done, dist
+        dist_between_lines = jp.linalg.norm(end_line - start_line, axis=-1)
+        dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
+        dist_to_end_line = jp.linalg.norm(ee_pos - end_line, axis=-1)
+
+        phase_0_distance = dist_to_start_line + dist_between_lines
+        phase_1_distance = dist_to_end_line
+
+        dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
+        dist_reward = (jp.exp(-dist*10) - 1.)/10
+ 
+        done = completed_phase_0 * (phase_1_distance <= 0.01)
+
+        success_bonus = 50. * done
+        reward = dist_reward + success_bonus
+
+        completed_phase_0 = completed_phase_0 * (1. - done) + (1. - completed_phase_0) * (phase_0_distance <= 0.01)
+        return reward, done, dist, completed_phase_0
     
     def get_obs_dict(self, data: mjx.Data, info: dict) -> jax.Array:
         obs_dict = {}
