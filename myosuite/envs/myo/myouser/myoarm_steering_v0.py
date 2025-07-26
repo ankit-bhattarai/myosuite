@@ -404,7 +404,8 @@ class MyoArmSteering(MyoUserBase):
             'phase_0_done': jp.bool_(False),
             'phase_1_done': jp.bool_(False),
             'distance_to_start_line': 0.0,
-            'distance_to_end_line': 0.0,
+            'distance_phase_0': 0.0,
+            'distance_phase_1': 0.0,
             'dist_combined': 0.0,
         } #'bonus': zero}
         
@@ -523,7 +524,8 @@ class MyoArmSteering(MyoUserBase):
             phase_0_done = obs_dict["phase_0_done"],
             phase_1_done = obs_dict["phase_1_done"],
             distance_to_start_line = obs_dict["distance_to_start_line"],
-            distance_to_end_line = obs_dict["distance_to_end_line"],
+            distance_phase_0 = (~obs_dict["phase_0_done"])*(obs_dict["distance_to_start_line"] + obs_dict["distance_between_lines"]),
+            distance_phase_1 = (obs_dict["phase_0_done"])*obs_dict["distance_to_end_line"],
             dist_combined = obs_dict["dist_combined"],
         )
 
