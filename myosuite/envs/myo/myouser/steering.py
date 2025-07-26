@@ -96,7 +96,8 @@ class Steering(MyoUserBase):
         reward, done = jp.zeros(2)
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
-                "motor_act": self._motor_act}
+                "motor_act": self._motor_act,
+                "completed_phase_0": jp.bool_(False)}
         info.update(self.get_relevant_positions(data))
         # obs = self.get_obs(data, info)
         obs, info = self.get_obs_vec(data, info)
@@ -135,14 +136,13 @@ class Steering(MyoUserBase):
         )
 
     def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
+        completed_phase_0 = obs_dict['completed_phase_0']
         ee_pos = obs_dict['fingertip']
         start_line = obs_dict['start_line']
+        end_line = obs_dict['end_line']
         diff = ee_pos - start_line
         dist = jp.linalg.norm(diff, axis=-1) # Check of this is correct
-        obs_dict['dist'] = dist
 
-        #TODO: actually implmenet properly
-        dist = obs_dict['dist']
         reach_reward = (jp.exp(-dist*10) - 1.)/10
         done = 1.0 * (dist <= 0.01)
         success_bonus = 10 * done
@@ -182,6 +182,7 @@ class Steering(MyoUserBase):
         obs_dict['top_line'] = data.site_xpos[self.top_line_id]
         obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
         obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
+        obs_dict['completed_phase_0'] = info['completed_phase_0']
 
         #TODO: more things to add here
         return obs_dict
