@@ -634,6 +634,10 @@ def train(
     #TODO: fix this properly
 
     params = checkpoint.load(restore_checkpoint_path)
+    # print(params[1]["params"]["policy_network"]["layers"].keys())
+    # print(params[1]["params"]["value_network"]["layers"].keys())
+    params[1]["params"]["policy_network"]["layers"] = {int(k): v for k, v in params[1]["params"]["policy_network"]["layers"].items()}
+    params[1]["params"]["value_network"]["layers"] = {int(k): v for k, v in params[1]["params"]["value_network"]["layers"].items()}
     # policy_params = params[1]["params"]["policy_network"]
     # value_params = params[1]["params"]["value_network"] if restore_value_fn else init_params.value
     training_state = training_state.replace(

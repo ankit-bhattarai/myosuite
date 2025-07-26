@@ -256,13 +256,15 @@ class MyoArmSteering(MyoUserBase):
         start_line = obs_dict['start_line']
         fingertip = obs_dict['fingertip']
         end_line = obs_dict['end_line']
-        distance_between_lines = jp.linalg.norm(start_line - end_line, axis=-1)
         distance_to_start_line = jp.linalg.norm(fingertip - start_line, axis=-1)
-        obs_dict["dist_combined"] = distance_to_start_line + distance_between_lines
+        distance_to_end_line = jp.linalg.norm(fingertip - end_line, axis=-1)
+        distance_between_lines = jp.linalg.norm(start_line - end_line, axis=-1)
+        obs_dict["distance_to_start_line"] = distance_to_start_line
+        obs_dict["distance_to_end_line"] = distance_to_end_line
         obs_dict["phase_0_done"] = info["phase_0_done"] | (distance_to_start_line <= 0.01)
+        obs_dict["phase_1_done"] = info["phase_1_done"] | (obs_dict["phase_0_done"] & (distance_to_end_line <= 0.01))
+        obs_dict["dist_combined"] = (distance_to_start_line + distance_between_lines)*(~obs_dict["phase_0_done"]) + distance_to_end_line*(obs_dict["phase_0_done"])
 
-        obs_dict["phase_1_done"] = info["phase_1_done"] | (obs_dict["phase_0_done"] & (distance_between_lines <= 0.01))
-        
         # # End-effector and target position
         # obs_dict['ee_pos'] = jp.vstack([data.site_xpos[self.tip_sids[isite]].copy() for isite in range(len(self.tip_sids))])
         # #TODO: decide how to define ee_pos
@@ -401,7 +403,9 @@ class MyoArmSteering(MyoUserBase):
         metrics = {
             'phase_0_done': jp.bool_(False),
             'phase_1_done': jp.bool_(False),
-            'dist_combined': 0.0
+            'distance_to_start_line': 0.0,
+            'distance_to_end_line': 0.0,
+            'dist_combined': 0.0,
         } #'bonus': zero}
         
         return State(data, obs, reward, done, metrics, info)
@@ -475,7 +479,7 @@ class MyoArmSteering(MyoUserBase):
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
-        jax.debug.print('Step start - completed_phase_0: {}', state.info['phase_0_done'])
+        # jax.debug.print('Step start - completed_phase_0: {}', state.info['phase_0_done'])
         # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
         rng = state.info['rng']
 
@@ -518,6 +522,8 @@ class MyoArmSteering(MyoUserBase):
         state.metrics.update(
             phase_0_done = obs_dict["phase_0_done"],
             phase_1_done = obs_dict["phase_1_done"],
+            distance_to_start_line = obs_dict["distance_to_start_line"],
+            distance_to_end_line = obs_dict["distance_to_end_line"],
             dist_combined = obs_dict["dist_combined"],
         )
 

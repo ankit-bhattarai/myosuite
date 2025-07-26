@@ -14,8 +14,9 @@
 # ==============================================================================
 """Base class for MyoUser Arm Pointing model."""
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Sequence, Optional, Union
 import collections
+import tqdm
 
 from etils import epath
 import numpy as np
@@ -34,7 +35,10 @@ from myosuite.envs.myo.myouser import MyoUserBase
 def default_config() -> config_dict.ConfigDict:
     #TODO: update/make use of env_config parameters!
     env_config = config_dict.create(
-        model_path="myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml",
+        # model_path="myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml",
+        model_path="myosuite/envs/myo/assets/arm/mobl_arms_index_reaching_myouser.xml",
+        # model_path="myosuite/envs/myo/assets/arm/mobl_arms_index_myoarm_reaching_myouser.xml",
+        # model_path="myosuite/envs/myo/assets/arm/myoarm_reaching_myouser.xml",  #rf"../assets/arm/myoarm_relocate.xml"
         #TODO: use 'wrapper' xml file in assets rather than raw simhive file
         ctrl_dt=0.002 * 25,  # Each control step is 25 physics steps
         sim_dt=0.002,        
@@ -64,12 +68,15 @@ def default_config() -> config_dict.ConfigDict:
         task_config=config_dict.create(
             reach_settings=config_dict.create(
                 ref_site="humphant",
+                # ref_site="R.Shoulder_marker",
                 target_origin_rel=[0., 0., 0.],
                 target_pos_range={
                     "fingertip": [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]],
+                    # 'IFtip': [[-0.1, 0.225, -0.3], [0.1, 0.35, 0.3]],
                 },
                 target_radius_range={
                     "fingertip": [0.05, 0.05],
+                    # 'IFtip': [0.05, 0.05],
                 },
             ),
             obs_keys=[
@@ -517,5 +524,79 @@ class MyoArmPointing(MyoUserBase):
 
         # return self.forward(**kwargs)
         return state.replace(
-            data=data, obs=obs, reward=rwd_dict['dense'], done=rwd_dict['done']
+            data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
+
+    def render(
+        self,
+        trajectory: List[State],
+        height: int = 240,
+        width: int = 320,
+        camera: Optional[str] = None,
+        scene_option: Optional[mujoco.MjvOption] = None,
+        modify_scene_fns: Optional[
+            Sequence[Callable[[mujoco.MjvScene], None]]
+        ] = None,
+    ) -> Sequence[np.ndarray]:
+        return self.render_array(
+            self.mj_model,
+            trajectory,
+            height,
+            width,
+            camera,
+            scene_option=scene_option,
+            modify_scene_fns=modify_scene_fns,
+        )
+    
+    def update_target_visuals(self, mj_model, target_pos, target_radius):
+        mj_model.body_pos[self.target_body_id, :] = target_pos
+        mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
+
+    def render_array(self,
+        mj_model: mujoco.MjModel,
+        trajectory: Union[List[State], State],
+        height: int = 480,
+        width: int = 640,
+        camera: Optional[str] = None,
+        scene_option: Optional[mujoco.MjvOption] = None,
+        modify_scene_fns: Optional[
+            Sequence[Callable[[mujoco.MjvScene], None]]
+        ] = None,
+        hfield_data: Optional[jax.Array] = None,
+    ):
+        """Renders a trajectory as an array of images."""
+        renderer = mujoco.Renderer(mj_model, height=height, width=width)
+        camera = camera if camera is not None else -1
+
+        if hfield_data is not None:
+            mj_model.hfield_data = hfield_data.reshape(mj_model.hfield_data.shape)
+            mujoco.mjr_uploadHField(mj_model, renderer._mjr_context, 0)
+
+        def get_image(state, modify_scn_fn=None) -> np.ndarray:
+            d = mujoco.MjData(mj_model)
+            d.qpos, d.qvel = state.data.qpos, state.data.qvel
+            d.mocap_pos, d.mocap_quat = state.data.mocap_pos, state.data.mocap_quat
+            d.xfrc_applied = state.data.xfrc_applied
+            self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
+            # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
+            # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
+            # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
+            mujoco.mj_forward(mj_model, d)
+            renderer.update_scene(d, camera=camera, scene_option=scene_option)
+            if modify_scn_fn is not None:
+                modify_scn_fn(renderer.scene)
+            return renderer.render()
+
+        if isinstance(trajectory, list):
+            out = []
+            for i, state in enumerate(tqdm.tqdm(trajectory)):
+                if modify_scene_fns is not None:
+                    modify_scene_fn = modify_scene_fns[i]
+                else:
+                    modify_scene_fn = None
+                out.append(get_image(state, modify_scene_fn))
+        else:
+            out = get_image(trajectory)
+
+        renderer.close()
+        return out

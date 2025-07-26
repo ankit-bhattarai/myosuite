@@ -2,15 +2,13 @@
     <include file="../../../../simhive/uitb_sim/assets/mobl_arms_index_assets.xml"/>
     <compiler meshdir='../../../../simhive/uitb_sim/' texturedir='../../../../simhive/uitb_sim/'/>
 
-    <asset>
-        <!-- pick a body mesh below -->
-        <!-- <mesh file="../../../../simhive/myo_sim/meshes/human_lowpoly_norighthand.stl" name="human_body"/> -->
+    <!-- <asset>
         <mesh file="assets/human_lowpoly_nohand.stl" name="human_body"/>
-    </asset>
+    </asset> -->
 
     <worldbody>
 
-        <geom name="body" type="mesh" mesh="human_body" euler="0 0 3.14" contype="0" conaffinity="0"/>
+        <!-- <geom name="body" type="mesh" mesh="human_body" euler="0 0 3.14" contype="0" conaffinity="0"/> -->
         <body name="full_body" pos="0 0 1">
             <include file="../../../../simhive/uitb_sim/assets/mobl_arms_index_body.xml"/>
         </body>
