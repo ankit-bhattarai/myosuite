@@ -41,14 +41,16 @@ import mediapy as media
 import wandb
 
 class ProgressLogger:
-  def __init__(self):
+  def __init__(self, use_wandb=True):
+    self.use_wandb = use_wandb
     self.times = [datetime.now()]
 
   def progress(self, num_steps, metrics):
     self.times.append(datetime.now())
     if len(self.times) == 2:
         print(f'time to jit: {self.times[1] - self.times[0]}')
-    wandb.log({'num_steps': num_steps, **metrics})
+    if self.use_wandb:
+      wandb.log({'num_steps': num_steps, **metrics})
 
 def set_global_seed(seed=0):
     """Set global random seeds for reproducible results."""
@@ -92,6 +94,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          get_env_only=False,
          cheat_vision_aux_output=False,
          global_seed=0,  # Add global seed parameter
+         use_wandb=True,
          ):
 
   # Set global seed for reproducibility
@@ -156,7 +159,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
                 'vision_mode': vision_mode,
             }
   all_config = {**kwargs, **argument_kwargs}
-  wandb.init(project=project_id, name=experiment_id, config=all_config)
+  if use_wandb:
+    wandb.init(project=project_id, name=experiment_id, config=all_config)
   env = envs.get_environment(
     env_name,
     config_overrides={
@@ -315,7 +319,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   if get_env_only:
     return wrapped_env
   
-  progress_logger = ProgressLogger()
+  progress_logger = ProgressLogger(use_wandb=use_wandb)
   make_inference_fn, params, metrics = train_fn(environment=wrapped_env, progress_fn=progress_logger.progress)
   times = progress_logger.times
   if n_train_steps > 0 and len(times) > 2:
@@ -453,6 +457,8 @@ if __name__ == '__main__':
   parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
   parser.add_argument('--cheat_vision_aux_output', type=bool, default=False)
   parser.add_argument('--global_seed', type=int, default=0)
+  parser.add_argument('--no_wandb', dest='use_wandb', action='store_false', help='Type this if you want to disable wandb, default is true')
+  parser.set_defaults(use_wandb=True)
   args = parser.parse_args()
 
   main(
@@ -488,4 +494,5 @@ if __name__ == '__main__':
     reach_metric_coefficient=args.reach_metric_coefficient,
     cheat_vision_aux_output=args.cheat_vision_aux_output,
     global_seed=args.global_seed,
+    use_wandb=args.use_wandb,
   )
