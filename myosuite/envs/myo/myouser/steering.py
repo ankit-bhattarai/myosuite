@@ -322,4 +322,3 @@ class Steering(MyoUserBase):
             new_ctrl = new_ctrl.at[self.EIPpos].set(0)
 
         return new_ctrl
-

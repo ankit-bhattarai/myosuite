@@ -6,6 +6,8 @@ Authors  :: Vikash Kumar (vikashplus@gmail.com), Vittorio Caggiano (caggiano@gma
 from myosuite.utils import gym; register=gym.register
 from myosuite.envs.env_variants import register_env_variant
 
+from .base import MyoUserBase
+
 import os, sys
 import numpy as np
 

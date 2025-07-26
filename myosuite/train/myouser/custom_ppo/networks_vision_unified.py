@@ -24,6 +24,32 @@ from brax.training.types import PRNGKey
 from typing import Optional, Callable, Sequence, Any, Tuple
 
 
+def custom_network_factory(obs_shape, action_size, preprocess_observations_fn,
+                           get_observation_size=lambda x: {'proprioception': (x['proprioception'].shape[0],)},  #TODO: remove this dependency
+                           vision=False,
+                           cheat_vision_aux_output=False, **network_factory_kwargs):
+    # if activation_function == 'swish':
+    #   activation = linen.swish
+    # elif activation_function == 'relu':
+    #   activation = linen.relu
+    # else:
+    #   raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
+    if not vision:
+        return make_ppo_networks_no_vision(
+        proprioception_size=get_observation_size()['proprioception'],
+        action_size=action_size,
+        preprocess_observations_fn=preprocess_observations_fn,
+        **network_factory_kwargs,
+        )
+    return make_ppo_networks_with_vision(
+        proprioception_size=get_observation_size()['proprioception'][0],
+        action_size=action_size,
+        encoder_out_size=4,
+        preprocess_observations_fn=preprocess_observations_fn,
+        cheat_vision_aux_output=cheat_vision_aux_output,
+        **network_factory_kwargs,
+    )
+
 class PPONetworksUnifiedVision(nnx.Module):
     """
     There are three possible scenarios in which the network can be used
@@ -79,6 +105,8 @@ class PPONetworksUnifiedVision(nnx.Module):
     vision_aux_output: Optional[nnx.Module]
     has_vision: bool
     has_vision_aux_output: bool
+    policy_hidden_layer_sizes: Sequence[int]
+    value_hidden_layer_sizes: Sequence[int]
 
     def __init__(
         self,
@@ -89,6 +117,8 @@ class PPONetworksUnifiedVision(nnx.Module):
         proprioception_obs_key: str = "proprioception",
         vision_encoder: Optional[nnx.Module] = None,
         vision_aux_output: Optional[nnx.Module] = None,
+        policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
+        value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
     ):
         self.states_combiner = states_combiner
         self.policy_network = policy_network
@@ -104,6 +134,8 @@ class PPONetworksUnifiedVision(nnx.Module):
         self.vision_aux_output = vision_aux_output
         self.states_combiner = states_combiner
         self.proprioception_obs_key = proprioception_obs_key
+        self.policy_hidden_layer_sizes = policy_hidden_layer_sizes
+        self.value_hidden_layer_sizes = value_hidden_layer_sizes
 
     def get_values(self, state_vector):
         return jnp.squeeze(self.value_network(state_vector), axis=-1)
@@ -117,6 +149,7 @@ class PPONetworksUnifiedVision(nnx.Module):
         only_vision_aux_feature: bool = False,
     ):
         if self.has_vision:
+            #TODO: vision encoder should only obtain vision features as input, not the whole obs dict
             vision_feature = self.vision_encoder(obs)
             if only_vision_aux_feature:
                 return {"vision_aux_vector": self.vision_aux_output(vision_feature)}
@@ -215,16 +248,18 @@ class NetworkNoVision(PPONetworksUnifiedVision):
         action_size: int,
         preprocess_observations_fn: Callable,
         rngs: nnx.Rngs,
+        policy_hidden_layer_sizes: Sequence[int] = (256, 256),  #[32, 32, 32, 32],
+        value_hidden_layer_sizes: Sequence[int] = (256, 256),  #[256, 256, 256, 256, 256],
     ):
         states_combiner = StatesCombinerSimple(preprocess_observations_fn)
         policy_network = MLP(
             proprioception_size,
             2 * action_size,
-            hidden_layers=[32, 32, 32, 32],
+            hidden_layers=list(policy_hidden_layer_sizes),
             rngs=rngs,
         )
         value_network = MLP(
-            proprioception_size, 1, hidden_layers=[256, 256, 256, 256, 256], rngs=rngs
+            proprioception_size, 1, hidden_layers=list(value_hidden_layer_sizes), rngs=rngs
         )
         parametric_action_distribution = distribution.NormalTanhDistribution(
             event_size=action_size
@@ -240,13 +275,15 @@ class NetworkNoVision(PPONetworksUnifiedVision):
 
 
 def make_ppo_networks_no_vision(
-    proprioception_size: int, action_size: int, preprocess_observations_fn: Callable
+    proprioception_size: int, action_size: int, preprocess_observations_fn: Callable,
+    **network_factory_kwargs,
 ):
     model = nnx.bridge.to_linen(
         NetworkNoVision,
         proprioception_size=proprioception_size,
         action_size=action_size,
         preprocess_observations_fn=preprocess_observations_fn,
+        **network_factory_kwargs,
     )
     return model
 
@@ -393,6 +430,8 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         preprocess_observations_fn: Callable,
         rngs: nnx.Rngs,
         cheat_vision_aux_output: bool = False,
+        policy_hidden_layer_sizes: Sequence[int] = (256, 256),  #[32, 32, 32, 32],
+        value_hidden_layer_sizes: Sequence[int] = (256, 256),  #[256, 256, 256, 256, 256],
     ):
         states_combiner = StatesCombinerPredictStateVariables(
             preprocess_observations_fn
@@ -401,11 +440,11 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         policy_network = MLP(
             state_vector_size,
             2 * action_size,
-            hidden_layers=[32, 32, 32, 32],
+            hidden_layers=list(policy_hidden_layer_sizes),
             rngs=rngs,
         )
         value_network = MLP(
-            state_vector_size, 1, hidden_layers=[256, 256, 256, 256, 256], rngs=rngs
+            state_vector_size, 1, hidden_layers=list(value_hidden_layer_sizes), rngs=rngs
         )
         parametric_action_distribution = distribution.NormalTanhDistribution(
             event_size=action_size
@@ -433,6 +472,7 @@ def make_ppo_networks_with_vision(
     encoder_out_size: int,
     preprocess_observations_fn: Callable,
     cheat_vision_aux_output: bool = False,
+    **network_factory_kwargs,
 ):
     model = nnx.bridge.to_linen(
         NetworkWithVision,
@@ -441,5 +481,6 @@ def make_ppo_networks_with_vision(
         encoder_out_size=encoder_out_size,
         preprocess_observations_fn=preprocess_observations_fn,
         cheat_vision_aux_output=cheat_vision_aux_output,
+        **network_factory_kwargs,
     )
     return model
