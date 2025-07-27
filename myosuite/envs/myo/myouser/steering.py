@@ -59,6 +59,12 @@ class Steering(MyoUserBase):
         self.screen_touch_id = self._mj_model.sensor("screen_touch").id
         #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
 
+        self.distance_reach_metric_coefficient = self._config.distance_reach_metric_coefficient
+        self.x_reach_metric_coefficient = self._config.x_reach_metric_coefficient
+        self.x_reach_weight = self._config.x_reach_weight
+        self.success_bonus = self._config.success_bonus
+        self.phase_0_to_1_transition_bonus = self._config.phase_0_to_1_transition_bonus
+
     def _prepare_after_init(self, data):
         pass
 
@@ -168,7 +174,7 @@ class Steering(MyoUserBase):
 
         # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
         # start line when in phase 0
-        # phase_0_to_1_transition_bonus = 10. * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+        phase_0_to_1_transition_bonus = self.phase_0_to_1_transition_bonus * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
         # Update phase immediately based on current position
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
 
@@ -176,22 +182,25 @@ class Steering(MyoUserBase):
         phase_1_distance = dist_to_end_line
 
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
-        dist_reward = (jp.exp(-dist*10) - 1.)/10
+        d_coef = self.distance_reach_metric_coefficient
+        dist_reward = (jp.exp(-dist*d_coef) - 1.)/d_coef
 
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
-        
-        phase_1_x_reward = completed_phase_0 * 20.0 * (jp.exp(-phase_1_x_dist*2) - 1.)/2
+        x_coef = self.x_reach_metric_coefficient
+        x_weight = self.x_reach_weight
+        phase_1_x_reward = completed_phase_0 * x_weight * (jp.exp(-phase_1_x_dist*x_coef) - 1.)/x_coef
  
         done = completed_phase_0 * (phase_1_distance <= 0.01)
         
-        success_bonus = 50. * done
+        success_bonus = self.success_bonus * done
 
-        reward = dist_reward + success_bonus + phase_1_x_reward #+ phase_0_to_1_transition_bonus
+        reward = dist_reward + success_bonus + phase_1_x_reward + phase_0_to_1_transition_bonus
 
         # Reset phase only when episode ends
         completed_phase_0 = completed_phase_0 * (1. - done)
 
         return reward, done, dist, completed_phase_0
+    
     
     def get_obs_dict(self, data: mjx.Data, info: dict) -> jax.Array:
         obs_dict = {}

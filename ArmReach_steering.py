@@ -88,9 +88,11 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          adaptive_change_step_size=0.05,
          adaptive_change_min_trials=100,
          vision_output_size=20,
-         weights_reach=1.0,
-         weights_bonus=8.0,
-         reach_metric_coefficient=10.0,
+         distance_reach_metric_coefficient=10.0,
+         x_reach_metric_coefficient=2.0,
+         x_reach_weight=2.0,
+         success_bonus=8.0,
+         phase_0_to_1_transition_bonus=0.0,
          get_env_only=False,
          cheat_vision_aux_output=False,
          global_seed=0,  # Add global seed parameter
@@ -148,9 +150,11 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
             'reset_type': 'range_uniform',
             # 'max_trials': 10
             'num_envs': num_envs,
-            'weights/reach': weights_reach,
-            'weights/bonus': weights_bonus,
-            'reach_metric_coefficient': reach_metric_coefficient,
+            'distance_reach_metric_coefficient': distance_reach_metric_coefficient,
+            'x_reach_metric_coefficient': x_reach_metric_coefficient,
+            'x_reach_weight': x_reach_weight,
+            'success_bonus': success_bonus,
+            'phase_0_to_1_transition_bonus': phase_0_to_1_transition_bonus,
         }
   if vision:
     kwargs['vision'] = {
@@ -168,6 +172,11 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     config_overrides={
       'model_path': path,
       'episode_length': 300,
+      'distance_reach_metric_coefficient': distance_reach_metric_coefficient,
+      'x_reach_metric_coefficient': x_reach_metric_coefficient,
+      'x_reach_weight': x_reach_weight,
+      'success_bonus': success_bonus,
+      'phase_0_to_1_transition_bonus': phase_0_to_1_transition_bonus,
     }
   )
 
@@ -454,9 +463,11 @@ if __name__ == '__main__':
   parser.add_argument('--adaptive_change_step_size', type=float, default=0.05)
   parser.add_argument('--adaptive_change_min_trials', type=int, default=100)
   parser.add_argument('--vision_output_size', type=int, default=20)
-  parser.add_argument('--weights_reach', type=float, default=1.0)
-  parser.add_argument('--weights_bonus', type=float, default=8.0)
-  parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
+  parser.add_argument('--distance_reach_metric_coefficient', type=float, default=10.0)
+  parser.add_argument('--x_reach_metric_coefficient', type=float, default=2.0)
+  parser.add_argument('--x_reach_weight', type=float, default=2.0)
+  parser.add_argument('--success_bonus', type=float, default=50.0)
+  parser.add_argument('--phase_0_to_1_transition_bonus', type=float, default=0.0)
   parser.add_argument('--cheat_vision_aux_output', type=bool, default=False)
   parser.add_argument('--global_seed', type=int, default=0)
   parser.add_argument('--no_wandb', dest='use_wandb', action='store_false', help='Type this if you want to disable wandb, default is true')
@@ -493,9 +504,11 @@ if __name__ == '__main__':
     adaptive_change_step_size=args.adaptive_change_step_size,
     adaptive_change_min_trials=args.adaptive_change_min_trials,
     vision_output_size=args.vision_output_size,
-    weights_reach=args.weights_reach,
-    weights_bonus=args.weights_bonus,
-    reach_metric_coefficient=args.reach_metric_coefficient,
+    distance_reach_metric_coefficient=args.distance_reach_metric_coefficient,
+    x_reach_metric_coefficient=args.x_reach_metric_coefficient,
+    x_reach_weight=args.x_reach_weight,
+    success_bonus=args.success_bonus,
+    phase_0_to_1_transition_bonus=args.phase_0_to_1_transition_bonus,
     cheat_vision_aux_output=args.cheat_vision_aux_output,
     global_seed=args.global_seed,
     use_wandb=args.use_wandb,
