@@ -162,7 +162,7 @@ class Steering(MyoUserBase):
         success_bonus = 50. * done
         reward = dist_reward + success_bonus
 
-        completed_phase_0 = completed_phase_0 * (1. - done) + (1. - completed_phase_0) * (phase_0_distance <= 0.01)
+        completed_phase_0 = completed_phase_0 * (1. - done) + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
         return reward, done, dist, completed_phase_0
     
     def get_obs_dict(self, data: mjx.Data, info: dict) -> jax.Array:
