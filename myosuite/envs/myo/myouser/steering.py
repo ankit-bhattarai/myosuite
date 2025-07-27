@@ -168,7 +168,7 @@ class Steering(MyoUserBase):
 
         # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
         # start line when in phase 0
-        phase_0_to_1_transition_bonus = 10. * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+        # phase_0_to_1_transition_bonus = 10. * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
         # Update phase immediately based on current position
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
 
@@ -182,7 +182,7 @@ class Steering(MyoUserBase):
         
         success_bonus = 50. * done
 
-        reward = dist_reward + success_bonus + phase_0_to_1_transition_bonus
+        reward = dist_reward + success_bonus #+ phase_0_to_1_transition_bonus
 
         # Reset phase only when episode ends
         completed_phase_0 = completed_phase_0 * (1. - done)
