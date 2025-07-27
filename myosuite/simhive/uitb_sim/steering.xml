@@ -57,13 +57,13 @@
   <worldbody>
    <!-- Start of the steering task model -->
     <light name="scene_light" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0" pos="0.5 0.5 3.0"/>
-    <body name="screen" pos="0.6 -0.35 0.85">
-      <geom name="screen" size="0.01 0.5 0.4" type="box" rgba="1 1 1 1" contype="1" conaffinity="1" margin="0.001"/>
-      <site name="screen" type="box" size="0.01 0.5 0.4"/>
-      <site name="top_line" pos="-0.01 0 0.075" size="0.001 0.4 0.005" type="box" rgba="0 0 0 1"/>
-      <site name="bottom_line" pos="-0.01 0 -0.025" size="0.001 0.4 0.005" type="box" rgba="0 0 0 1"/>
-      <site name="start_line" pos="-0.01 0.35 0.025" size="0.001 0.005 0.075" type="box" rgba="0 1 0 1"/>
-      <site name="end_line" pos="-0.01 -0.35 0.025" size="0.001 0.005 0.075" type="box" rgba="1 0 0 1"/>
+    <body name="screen" pos="0.532445 -0.27 0.993">
+      <geom name="screen" size="0.01 0.6 0.6" type="box" rgba="1 1 1 1" contype="1" conaffinity="1" margin="0.001"/>
+      <site name="screen" type="box" size="0.01 0.6 0.6"/>
+      <site name="top_line" pos="-0.01 0 0.3" size="0.001 0.6 0.005" type="box" rgba="0 0 0 1"/>
+      <site name="bottom_line" pos="-0.01 0 -0.3" size="0.001 0.6 0.005" type="box" rgba="0 0 0 1"/>
+      <site name="start_line" pos="-0.01 0.3 0" size="0.001 0.005 0.075" type="box" rgba="0 1 0 1"/>
+      <site name="end_line" pos="-0.01 -0.3 0" size="0.001 0.005 0.075" type="box" rgba="1 0 0 1"/>
     </body>
     <!-- End of the steering task model and beginning of the user model -->
     <body name="fixed-eye" pos="0 0 1.2" quat="0.583833 0.399104 -0.399421 -0.583368">
