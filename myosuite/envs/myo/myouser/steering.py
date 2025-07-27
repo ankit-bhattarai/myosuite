@@ -180,7 +180,7 @@ class Steering(MyoUserBase):
 
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
         
-        phase_1_x_reward = completed_phase_0 * (jp.exp(-phase_1_x_dist*2) - 1.)/2
+        phase_1_x_reward = completed_phase_0 * 20.0 * (jp.exp(-phase_1_x_dist*2) - 1.)/2
  
         done = completed_phase_0 * (phase_1_distance <= 0.01)
         
