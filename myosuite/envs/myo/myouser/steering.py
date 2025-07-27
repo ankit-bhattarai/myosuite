@@ -157,6 +157,8 @@ class Steering(MyoUserBase):
 
     def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
         completed_phase_0 = obs_dict['completed_phase_0']
+        #hardcoding completed_phase_0 to 0.0 for now
+        completed_phase_0 = 0.0
         
         ee_pos = obs_dict['fingertip']
         start_line = obs_dict['start_line']
@@ -170,7 +172,7 @@ class Steering(MyoUserBase):
         # start line when in phase 0
         phase_0_to_1_transition_bonus = 10. * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
         # Update phase immediately based on current position
-        completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+        # completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
 
         phase_0_distance = dist_to_start_line + dist_between_lines
         phase_1_distance = dist_to_end_line
@@ -179,12 +181,19 @@ class Steering(MyoUserBase):
         dist_reward = (jp.exp(-dist*10) - 1.)/10
  
         done = completed_phase_0 * (phase_1_distance <= 0.01)
-
+        # It is completed when the finger touches the start line in phase 0
+        done = (1 - completed_phase_0) * (dist_to_start_line <= 0.01)
         success_bonus = 50. * done
+
+        # Temprorarily disable success bonus
+        success_bonus = 0.0
         reward = dist_reward + success_bonus + phase_0_to_1_transition_bonus
 
         # Reset phase only when episode ends
         completed_phase_0 = completed_phase_0 * (1. - done)
+
+        # Set completed_phase_0 to 1.0 only if the finger touches the start line in phase 0
+        completed_phase_0 = (1 - completed_phase_0) * (dist_to_start_line <= 0.01)
         return reward, done, dist, completed_phase_0
     
     def get_obs_dict(self, data: mjx.Data, info: dict) -> jax.Array:
