@@ -46,7 +46,7 @@ class Steering(MyoUserBase):
             self.reset_type in valid_reset_types
         ), f"Invalid reset type '{self.reset_type} (valid types are {valid_reset_types})."
 
-        self.obs_keys =['qpos', 'qvel', 'qacc', 'fingertip', 'act', 'motor_act', 'screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr'] 
+        self.obs_keys =['qpos', 'qvel', 'qacc', 'fingertip', 'act', 'motor_act', 'screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'] 
 
 
         self._episode_length = self._config.episode_length
@@ -200,6 +200,9 @@ class Steering(MyoUserBase):
         obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
         obs_dict['completed_phase_0'] = info['completed_phase_0']
         obs_dict['completed_phase_0_arr'] = jp.array([info['completed_phase_0']])
+
+        completed_phase_0 = info['completed_phase_0']
+        obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
 
         #TODO: more things to add here
         return obs_dict

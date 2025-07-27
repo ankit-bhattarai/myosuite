@@ -209,7 +209,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   
   def get_observation_size():
     if 'vision' not in kwargs:
-      return {'proprioception': 60}
+      return {'proprioception': 63}
     if vision_mode == 'rgb':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
