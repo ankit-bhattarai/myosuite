@@ -177,12 +177,16 @@ class Steering(MyoUserBase):
 
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         dist_reward = (jp.exp(-dist*10) - 1.)/10
+
+        phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
+        
+        phase_1_x_reward = completed_phase_0 * (jp.exp(-phase_1_x_dist*2) - 1.)/2
  
         done = completed_phase_0 * (phase_1_distance <= 0.01)
         
         success_bonus = 50. * done
 
-        reward = dist_reward + success_bonus #+ phase_0_to_1_transition_bonus
+        reward = dist_reward + success_bonus + phase_1_x_reward #+ phase_0_to_1_transition_bonus
 
         # Reset phase only when episode ends
         completed_phase_0 = completed_phase_0 * (1. - done)
