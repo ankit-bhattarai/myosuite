@@ -172,8 +172,8 @@ class MLP(nnx.Module):
             ]
             return
         assert (
-            type(hidden_layers) == list
-        ), f"hidden_layers must be a list, got {type(hidden_layers)}"
+            type(hidden_layers) in [list, tuple]
+        ), f"hidden_layers must be a list or tuple, got {type(hidden_layers)}"
         assert (
             len(hidden_layers) > 0
         ), f"hidden_layers must be a non-empty list, got {hidden_layers}"
@@ -215,16 +215,18 @@ class NetworkNoVision(PPONetworksUnifiedVision):
         action_size: int,
         preprocess_observations_fn: Callable,
         rngs: nnx.Rngs,
+        policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
+        value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
     ):
         states_combiner = StatesCombinerSimple(preprocess_observations_fn)
         policy_network = MLP(
             proprioception_size,
             2 * action_size,
-            hidden_layers=[32, 32, 32, 32],
+            hidden_layers=policy_hidden_layer_sizes,
             rngs=rngs,
         )
         value_network = MLP(
-            proprioception_size, 1, hidden_layers=[256, 256, 256, 256, 256], rngs=rngs
+            proprioception_size, 1, hidden_layers=value_hidden_layer_sizes, rngs=rngs
         )
         parametric_action_distribution = distribution.NormalTanhDistribution(
             event_size=action_size
@@ -240,13 +242,17 @@ class NetworkNoVision(PPONetworksUnifiedVision):
 
 
 def make_ppo_networks_no_vision(
-    proprioception_size: int, action_size: int, preprocess_observations_fn: Callable
+    proprioception_size: int, action_size: int, preprocess_observations_fn: Callable,
+    policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
+    value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
 ):
     model = nnx.bridge.to_linen(
         NetworkNoVision,
         proprioception_size=proprioception_size,
         action_size=action_size,
         preprocess_observations_fn=preprocess_observations_fn,
+        policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+        value_hidden_layer_sizes=value_hidden_layer_sizes,
     )
     return model
 

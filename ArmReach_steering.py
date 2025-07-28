@@ -269,6 +269,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
           proprioception_size=get_observation_size()['proprioception'],
           action_size=action_size,
           preprocess_observations_fn=preprocess_observations_fn,
+          policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+          value_hidden_layer_sizes=value_hidden_layer_sizes,
         )
       return networks.make_ppo_networks_with_vision(
         proprioception_size=get_observation_size()['proprioception'][0],
