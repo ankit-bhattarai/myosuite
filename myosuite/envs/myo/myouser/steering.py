@@ -186,9 +186,9 @@ class Steering(MyoUserBase):
         dist_reward = (jp.exp(-dist*d_coef) - 1.)/d_coef
 
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
-        x_coef = self.x_reach_metric_coefficient
         x_weight = self.x_reach_weight
-        phase_1_x_reward = completed_phase_0 * x_weight * (jp.exp(-phase_1_x_dist*x_coef) - 1.)/x_coef
+        # If in phase 1 and phase_1_x_dist is greater than 0.01, give a reward of -phase_1_x_dist * x_weight
+        phase_1_x_reward = completed_phase_0 * (phase_1_x_dist >= 0.01) * x_weight * (-phase_1_x_dist)
  
         done = completed_phase_0 * (phase_1_distance <= 0.01)
         
