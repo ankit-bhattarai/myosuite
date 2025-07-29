@@ -168,6 +168,9 @@ class Steering(MyoUserBase):
         start_line = obs_dict['start_line']
         end_line = obs_dict['end_line']
 
+        bottom_line_z = obs_dict['bottom_line'][2]
+        top_line_z = obs_dict['top_line'][2]
+
         dist_between_lines = jp.linalg.norm(end_line - start_line, axis=-1)
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
         dist_to_end_line = jp.linalg.norm(ee_pos - end_line, axis=-1)
@@ -190,7 +193,10 @@ class Steering(MyoUserBase):
         # If in phase 1 and phase_1_x_dist is greater than 0.01, give a reward of -phase_1_x_dist * x_weight
         phase_1_x_reward = completed_phase_0 * (phase_1_x_dist >= 0.01) * x_weight * (-phase_1_x_dist)
  
-        done = completed_phase_0 * (phase_1_distance <= 0.01)
+        crossed_line_y = 1.0 * (end_line[1] <= ee_pos[1])
+        touching_screen = 1.0 * (phase_1_x_dist <= 0.01)
+        within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
+        done = completed_phase_0 * crossed_line_y * touching_screen * within_z_limits
         
         success_bonus = self.success_bonus * done
 
