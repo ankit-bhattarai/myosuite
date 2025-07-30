@@ -463,7 +463,7 @@
                                     <geom name="hand_2distph" type="mesh" mesh="hand_2distph"/>
                                     <!-- Have inserted a tiny spherical geom at the fingertip - need to check if it works properly or not -->
                                     <!-- TODO: Check if the fingertip contact actually works as intended or not! -->
-                                    <geom name="fingertip_contact" size="0.01" type="sphere" contype="1" conaffinity="1" pos="0.024 -0.149 -0.0065" friction="0.1 0.005 0.0001"/>
+                                    <geom name="fingertip_contact" size="0.00001" type="sphere" contype="1" conaffinity="1" pos="0.024 -0.149 -0.0065" friction="0.1 0.005 0.0001"/>
                                     <site name="fingertip" pos="0.024 -0.149 -0.0065" size="0.004" rgba="0.1 0.8 0.1 0"/>
                                   </body>
                                 </body>
