@@ -148,11 +148,11 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(MyoUserBase):
             0.25 / self.dt
         )  # corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self._n_frames
 
-        if self._config.vision:
-            print(
-                f"Using vision, so 2.5x timesing dwell threshold to {self.dwell_threshold*2.5}"
-            )
-            self.dwell_threshold *= 2.5
+        # if self._config.vision:
+        #     print(
+        #         f"Using vision, so 2.5x timesing dwell threshold to {self.dwell_threshold*2.5}"
+        #     )
+        #     self.dwell_threshold *= 2.5
 
         # Use early termination if target is not hit in time
         # self._steps_since_last_hit = jp.zeros(1)
