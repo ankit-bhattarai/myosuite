@@ -81,7 +81,7 @@ def get_default_config():
         ),
         muscle_condition=None,
         sex=None,
-        max_trials=10,
+        max_trials=1,
         noise_params=config_dict.create(
             sigdepnoise_type=None,
             sigdepnoise_level=0.103,
