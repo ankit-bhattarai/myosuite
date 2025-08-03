@@ -38,7 +38,17 @@ def get_default_config():
         frame_skip=25,
         ctrl_dt=0.002 * 25,  # Each control step is 25 physics steps
         sim_dt=0.002,
-        vision=False,
+        vision=config_dict.create(
+            allowed=False,
+            vision_mode='invalid',
+            gpu_id=0,
+            num_worlds=1024,
+            render_width=120,
+            render_height=120,
+            enabled_geom_groups=np.asarray([0, 1, 2]),
+            enabled_cameras=np.asarray([0]),
+            use_rasterizer=False,
+        ),
         num_envs=1024,
         obs_keys=[
             "qpos",
@@ -118,7 +128,7 @@ class MyoUserBase(mjx_env.MjxEnv):
         self._mjx_model = mjx.put_model(self._mj_model)
 
     def _prepare_vision(self):
-        if not self._config.vision:
+        if not self._config.vision.allowed:
             self.vision = False
             return
         self.vision = True
