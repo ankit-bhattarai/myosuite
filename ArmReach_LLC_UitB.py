@@ -1,8 +1,16 @@
 import os
 import argparse
 
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# os.environ["MUJOCO_GL"]="egl"
+
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["MADRONA_MWGPU_KERNEL_CACHE"]="/scratch/ankit/madrona_mjx/build/kernel_cache"
+os.environ["MADRONA_BVH_KERNEL_CACHE"]="/scratch/ankit/madrona_mjx/build/bvh_cache"
 os.environ["MUJOCO_GL"]="egl"
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
 # xla_flags = os.environ.get('XLA_FLAGS', '')
 # xla_flags += ' --xla_gpu_triton_gemm_any=True'
 # os.environ['XLA_FLAGS'] = xla_flags
@@ -160,6 +168,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   config_overrides = {
     'vision.allowed': vision,
     'vision.vision_mode': vision_mode,
+    'num_envs': num_envs,
   }
   env = envs.get_environment(env_name, config_overrides=config_overrides)  #, model_path=path, auto_reset=False, **kwargs)
 
