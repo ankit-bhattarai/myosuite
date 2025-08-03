@@ -81,10 +81,7 @@ def get_default_config():
         reset_type="range_uniform",
         episode_length=800,
         distance_reach_metric_coefficient=10.0,
-        x_reach_metric_coefficient=2.0,
-        x_reach_weight=1.0,
-        success_bonus=50.0,
-        phase_0_to_1_transition_bonus=0.0,
+        reach_metric_coefficient=2.0
     )
 
 

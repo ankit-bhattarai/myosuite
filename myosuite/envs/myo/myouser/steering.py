@@ -9,12 +9,25 @@ import jax.numpy as jp
 import numpy as np
 
 
-from myosuite.envs.myo.myouser.base import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase, get_default_config
+
+def steering_config():
+    config = get_default_config()
+    config['model_path'] = "myosuite/simhive/uitb_sim/steering.xml"
+    config['x_reach_metric_coefficient'] = 2.0
+    config['x_reach_weight'] = 1.0
+    config['success_bonus'] = 50.0
+    config['phase_0_to_1_transition_bonus'] = 0.0
+    return config
 
 
 
 class Steering(MyoUserBase):
 
+    def __init__(self, config: config_dict.ConfigDict = steering_config(),
+                 config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None):
+        super().__init__(config, config_overrides)
+        
     def _setup(self):
         zero = jp.zeros(1)
 
