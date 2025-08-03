@@ -106,7 +106,7 @@ class LLCEEPosAdaptiveDirectCtrlEnvMJXV0(MyoUserBase):
         # Setup reward function and observation components, and other meta-parameters
         self.rwd_keys_wt = self._config.weighted_reward_keys
         self.obs_keys = self._config.obs_keys
-        if not self._config.vision:
+        if not self._config.vision.allowed:
             print("No vision, so adding target_pos and target_radius to obs_keys")
             self.obs_keys.append("target_pos")
             self.obs_keys.append("target_radius")
