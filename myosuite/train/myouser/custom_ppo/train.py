@@ -519,7 +519,17 @@ def train(
 
 
     # Update normalization params and normalize observations.
-    normalizer_params = running_statistics.update(
+    if 'vision_aux_targets' in data.observation:
+      prop = data.observation['proprioception']
+      targets = data.observation['vision_aux_targets']
+      obs_proprioception = jnp.concatenate([prop, targets], axis=-1)
+      normalizer_params = running_statistics.update(
+        training_state.normalizer_params,
+        obs_proprioception,
+        pmap_axis_name=_PMAP_AXIS_NAME,
+      )
+    else:
+      normalizer_params = running_statistics.update(
         training_state.normalizer_params,
         data.observation['proprioception'],
         pmap_axis_name=_PMAP_AXIS_NAME,
@@ -604,6 +614,12 @@ def train(
   obs_shape = jax.tree_util.tree_map(
       lambda x: specs.Array(x.shape[-1:], jnp.dtype('float32')), env_state.obs
   )
+  if 'vision_aux_targets' in obs_shape:
+    len_prop = obs_shape['proprioception'].shape[0]
+    len_vision = obs_shape['vision_aux_targets'].shape[0]
+    obs_shape['proprioception'] = specs.Array(len_prop + len_vision, jnp.dtype('float32'))
+  
+  
   normalizer_init_params = running_statistics.init_state(obs_shape['proprioception'])
   init_params = ppo_network.init(key_params, dummy_obs, normalizer_init_params)
 

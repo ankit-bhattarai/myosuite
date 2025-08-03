@@ -381,11 +381,11 @@ class StatesCombinerPredictStateVariables(nnx.Module):
         vision_feature: jnp.ndarray,
         processor_params: Any,
     ):
-        proprioception_feature = self.preprocess_observations_fn(
-            proprioception_feature, processor_params
-        )
         state_vector = jnp.concatenate(
             [proprioception_feature, vision_feature], axis=-1
+        )
+        state_vector = self.preprocess_observations_fn(
+            state_vector, processor_params
         )
         return state_vector
 
@@ -399,6 +399,8 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         preprocess_observations_fn: Callable,
         rngs: nnx.Rngs,
         cheat_vision_aux_output: bool = False,
+        policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
+        value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
     ):
         states_combiner = StatesCombinerPredictStateVariables(
             preprocess_observations_fn
@@ -407,11 +409,11 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         policy_network = MLP(
             state_vector_size,
             2 * action_size,
-            hidden_layers=[32, 32, 32, 32],
+            hidden_layers=policy_hidden_layer_sizes,
             rngs=rngs,
         )
         value_network = MLP(
-            state_vector_size, 1, hidden_layers=[256, 256, 256, 256, 256], rngs=rngs
+            state_vector_size, 1, hidden_layers=value_hidden_layer_sizes, rngs=rngs
         )
         parametric_action_distribution = distribution.NormalTanhDistribution(
             event_size=action_size
