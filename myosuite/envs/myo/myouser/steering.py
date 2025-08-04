@@ -261,6 +261,7 @@ class Steering(MyoUserBase):
         completed_phase_0 = 0.0
 
         phase_0_distance = dist_to_start_line + dist_between_lines
+        phase_0_distance = dist_to_start_line
         phase_1_distance = dist_to_end_line
 
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
