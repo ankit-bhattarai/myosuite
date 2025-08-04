@@ -188,30 +188,6 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
 
     restore_params = None
 
-
-  def _render(rollouts, experiment_id='ArmReach', video_type='single', height=480, width=640, camera='fixed-eye'):
-    videos = []
-    for rollout in rollouts:
-      
-      # change the target position of the environment for rendering
-      ## TODO: generate new target for each rollout
-      # env.sys.mj_model.site_pos[env._target_sids] = rollout['wrist_target']
-
-      if video_type == 'single':
-        videos += env.render(rollout['states'], height=height, width=width, camera=camera)
-      elif video_type == 'multiple':
-        videos.append(env.render(rollout['states'], height=height, width=width, camera=camera))
-
-    os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
-    eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
-
-    if video_type == 'single':
-      media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
-    elif video_type == 'multiple':
-      for i, video in enumerate(videos):
-        media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
-
-    return None
   
   def _create_render(env, height=480, width=640, camera='fixed-eye'):
     return functools.partial(env.render, height=height, width=width, camera=camera)
@@ -359,18 +335,22 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
   eval_env = EpisodeWrapper(eval_env, episode_length=episode_length, action_repeat=1)
   eval_env = wrapper.BraxAutoResetWrapper(eval_env)
 
+  render_env = envs.get_environment(env_name=env_name, config_overrides={
+    'model_path': path,
+    'episode_length': 300,
+  })
+
   params = model.load_params(param_path)
   inference_fn = make_inference_fn(params)
 
   times = [datetime.now()]
 
-  render_fn = _create_render(eval_env)
-  rollouts = evaluate(eval_env, inference_fn, n_eps=n_eval_eps, times=times, render_fn=render_fn, experiment_id=experiment_id)
+  rollouts = evaluate(eval_env, render_env, inference_fn, n_eps=n_eval_eps, times=times, experiment_id=experiment_id)
 
-  _render(rollouts, experiment_id=experiment_id)
+  # _render(rollouts, experiment_id=experiment_id)
 
 
-def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, video_type='single', experiment_id='Steering'):
+def evaluate(env, render_env, inference_fn, n_eps=10, rng=None, times=[], experiment_id='Steering'):
   if rng is None:
     rng = jax.random.PRNGKey(seed=0)
   
@@ -389,20 +369,18 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
   for episode in range(n_eps):
     rng = jax.random.PRNGKey(seed=episode)
     state = jit_env_reset(rng=rng)
+    render_env.prep_rendering_special_tunnel(state.info)
+    render_fn = functools.partial(render_env.render, camera='fixed-eye', height=480, width=640)
     rollout = {}
-    # rollout['wrist_target'] = state.info['wrist_target']
     states = []
     states_pointer = 0
     frame_collection = []
-    # while not (state.done or state.info['truncation']):
     done = state.done
     while not (done or state.info['truncation']):
       states.append(state)
       act_rng, rng = jax.random.split(rng)
       act, _ = jit_inference_fn(state.obs, act_rng)
       state = jit_env_step(state, act)
-      
-      obs_dict = env.get_obs_dict(state.data, state.info)
       done = state.done
 
       if done:
@@ -410,8 +388,6 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
         if render_fn is not None:
           frame_collection.extend(render_fn(states[states_pointer:])) #with render_mode="rgb_array_list", env.render() returns a list of all frames since last call of reset()
           states_pointer = len(states)
-
-    times.append(datetime.now())
 
     rollout['states'] = states
     rollouts.append(rollout)
@@ -425,11 +401,8 @@ def evaluate(env, inference_fn, n_eps=10, rng=None, times=[], render_fn=None, vi
   os.makedirs(cwd + '/myosuite-mjx-evals/', exist_ok=True)
   eval_path = cwd + f'/myosuite-mjx-evals/{experiment_id}'
 
-  if video_type == 'single':
-    media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
-  elif video_type == 'multiple':
-    for i, video in enumerate(videos):
-      media.write_video(f'{eval_path}_{i}.mp4', video, fps=1.0 / env.dt) 
+  media.write_video(f'{eval_path}.mp4', videos, fps=1.0 / env.dt) 
+
 
   return rollouts
 
