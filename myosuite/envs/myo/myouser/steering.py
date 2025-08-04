@@ -125,7 +125,6 @@ class Steering(MyoUserBase):
             data = data.replace(
                 site_xpos=data.site_xpos.at[id].set(tunnel_positions[label])
             )
-        data = mjx_env.forward(self._mjx_model, data)
         return data
 
     def _prepare_after_init(self, data):
@@ -148,6 +147,28 @@ class Steering(MyoUserBase):
             'start_line': info['start_line'],
             'end_line': info['end_line'],
         }
+
+    def prep_rendering_special_tunnel(self, tunnel_positions: dict[str, jax.Array]) -> None:
+        assert not self.vision, "Vision is not supported for this type of function!"
+        bottom_z = tunnel_positions['bottom_line'][2]
+        top_z = tunnel_positions['top_line'][2]
+        left_y = tunnel_positions['start_line'][1]
+        right_y = tunnel_positions['end_line'][1]
+        width_midway = (left_y + right_y) / 2
+        height_midway = (top_z + bottom_z) / 2
+        height = top_z - bottom_z
+        width = left_y - right_y
+        
+        self.mj_model.site('bottom_line').pos[1:] = jp.array([width_midway, bottom_z])
+        self.mj_model.site('bottom_line').size[1] = width / 2
+        self.mj_model.site('top_line').pos[1:] = jp.array([width_midway, top_z])
+        self.mj_model.site('top_line').size[1] = width / 2
+
+        self.mj_model.site('start_line').pos[1:] = jp.array([left_y, height_midway])
+        self.mj_model.site('start_line').size[2] = height / 2
+
+        self.mj_model.site('end_line').pos[1:] = jp.array([right_y, height_midway])
+        self.mj_model.site('end_line').size[2] = height / 2
 
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
