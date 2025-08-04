@@ -239,6 +239,9 @@ class Steering(MyoUserBase):
     def get_rewards_and_done(self, obs_dict: dict) -> jax.Array:
         completed_phase_0 = obs_dict['completed_phase_0']
 
+        #Debugging
+        completed_phase_0 = 0.0
+
         ee_pos = obs_dict['fingertip']
         start_line = obs_dict['start_line']
         end_line = obs_dict['end_line']
@@ -255,6 +258,7 @@ class Steering(MyoUserBase):
         phase_0_to_1_transition_bonus = self.phase_0_to_1_transition_bonus * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
         # Update phase immediately based on current position
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+        completed_phase_0 = 0.0
 
         phase_0_distance = dist_to_start_line + dist_between_lines
         phase_1_distance = dist_to_end_line
@@ -272,6 +276,8 @@ class Steering(MyoUserBase):
         touching_screen = 1.0 * (phase_1_x_dist <= 0.01)
         within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
         done = completed_phase_0 * crossed_line_y * touching_screen * within_z_limits
+
+        done = 1.0 * (dist_to_start_line <= 0.01)
         
         success_bonus = self.success_bonus * done
 
