@@ -112,10 +112,10 @@ class Steering(MyoUserBase):
         height_midway = (top_line + bottom_line) / 2
         relevant_positions = self.get_relevant_positions(data)
         tunnel_positions = {}
-        tunnel_positions['bottom_line'] = relevant_positions['bottom_line'].at[1:].set(jp.array([width_midway, bottom_line]))
-        tunnel_positions['top_line'] = relevant_positions['top_line'].at[1:].set(jp.array([width_midway, top_line]))
-        tunnel_positions['start_line'] = relevant_positions['start_line'].at[1:].set(jp.array([left_line, height_midway]))
-        tunnel_positions['end_line'] = relevant_positions['end_line'].at[1:].set(jp.array([right_line, height_midway]))
+        tunnel_positions['bottom_line'] = relevant_positions['screen_pos'] + jp.array([0., width_midway, bottom_line])
+        tunnel_positions['top_line'] = relevant_positions['screen_pos'] + jp.array([0., width_midway, top_line])
+        tunnel_positions['start_line'] = relevant_positions['screen_pos'] + jp.array([0., left_line, height_midway])
+        tunnel_positions['end_line'] = relevant_positions['screen_pos'] + jp.array([0., right_line, height_midway])
         return tunnel_positions
     
     def add_custom_tunnel_to_data(self, data: mjx.Data, tunnel_positions: dict[str, jax.Array]) -> mjx.Data:
