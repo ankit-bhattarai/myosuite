@@ -90,12 +90,13 @@ class Steering(MyoUserBase):
 
     @staticmethod
     def get_tunnel_limits(rng, low, high, min_size):
+        rng1, rng2 = jax.random.split(rng, 2)
         small_low = low
         small_high = high - min_size
-        small_line = jax.random.uniform(rng) * (small_high - small_low) + small_low
+        small_line = jax.random.uniform(rng1) * (small_high - small_low) + small_low
         large_low = small_line + min_size
         large_high = high
-        large_line = jax.random.uniform(rng) * (large_high - large_low) + large_low
+        large_line = jax.random.uniform(rng2) * (large_high - large_low) + large_low
         return small_line, large_line
 
     def get_custom_tunnel_centers(self, rng: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
