@@ -300,7 +300,7 @@ class Steering(MyoUserBase):
         # If in phase 1 and phase_1_x_dist is greater than 0.01, give a reward of -phase_1_x_dist * x_weight
         phase_1_x_reward = completed_phase_0 * (phase_1_x_dist >= 0.01) * x_weight * (-phase_1_x_dist)
 
-        phase_1_z_reward = completed_phase_0 * (1. - within_z_limits) * -50.0
+        phase_1_z_reward = completed_phase_0 * (1. - within_z_limits) * -2.0
  
         crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1])
         touching_screen = 1.0 * (phase_1_x_dist <= 0.01)
