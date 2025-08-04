@@ -125,6 +125,7 @@ class Steering(MyoUserBase):
             data = data.replace(
                 site_xpos=data.site_xpos.at[id].set(tunnel_positions[label])
             )
+        data = mjx_env.forward(self._mjx_model, data)
         return data
 
     def _prepare_after_init(self, data):
@@ -170,13 +171,14 @@ class Steering(MyoUserBase):
         )
         self._reset_bm_model(rng)
         tunnel_positions = self.get_custom_tunnel(rng, data)
-        data = self.add_custom_tunnel_to_data(data, tunnel_positions)
+        # data = self.add_custom_tunnel_to_data(data, tunnel_positions)
 
         reward, done = jp.zeros(2)
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
                 "motor_act": self._motor_act,
                 "completed_phase_0": 0.0}
+        info.update(tunnel_positions)
         # info.update(self.get_relevant_positions(data))
         # obs = self.get_obs(data, info)
         obs, info = self.get_obs_vec(data, info)
@@ -195,8 +197,8 @@ class Steering(MyoUserBase):
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
 
         data = mjx_env.step(self._mjx_model, state.data, new_ctrl, n_substeps=self.n_substeps)
-        tunnel_positions = self.get_tunnel_positions_from_info(state.info)
-        data = self.add_custom_tunnel_to_data(data, tunnel_positions)
+        # tunnel_positions = self.get_tunnel_positions_from_info(state.info)
+        # data = self.add_custom_tunnel_to_data(data, tunnel_positions)
         
         # Compute observation dictionary using *old* phase information first
         obs_dict = self.get_obs_dict(data, state.info)
@@ -318,10 +320,10 @@ class Steering(MyoUserBase):
         obs_dict['screen_pos'] = data.site_xpos[self.screen_id]
 
         # Read positions directly from current data instead of stale info
-        obs_dict['start_line'] = data.site_xpos[self.start_line_id]
-        obs_dict['end_line'] = data.site_xpos[self.end_line_id]
-        obs_dict['top_line'] = data.site_xpos[self.top_line_id]
-        obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
+        obs_dict['start_line'] = info['start_line']
+        obs_dict['end_line'] = info['end_line']
+        obs_dict['top_line'] = info['top_line']
+        obs_dict['bottom_line'] = info['bottom_line']
         obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
         obs_dict['completed_phase_0'] = info['completed_phase_0']
         obs_dict['completed_phase_0_arr'] = jp.array([info['completed_phase_0']])
@@ -347,10 +349,6 @@ class Steering(MyoUserBase):
         info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
         info['touching_screen'] = obs_dict['touching_screen']
-        info['bottom_line'] = obs_dict['bottom_line']
-        info['top_line'] = obs_dict['top_line']
-        info['start_line'] = obs_dict['start_line']
-        info['end_line'] = obs_dict['end_line']
         return info
     
     def get_ctrl(self, state: mjx_env.State, action: jp.ndarray, rng: jp.ndarray):
