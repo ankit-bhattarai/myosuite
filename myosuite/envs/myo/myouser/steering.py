@@ -78,6 +78,54 @@ class Steering(MyoUserBase):
         self.success_bonus = self._config.success_bonus
         self.phase_0_to_1_transition_bonus = self._config.phase_0_to_1_transition_bonus
 
+
+        # Currently hardcoded
+        self.min_width = 0.3
+        self.min_height = 0.1
+        self.bottom = -0.3
+        self.top = 0.3
+        self.left = 0.3
+        self.right = -0.3
+
+
+    @staticmethod
+    def get_tunnel_limits(rng, low, high, min_size):
+        small_low = low
+        small_high = high - min_size
+        small_line = jax.random.uniform(rng) * (small_high - small_low) + small_low
+        large_low = small_line + min_size
+        large_high = high
+        large_line = jax.random.uniform(rng) * (large_high - large_low) + large_low
+        return small_line, large_line
+
+    def get_custom_tunnel_centers(self, rng: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+        rng1, rng2 = jax.random.split(rng, 2)
+        bottom_line, top_line = self.get_tunnel_limits(rng1, self.bottom, self.top, self.min_height)
+        right_line, left_line = self.get_tunnel_limits(rng2, self.right, self.left, self.min_width)
+        return bottom_line, top_line, left_line, right_line
+    
+
+    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data) -> dict[str, jax.Array]:
+        bottom_line, top_line, left_line, right_line = self.get_custom_tunnel_centers(rng)
+        width_midway = (left_line + right_line) / 2
+        height_midway = (top_line + bottom_line) / 2
+        relevant_positions = self.get_relevant_positions(data)
+        tunnel_positions = {}
+        tunnel_positions['bottom_line'] = relevant_positions['bottom_line'].at[1:].set(jp.array([width_midway, bottom_line]))
+        tunnel_positions['top_line'] = relevant_positions['top_line'].at[1:].set(jp.array([width_midway, top_line]))
+        tunnel_positions['start_line'] = relevant_positions['start_line'].at[1:].set(jp.array([left_line, height_midway]))
+        tunnel_positions['end_line'] = relevant_positions['end_line'].at[1:].set(jp.array([right_line, height_midway]))
+        return tunnel_positions
+    
+    def add_custom_tunnel_to_data(self, data: mjx.Data, tunnel_positions: dict[str, jax.Array]) -> mjx.Data:
+        ids = [self.bottom_line_id, self.top_line_id, self.start_line_id, self.end_line_id]
+        labels = ['bottom_line', 'top_line', 'start_line', 'end_line']
+        for id, label in zip(ids, labels):
+            data = data.replace(
+                site_xpos=data.site_xpos.at[id].set(tunnel_positions[label])
+            )
+        return data
+
     def _prepare_after_init(self, data):
         pass
 
@@ -90,6 +138,15 @@ class Steering(MyoUserBase):
             'start_line': data.site_xpos[self.start_line_id],
             'end_line': data.site_xpos[self.end_line_id],
         }
+    
+    def get_tunnel_positions_from_info(self, info: dict[str, jax.Array]) -> dict[str, jax.Array]:
+        return {
+            'bottom_line': info['bottom_line'],
+            'top_line': info['top_line'],
+            'start_line': info['start_line'],
+            'end_line': info['end_line'],
+        }
+
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         _, rng = jax.random.split(rng, 2)
@@ -111,13 +168,15 @@ class Steering(MyoUserBase):
             ctrl=last_ctrl,
         )
         self._reset_bm_model(rng)
+        tunnel_positions = self.get_custom_tunnel(rng, data)
+        data = self.add_custom_tunnel_to_data(data, tunnel_positions)
 
         reward, done = jp.zeros(2)
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
                 "motor_act": self._motor_act,
                 "completed_phase_0": 0.0}
-        info.update(self.get_relevant_positions(data))
+        # info.update(self.get_relevant_positions(data))
         # obs = self.get_obs(data, info)
         obs, info = self.get_obs_vec(data, info)
         metrics = {
@@ -135,6 +194,8 @@ class Steering(MyoUserBase):
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
 
         data = mjx_env.step(self._mjx_model, state.data, new_ctrl, n_substeps=self.n_substeps)
+        tunnel_positions = self.get_tunnel_positions_from_info(state.info)
+        data = self.add_custom_tunnel_to_data(data, tunnel_positions)
         
         # Compute observation dictionary using *old* phase information first
         obs_dict = self.get_obs_dict(data, state.info)
@@ -278,6 +339,10 @@ class Steering(MyoUserBase):
         info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
         info['touching_screen'] = obs_dict['touching_screen']
+        info['bottom_line'] = obs_dict['bottom_line']
+        info['top_line'] = obs_dict['top_line']
+        info['start_line'] = obs_dict['start_line']
+        info['end_line'] = obs_dict['end_line']
         return info
     
     def get_ctrl(self, state: mjx_env.State, action: jp.ndarray, rng: jp.ndarray):
