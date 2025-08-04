@@ -281,7 +281,12 @@ class Steering(MyoUserBase):
         # start line when in phase 0
         phase_0_to_1_transition_bonus = self.phase_0_to_1_transition_bonus * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
         # Update phase immediately based on current position
-        completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+        touching_screen = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
+        within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
+        within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.03)
+
+        phase_0_completed = touching_screen * within_z_limits * within_y_dist
+        completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed
 
         phase_0_distance = dist_to_start_line + dist_between_lines
         phase_1_distance = dist_to_end_line
@@ -297,7 +302,7 @@ class Steering(MyoUserBase):
  
         crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1])
         touching_screen = 1.0 * (phase_1_x_dist <= 0.01)
-        within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
+
         done = completed_phase_0 * crossed_line_y * touching_screen * within_z_limits
         
         success_bonus = self.success_bonus * done
