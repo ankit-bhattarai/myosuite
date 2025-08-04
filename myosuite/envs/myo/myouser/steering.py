@@ -116,6 +116,7 @@ class Steering(MyoUserBase):
         tunnel_positions['top_line'] = relevant_positions['screen_pos'] + jp.array([0., width_midway, top_line])
         tunnel_positions['start_line'] = relevant_positions['screen_pos'] + jp.array([0., left_line, height_midway])
         tunnel_positions['end_line'] = relevant_positions['screen_pos'] + jp.array([0., right_line, height_midway])
+        tunnel_positions['screen_pos'] = relevant_positions['screen_pos']
         return tunnel_positions
     
     def add_custom_tunnel_to_data(self, data: mjx.Data, tunnel_positions: dict[str, jax.Array]) -> mjx.Data:
@@ -150,10 +151,13 @@ class Steering(MyoUserBase):
 
     def prep_rendering_special_tunnel(self, tunnel_positions: dict[str, jax.Array]) -> None:
         assert not self.vision, "Vision is not supported for this type of function!"
-        bottom_z = tunnel_positions['bottom_line'][2]
-        top_z = tunnel_positions['top_line'][2]
-        left_y = tunnel_positions['start_line'][1]
-        right_y = tunnel_positions['end_line'][1]
+        screen_pos = tunnel_positions['screen_pos']
+        screen_y = screen_pos[1]
+        screen_z = screen_pos[2]
+        bottom_z = tunnel_positions['bottom_line'][2] - screen_z
+        top_z = tunnel_positions['top_line'][2] - screen_z
+        left_y = tunnel_positions['start_line'][1] - screen_y
+        right_y = tunnel_positions['end_line'][1] - screen_y
         width_midway = (left_y + right_y) / 2
         height_midway = (top_z + bottom_z) / 2
         height = top_z - bottom_z
