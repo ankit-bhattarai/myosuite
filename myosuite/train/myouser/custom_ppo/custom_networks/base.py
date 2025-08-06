@@ -76,6 +76,7 @@ class PPONetworksUnifiedVision(nnx.Module):
     vision_aux_output: Optional[nnx.Module]
     has_vision: bool
     has_vision_aux_output: bool
+    stop_vision_gradient: bool
 
     def __init__(
         self,
@@ -86,6 +87,7 @@ class PPONetworksUnifiedVision(nnx.Module):
         proprioception_obs_key: str = "proprioception",
         vision_encoder: Optional[nnx.Module] = None,
         vision_aux_output: Optional[nnx.Module] = None,
+        stop_vision_gradient: bool = False,
     ):
         self.states_combiner = states_combiner
         self.policy_network = policy_network
@@ -101,6 +103,7 @@ class PPONetworksUnifiedVision(nnx.Module):
         self.vision_aux_output = vision_aux_output
         self.states_combiner = states_combiner
         self.proprioception_obs_key = proprioception_obs_key
+        self.stop_vision_gradient = stop_vision_gradient
 
     def get_values(self, state_vector):
         return jnp.squeeze(self.value_network(state_vector), axis=-1)
@@ -117,11 +120,14 @@ class PPONetworksUnifiedVision(nnx.Module):
             vision_feature = self.vision_encoder(obs)
             if only_vision_aux_feature:
                 return {"vision_aux_vector": self.vision_aux_output(vision_feature)}
-            gradient_stopped_vision_feature = jax.lax.stop_gradient(vision_feature)
+            if self.stop_vision_gradient:
+                pre_combined_vision_feature = jax.lax.stop_gradient(vision_feature)
+            else:
+                pre_combined_vision_feature = vision_feature
             proprioception_feature = obs[self.proprioception_obs_key]
             state_vector = self.states_combiner(
                 proprioception_feature,
-                gradient_stopped_vision_feature,
+                pre_combined_vision_feature,
                 processor_params=processor_params,
             )
         else:
