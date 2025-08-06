@@ -1,0 +1,88 @@
+# Copyright 2024 The Brax Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""PPO networks with vision."""
+
+import flax.nnx as nnx
+from brax.training import distribution
+from typing import Callable, Sequence
+
+from .base import PPONetworksUnifiedVision
+from .components import MLP, StatesCombinerPredictStateVariables
+from .vision import VisionEncoder, VisionAuxOutputIdentity
+
+
+class NetworkWithVision(PPONetworksUnifiedVision):
+    def __init__(
+        self,
+        proprioception_size: int,
+        action_size: int,
+        encoder_out_size: int,
+        preprocess_observations_fn: Callable,
+        rngs: nnx.Rngs,
+        cheat_vision_aux_output: bool = False,
+        policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
+        value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
+    ):
+        states_combiner = StatesCombinerPredictStateVariables(
+            preprocess_observations_fn
+        )
+        state_vector_size = proprioception_size + encoder_out_size
+        policy_network = MLP(
+            state_vector_size,
+            2 * action_size,
+            hidden_layers=policy_hidden_layer_sizes,
+            rngs=rngs,
+        )
+        value_network = MLP(
+            state_vector_size, 1, hidden_layers=value_hidden_layer_sizes, rngs=rngs
+        )
+        parametric_action_distribution = distribution.NormalTanhDistribution(
+            event_size=action_size
+        )
+        proprioception_obs_key = "proprioception"
+        vision_encoder = VisionEncoder(
+            rngs=rngs, cheat_vision_aux_output=cheat_vision_aux_output
+        )
+        vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
+        states_combiner = StatesCombinerPredictStateVariables(
+            preprocess_observations_fn
+        )
+        super().__init__(
+            states_combiner,
+            policy_network,
+            value_network,
+            parametric_action_distribution,
+            proprioception_obs_key,
+            vision_encoder,
+            vision_aux_output,
+        )
+
+
+def make_ppo_networks_with_vision(
+    proprioception_size: int,
+    action_size: int,
+    encoder_out_size: int,
+    preprocess_observations_fn: Callable,
+    cheat_vision_aux_output: bool = False,
+):
+    model = nnx.bridge.to_linen(
+        NetworkWithVision,
+        proprioception_size=proprioception_size,
+        action_size=action_size,
+        encoder_out_size=encoder_out_size,
+        preprocess_observations_fn=preprocess_observations_fn,
+        cheat_vision_aux_output=cheat_vision_aux_output,
+    )
+    return model
