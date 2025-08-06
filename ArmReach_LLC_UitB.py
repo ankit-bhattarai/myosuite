@@ -99,6 +99,8 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          reach_metric_coefficient=10.0,
          get_env_only=False,
          cheat_vision_aux_output=False,
+         vision_encoder_normalize_output=True,
+         stop_vision_gradient=True,
          global_seed=0,  # Add global seed parameter
          ):
 
@@ -276,9 +278,14 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
       return networks.make_ppo_networks_with_vision(
         proprioception_size=get_observation_size()['proprioception'][0],
         action_size=action_size,
-        encoder_out_size=64,
+        encoder_out_size=vision_output_size,
         preprocess_observations_fn=preprocess_observations_fn,
         cheat_vision_aux_output=cheat_vision_aux_output,
+        has_vision_aux_output=True,
+        vision_aux_output_mlp=True,
+        vision_aux_output_mlp_output_size=4,
+        vision_encoder_normalize_output=vision_encoder_normalize_output,
+        stop_vision_gradient=stop_vision_gradient,
       )
       # return networks.make_ppo_networks_unified_extractor(
       #   observation_size=get_observation_size(),
@@ -464,6 +471,8 @@ if __name__ == '__main__':
   parser.add_argument('--weights_bonus', type=float, default=8.0)
   parser.add_argument('--reach_metric_coefficient', type=float, default=10.0)
   parser.add_argument('--cheat_vision_aux_output', type=bool, default=False)
+  parser.add_argument('--vision_encoder_normalize_output', type=bool, default=True)
+  parser.add_argument('--stop_vision_gradient', type=bool, default=True)
   parser.add_argument('--global_seed', type=int, default=0)
   args = parser.parse_args()
 
@@ -499,5 +508,7 @@ if __name__ == '__main__':
     weights_bonus=args.weights_bonus,
     reach_metric_coefficient=args.reach_metric_coefficient,
     cheat_vision_aux_output=args.cheat_vision_aux_output,
+    vision_encoder_normalize_output=args.vision_encoder_normalize_output,
+    stop_vision_gradient=args.stop_vision_gradient,
     global_seed=args.global_seed,
   )
