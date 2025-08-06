@@ -98,6 +98,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
          global_seed=0,  # Add global seed parameter
          use_wandb=True,
          cheat_halfway_env=False,
+         screen_friction=0.1,
          ):
 
   # Set global seed for reproducibility
@@ -133,6 +134,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     'entropy_cost': entropy_cost,
     'batch_size': batch_size,
     'cheat_vision_aux_output': cheat_vision_aux_output,
+    'screen_friction': screen_friction,
   }
   kwargs = {
             'frame_skip': 25,
@@ -177,6 +179,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
       'x_reach_weight': x_reach_weight,
       'success_bonus': success_bonus,
       'phase_0_to_1_transition_bonus': phase_0_to_1_transition_bonus,
+      'screen_friction': screen_friction,
     }
   )
 
@@ -449,6 +452,7 @@ if __name__ == '__main__':
   parser.set_defaults(use_wandb=True)
   parser.add_argument('--cheat_halfway_env', dest='cheat_halfway_env', action='store_true', help='Type this if you want to use the halfway environment, default is false')
   parser.set_defaults(cheat_halfway_env=False)
+  parser.add_argument('--screen_friction', type=float, default=0.1)
   args = parser.parse_args()
 
   main(
@@ -488,4 +492,5 @@ if __name__ == '__main__':
     global_seed=args.global_seed,
     use_wandb=args.use_wandb,
     cheat_halfway_env=args.cheat_halfway_env,
+    screen_friction=args.screen_friction,
   )

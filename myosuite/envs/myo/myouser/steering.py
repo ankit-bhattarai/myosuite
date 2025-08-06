@@ -18,6 +18,7 @@ def steering_config():
     config['x_reach_weight'] = 1.0
     config['success_bonus'] = 50.0
     config['phase_0_to_1_transition_bonus'] = 0.0
+    config['screen_friction'] = 0.1
     return config
 
 
@@ -27,6 +28,11 @@ class Steering(MyoUserBase):
     def __init__(self, config: config_dict.ConfigDict = steering_config(),
                  config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None):
         super().__init__(config, config_overrides)
+
+    def modify_mj_model(self, mj_model):
+        mj_model.geom('screen').friction = self._config.screen_friction
+        mj_model.geom('fingertip_contact').friction = self._config.screen_friction
+        return mj_model
         
     def _setup(self):
         zero = jp.zeros(1)
