@@ -16,7 +16,7 @@
 
 import flax.nnx as nnx
 from brax.training import distribution
-from typing import Callable, Sequence
+from typing import Callable, Sequence, Optional
 
 from .base import PPONetworksUnifiedVision
 from .components import MLP, StatesCombinerPredictStateVariables, StatesCombinerVision
@@ -35,6 +35,10 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
         value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
         has_vision_aux_output: bool = False,
+        vision_aux_output_mlp: bool = False,
+        vision_aux_output_mlp_output_size: Optional[int] = None,
+        vision_encoder_normalize_output: bool = True,
+        stop_vision_gradient: bool = False,
     ):
         states_combiner = StatesCombinerVision(
             preprocess_observations_fn=preprocess_observations_fn
@@ -55,10 +59,19 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         proprioception_obs_key = "proprioception"
         vision_encoder = VisionEncoder(
             rngs=rngs, cheat_vision_aux_output=cheat_vision_aux_output,
-            mlp_out_size=encoder_out_size
+            mlp_out_size=encoder_out_size,
+            normalize_output=vision_encoder_normalize_output
         )
         if has_vision_aux_output:
-            vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
+            if vision_aux_output_mlp:
+                assert vision_aux_output_mlp_output_size is not None, "vision_aux_output_mlp_output_size must be provided if vision_aux_output_mlp is True"
+                vision_aux_output = MLP(
+                    encoder_out_size,
+                    vision_aux_output_mlp_output_size,
+                    rngs=rngs
+                )
+            else:
+                vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
         else:
             vision_aux_output = None
         super().__init__(
@@ -69,6 +82,7 @@ class NetworkWithVision(PPONetworksUnifiedVision):
             proprioception_obs_key,
             vision_encoder,
             vision_aux_output,
+            stop_vision_gradient=stop_vision_gradient,
         )
 
 
@@ -79,6 +93,10 @@ def make_ppo_networks_with_vision(
     preprocess_observations_fn: Callable,
     cheat_vision_aux_output: bool = False,
     has_vision_aux_output: bool = False,
+    vision_aux_output_mlp: bool = False,
+    vision_aux_output_mlp_output_size: Optional[int] = None,
+    vision_encoder_normalize_output: bool = True,
+    stop_vision_gradient: bool = False,
 ):
     model = nnx.bridge.to_linen(
         NetworkWithVision,
@@ -88,5 +106,9 @@ def make_ppo_networks_with_vision(
         preprocess_observations_fn=preprocess_observations_fn,
         cheat_vision_aux_output=cheat_vision_aux_output,
         has_vision_aux_output=has_vision_aux_output,
+        vision_aux_output_mlp=vision_aux_output_mlp,
+        vision_aux_output_mlp_output_size=vision_aux_output_mlp_output_size,
+        vision_encoder_normalize_output=vision_encoder_normalize_output,
+        stop_vision_gradient=stop_vision_gradient,
     )
     return model
