@@ -122,8 +122,10 @@ class PPONetworksUnifiedVision(nnx.Module):
                 assert self.has_vision_aux_output, "Vision aux output must be provided if only_vision_aux_feature is True"
                 return {"vision_aux_vector": self.vision_aux_output(vision_feature)}
             if self.stop_vision_gradient:
+                print("Stopping vision gradient")
                 pre_combined_vision_feature = jax.lax.stop_gradient(vision_feature)
             else:
+                print("Not stopping vision gradient")
                 pre_combined_vision_feature = vision_feature
             proprioception_feature = obs[self.proprioception_obs_key]
             state_vector = self.states_combiner(
