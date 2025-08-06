@@ -89,3 +89,22 @@ class StatesCombinerPredictStateVariables(nnx.Module):
         )
         state_vector = self.preprocess_observations_fn(state_vector, processor_params)
         return state_vector
+
+
+class StatesCombinerVision(nnx.Module):
+    def __init__(self, preprocess_observations_fn: Callable):
+        self.preprocess_observations_fn = preprocess_observations_fn
+
+    def __call__(
+        self,
+        proprioception_feature: jnp.ndarray,
+        vision_feature: jnp.ndarray,
+        processor_params: Any,
+    ):
+        proprioception_feature = self.preprocess_observations_fn(
+            proprioception_feature, processor_params
+        )
+        state_vector = jnp.concatenate(
+            [proprioception_feature, vision_feature], axis=-1
+        )
+        return state_vector
