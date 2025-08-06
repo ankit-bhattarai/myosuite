@@ -115,6 +115,10 @@ class MyoUserBase(mjx_env.MjxEnv):
     def xml_path(self) -> str:
         return self._config.model_path
 
+    def modify_mj_model(self, mj_model):
+        """Allows task specific modifications to the mujoco model before it is compiled!"""
+        return mj_model
+    
     def prepare_mjx_model(self):
         spec = mujoco.MjSpec.from_file(self._config.model_path)
 
@@ -124,6 +128,7 @@ class MyoUserBase(mjx_env.MjxEnv):
         mj_model.opt.iterations = 100
         mj_model.opt.ls_iterations = 50
         mj_model.opt.timestep = self._config.sim_dt
+        mj_model = self.modify_mj_model(mj_model)
         self._mj_model = mj_model
         self._mjx_model = mjx.put_model(self._mj_model)
 
