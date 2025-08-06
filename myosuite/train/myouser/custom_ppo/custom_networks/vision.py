@@ -99,3 +99,14 @@ class VisionAuxOutputIdentity(nnx.Module):
 
     def __call__(self, x: jnp.ndarray):
         return x
+
+
+class VisionAuxOutputStateVariables(nnx.Module):
+    def __init__(self, num_state_variables: int, rngs: nnx.Rngs):
+        self.num_state_variables = num_state_variables
+
+    def __call__(self, x: jnp.ndarray):
+        """Input will be something like [batch_size, unroll_length, vision_out] or [num_envs, vision_out]
+        I only want to extract a vector of shape [batch_size, unroll_length, num_state_variables] or [num_envs, num_state_variables]
+        """
+        return x[..., : self.num_state_variables]
