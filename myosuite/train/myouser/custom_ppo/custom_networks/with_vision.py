@@ -19,7 +19,7 @@ from brax.training import distribution
 from typing import Callable, Sequence
 
 from .base import PPONetworksUnifiedVision
-from .components import MLP, StatesCombinerPredictStateVariables
+from .components import MLP, StatesCombinerPredictStateVariables, StatesCombinerVision
 from .vision import VisionEncoder, VisionAuxOutputIdentity
 
 
@@ -35,8 +35,8 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
         value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
     ):
-        states_combiner = StatesCombinerPredictStateVariables(
-            preprocess_observations_fn
+        states_combiner = StatesCombinerVision(
+            preprocess_observations_fn=preprocess_observations_fn
         )
         state_vector_size = proprioception_size + encoder_out_size
         policy_network = MLP(
@@ -56,9 +56,6 @@ class NetworkWithVision(PPONetworksUnifiedVision):
             rngs=rngs, cheat_vision_aux_output=cheat_vision_aux_output
         )
         vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
-        states_combiner = StatesCombinerPredictStateVariables(
-            preprocess_observations_fn
-        )
         super().__init__(
             states_combiner,
             policy_network,
