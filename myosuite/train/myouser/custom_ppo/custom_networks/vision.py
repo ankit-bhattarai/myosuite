@@ -31,6 +31,7 @@ class VisionEncoder(nnx.Module):
         cheat_vision_aux_output: bool = False,
         use_bias: bool = True,
         activation: Callable = nnx.leaky_relu,
+        normalize_output: bool = True,
     ):
         if cheat_vision_aux_output:
             self.cheat_vision_aux_output = True
@@ -73,6 +74,13 @@ class VisionEncoder(nnx.Module):
         #     activation=activation,
         # )
         self.activation = activation
+        if normalize_output:
+            self.layernorm = nnx.LayerNorm(num_features=mlp_out_size,
+                                          rngs=rngs,
+                                          use_bias=True,
+                                          use_scale=True)
+        else:
+            self.layernorm = lambda x: x
 
     def __call__(self, x: dict):
         if self.cheat_vision_aux_output:
@@ -89,6 +97,7 @@ class VisionEncoder(nnx.Module):
         x = x.reshape(*x.shape[:spatial_dims], -1)
         x = self.activation(self.linear1(x))
         x = self.linear2(x)
+        x = self.layernorm(x)
         # x = self.mlp(x)
         return x
 

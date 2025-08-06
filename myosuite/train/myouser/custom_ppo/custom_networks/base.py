@@ -119,6 +119,7 @@ class PPONetworksUnifiedVision(nnx.Module):
         if self.has_vision:
             vision_feature = self.vision_encoder(obs)
             if only_vision_aux_feature:
+                assert self.has_vision_aux_output, "Vision aux output must be provided if only_vision_aux_feature is True"
                 return {"vision_aux_vector": self.vision_aux_output(vision_feature)}
             if self.stop_vision_gradient:
                 pre_combined_vision_feature = jax.lax.stop_gradient(vision_feature)

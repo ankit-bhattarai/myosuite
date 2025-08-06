@@ -34,6 +34,7 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         cheat_vision_aux_output: bool = False,
         policy_hidden_layer_sizes: Sequence[int] = [32, 32, 32, 32],
         value_hidden_layer_sizes: Sequence[int] = [256, 256, 256, 256, 256],
+        has_vision_aux_output: bool = False,
     ):
         states_combiner = StatesCombinerVision(
             preprocess_observations_fn=preprocess_observations_fn
@@ -53,9 +54,13 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         )
         proprioception_obs_key = "proprioception"
         vision_encoder = VisionEncoder(
-            rngs=rngs, cheat_vision_aux_output=cheat_vision_aux_output
+            rngs=rngs, cheat_vision_aux_output=cheat_vision_aux_output,
+            mlp_out_size=encoder_out_size
         )
-        vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
+        if has_vision_aux_output:
+            vision_aux_output = VisionAuxOutputIdentity(rngs=rngs)
+        else:
+            vision_aux_output = None
         super().__init__(
             states_combiner,
             policy_network,
@@ -73,6 +78,7 @@ def make_ppo_networks_with_vision(
     encoder_out_size: int,
     preprocess_observations_fn: Callable,
     cheat_vision_aux_output: bool = False,
+    has_vision_aux_output: bool = False,
 ):
     model = nnx.bridge.to_linen(
         NetworkWithVision,
@@ -81,5 +87,6 @@ def make_ppo_networks_with_vision(
         encoder_out_size=encoder_out_size,
         preprocess_observations_fn=preprocess_observations_fn,
         cheat_vision_aux_output=cheat_vision_aux_output,
+        has_vision_aux_output=has_vision_aux_output,
     )
     return model
