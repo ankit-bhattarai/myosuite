@@ -228,3 +228,27 @@ def wrap_curriculum_training(
       env = BraxDomainRandomizationVmapWrapper(env, randomization_fn)
     env = EpisodeWrapper(env, episode_length, action_repeat)
     return env
+
+class AutoResetWrapper(Wrapper):
+    def step(self, state: State, action: jax.Array) -> State:
+        state = state.replace(done=jp.zeros_like(state.done))
+        state = self.env.step(state, action)
+        rng = state.info["rng"]
+
+        def where_done(x, y):
+            done = state.done
+            if done.shape:
+                done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+            return jp.where(done, x, y)
+
+        state_after_reset = jax.vmap(self.env.reset)(rng)
+
+        data = jax.tree.map(where_done, state_after_reset.data, state.data)
+        obs = jax.tree.map(where_done, state_after_reset.obs, state.obs)
+        info = jax.tree.map(where_done, state_after_reset.info, state.info)
+
+        return state.replace(
+            data=data,
+            obs=obs,
+            info=info,
+        )
