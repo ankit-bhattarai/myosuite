@@ -3,6 +3,7 @@ import functools
 import json
 from etils import epath
 import jax
+import jax.numpy as jp
 
 from mujoco_playground import registry, wrapper
 from brax.training.agents.ppo import networks as ppo_networks
@@ -89,8 +90,9 @@ def load_checkpoint(env_name,
         json.dump(env_cfg.to_dict(), fp, indent=4)
 
     if vision:
-        env_cfg.vision = True
-        env_cfg.vision_config.render_batch_size = ppo_params.num_envs
+        env_cfg.vision_mode = vision
+        env_cfg.vision.render_batch_size = ppo_params.num_envs
+        env_cfg.vision.num_worlds = ppo_params.num_envs
     env = registry.load(env_name, config=env_cfg)
 
     if policy_params_fn_checkpoints is None:
@@ -132,7 +134,7 @@ def load_checkpoint(env_name,
         env = wrap_curriculum_training(
             env,
             vision=True,
-            num_vision_envs=env_cfg.vision_config.render_batch_size,
+            num_vision_envs=env_cfg.vision.render_batch_size,
             episode_length=ppo_params.episode_length,
             action_repeat=ppo_params.action_repeat,
             randomization_fn=training_params.get("randomization_fn"),
@@ -156,7 +158,7 @@ def load_checkpoint(env_name,
         restore_checkpoint_path=restore_checkpoint_path,
         # save_checkpoint_path=ckpt_path,
         # wrap_env_fn=None if vision else wrapper.wrap_for_brax_training,
-        wrap_env_fn=None if vision else wrap_curriculum_training,
+        wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_curriculum_training,
         num_eval_envs=num_eval_envs,
     )
 
@@ -179,12 +181,20 @@ def load_checkpoint(env_name,
             )
         else:
             rscope_env = env
+        if not hasattr(rscope_env, "model_assets"):
+            assets = {}
+            curr_dir = os.path.dirname(os.path.abspath(__file__))
+            _XML_PATH = epath.Path(os.path.join(curr_dir, "../../../simhive/uitb_sim/assets"))
+            for f in _XML_PATH.glob("*"):
+                if f.is_file() and f.name.endswith(".stl"):
+                    assets[f"../../../../simhive/uitb_sim/assets/{f.name}"] = f.read_bytes()
+            rscope_env.model_assets = assets
 
         rscope_handle = rscope_utils.BraxRolloutSaver(
             rscope_env,
             ppo_params,
             vision,
-            rscope_env,
+            rscope_envs,
             deterministic_rscope,
             jax.random.PRNGKey(seed),
             rscope_fn,

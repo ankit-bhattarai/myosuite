@@ -25,17 +25,20 @@ dependencies = [
     "flatten_dict",
     "h5py",
     "numpy",
-    "mujoco==3.3.4",
-    "mujoco-mjx==3.3.4",
+    "mujoco==3.3.5",
+    "mujoco-mjx==3.3.5",
     "dm-control==1.0.28",
     "mediapy",
     "matplotlib",
     "brax",
-    "jax[cuda12]",
+    "jax[cuda12_local]<0.6.0",
+    "playground",
     "Pillow",
     "pink-noise-rl",
     "packaging",
-    "gitpython"
+    "gitpython",
+    "wandb",
+    "hydra-core",
 ]
 [project.optional-dependencies]
 examples = ["mink[examples]; python_version > '3.9'"]

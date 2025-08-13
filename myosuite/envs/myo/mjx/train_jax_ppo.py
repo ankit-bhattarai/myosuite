@@ -59,13 +59,18 @@ from mujoco_playground.config import manipulation_params
 
 # from playground_myoElbow import PlaygroundElbow #, default_config
 # from playground_myoUser_pointing import PlaygroundArmPointing, default_config  #TODO: remove
-from myosuite.envs.myo.myouser.myoarm_pointing_v0 import MyoArmPointing, default_config
+from myosuite.envs.myo.myouser.myoarm_pointing_v0 import MyoArmPointing
+from myosuite.envs.myo.myouser.myoarm_pointing_v0 import default_config as MyoArmPointing_config
+from myosuite.envs.myo.myouser.myoarm_steering_v0 import MyoArmSteering
+from myosuite.envs.myo.myouser.myoarm_steering_v0 import default_config as MyoArmSteering_config
 
-# xla_flags = os.environ.get("XLA_FLAGS", "")
-# xla_flags += " --xla_gpu_triton_gemm_any=True"
-# os.environ["XLA_FLAGS"] = xla_flags
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["MADRONA_MWGPU_KERNEL_CACHE"] = "/scratch/fjf33/madrona_mjx/build/kernel_cache"
+os.environ["MADRONA_BVH_KERNEL_CACHE"] = "/scratch/fjf33/madrona_mjx/build/bvh_cache"
 os.environ["MUJOCO_GL"] = "egl"
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
 
 # Ignore the info logs from brax
 logging.set_verbosity(logging.WARNING)
@@ -215,8 +220,8 @@ class ProgressLogger:
         self.writer.add_scalar(key, value, num_steps)
       self.writer.flush()
 
-    # if 'eval/episode_reward' in metrics:
-    if self.ppo_params.num_evals > 0:
+    if 'eval/episode_reward' in metrics:
+    # if self.ppo_params.num_evals > 0:
       print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
     if not _USE_WANDB.value and not _USE_TB.value and self.ppo_params.log_training_metrics:
       if "episode/sum_reward" in metrics:
@@ -343,7 +348,13 @@ def set_global_seed(seed=0):
 def get_observation_size(vision=False):
     if not vision:
       # return 48
-      return {'proprioception': 48}  #112}  #151}  #48}
+      #TODO: infer full proprioception size from env (at least when vision is disabled)
+      if _ENV_NAME.value == "MyoUserPointing":
+        return {'proprioception': 48}  #112}  #151}  #48}
+      elif _ENV_NAME.value == "MyoUserSteering":
+        return {'proprioception': 59}
+      else:
+        raise NotImplementedError(f"No proprioception size available for env {_ENV_NAME.value}")
     if vision == 'rgb':
       return {
           "pixels/view_0": (120, 120, 3),  # RGB image
@@ -409,7 +420,8 @@ def main(argv):
   del argv
   print(f"Current backend: {jax.default_backend()}")
   # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
-  registry.manipulation.register_environment("MyoUserPointing", MyoArmPointing, default_config)
+  registry.manipulation.register_environment("MyoUserPointing", MyoArmPointing, MyoArmPointing_config)
+  registry.manipulation.register_environment("MyoUserSteering", MyoArmSteering, MyoArmSteering_config)
   # Load environment configuration
   env_cfg = registry.get_default_config(_ENV_NAME.value)  #default_config()
 
@@ -465,8 +477,8 @@ def main(argv):
     ppo_params.network_factory.value_obs_key = _VALUE_OBS_KEY.value
 
   if _VISION.value:
-    env_cfg.vision = True
-    env_cfg.vision_config.render_batch_size = ppo_params.num_envs
+    env_cfg.vision_mode = _VISION.value
+    env_cfg.vision.render_batch_size = ppo_params.num_envs
   
   # env = registry.load(_ENV_NAME.value, config=env_cfg)
   if _LOG_TRAINING_METRICS.present:
@@ -715,7 +727,7 @@ def main(argv):
   num_envs = 1
   if _VISION.value:
     eval_env = env
-    num_envs = env_cfg.vision_config.render_batch_size
+    num_envs = env_cfg.vision.render_batch_size
   eval_env.enable_eval_mode()
 
   jit_reset = jax.jit(eval_env.reset)

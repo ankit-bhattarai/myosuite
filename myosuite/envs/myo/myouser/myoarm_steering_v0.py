@@ -14,8 +14,9 @@
 # ==============================================================================
 """Base class for MyoUser Arm Steering model."""
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Sequence, Optional, Union
 import collections
+import tqdm
 
 from etils import epath
 import numpy as np
@@ -40,18 +41,19 @@ def default_config() -> config_dict.ConfigDict:
         # model_path="myosuite/envs/myo/assets/arm/myoarm_reaching_myouser.xml",  #rf"../assets/arm/myoarm_relocate.xml"
         #TODO: use 'wrapper' xml file in assets rather than raw simhive file
         ctrl_dt=0.002 * 25,  # Each control step is 25 physics steps
-        sim_dt=0.002,        
-        vision=False,
-        # vision=config_dict.create(
-        #     vision_mode="rgbd",
-        #     gpu_id=0,
-        #     render_batch_size=1024,
-        #     num_worlds=1024,
-        #     render_width=64,
-        #     render_height=64,
-        #     use_rasterizer=False,
-        #     enabled_geom_groups=[0, 1, 2],
-        # ),
+        sim_dt=0.002,
+        vision_mode='',
+        vision=config_dict.create(
+            # vision_mode="rgbd",
+            gpu_id=0,
+            render_batch_size=1024,
+            num_worlds=1024,
+            render_width=120,  #64,
+            render_height=120,  #64,
+            use_rasterizer=False,
+            enabled_geom_groups=[0, 1, 2],
+            enabled_cameras=[0],
+        ),
         muscle_config=config_dict.create(
             muscle_condition=None,
             sex=None,
@@ -78,7 +80,8 @@ def default_config() -> config_dict.ConfigDict:
                     # 'IFtip': [0.05, 0.05],
                 },
             ),
-            obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act', 'screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line'],
+            obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
+            omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line'],
             weighted_reward_keys=config_dict.create(
                 reach=1,
                 bonus_0=5,
@@ -134,6 +137,16 @@ class MyoArmSteering(MyoUserBase):
 
         # Prepare observation components
         self.obs_keys = self._config.task_config.obs_keys
+        self.omni_keys = self._config.task_config.omni_keys
+        #TODO: call _prepare_vision() before _setup()?
+        if not self._config.vision_mode:
+            print(f"No vision, so adding {self.omni_keys} to obs_keys")
+            for key in self.omni_keys:
+                if key not in self.obs_keys:
+                    self.obs_keys.append(key)
+        else:
+            print(f"Vision, so not adding {self.omni_keys} to obs_keys")
+        print(f"Obs keys: {self.obs_keys}")
 
         # Prepare reward keys
         self.weighted_reward_keys = self._config.task_config.weighted_reward_keys
@@ -148,7 +161,7 @@ class MyoArmSteering(MyoUserBase):
         
         # Dwelling based selection -- fingertip needs to be inside target for some time
         self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
-        if self._config.vision:
+        if self._config.vision_mode:
             print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
             self.dwell_threshold *= 2   
 
@@ -159,59 +172,11 @@ class MyoArmSteering(MyoUserBase):
     #     super()._prepare_after_init(data)
         # # Define target origin, relative to which target positions will be generated
         # self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
-    
-    # def update_target_visuals(self, target_pos, target_radius):
-    #     self.mj_model.body_pos[self.target_body_id, :] = target_pos
-    #     self.mj_model.geom_size[self.target_geom_id, 0] = target_radius
 
-    def generate_target_pos(self, rng, target_pos=None):
-        # jax.debug.print(f"Generate new target (target area scale={target_area_dynamic_width_scale})")
-
-        # Set target location
-        ##TODO: implement _new_target_distance_threshold constraint with rejection sampling!; improve code efficiency (remove for-loop)
-        if target_pos is None:
-            target_pos = jp.array([])
-            # Sample target position
-            rng, *rngs = jax.random.split(rng, len(self.reach_settings.target_pos_range)+1)
-            for (site, span), _rng in zip(self.reach_settings.target_pos_range.items(), rngs):
-                span = jp.array(span)
-                # if self.adaptive_task:
-                #     span = self.get_current_target_pos_range(span, target_area_dynamic_width_scale)
-                # sid = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
-                new_position = self.target_coordinates_origin + jax.random.uniform(_rng, shape=self.target_coordinates_origin.shape, minval=span[0], maxval=span[1])
-                target_pos = jp.append(target_pos, new_position.copy())
-                # self.mj_model.site_pos.at[sid].set(new_position)
-
-        # self._steps_inside_target = jp.zeros(1)
-
-        return target_pos
-    
-    def generate_target_size(self, rng, target_radius=None):
-        # jax.debug.print(f"Generate new target (target area scale={target_area_dynamic_width_scale})")
-
-        # Set target size
-        ##TODO: improve code efficiency (remove for-loop)
-        if target_radius is None:
-            target_radius = jp.array([])
-            # Sample target radius
-            rng, *rngs = jax.random.split(rng, len(self.reach_settings.target_radius_range)+1)
-            for (site, span), _rng in zip(self.reach_settings.target_radius_range.items(), rngs):
-                span = jp.array(span)
-                # sid = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, site + '_target')
-                new_radius = jax.random.uniform(_rng, minval=span[0], maxval=span[1])
-                target_radius = jp.append(target_radius, new_radius.copy())
-                # self.mj_model.site_size[sid][0] = new_radius
-
-        # self._steps_inside_target = jp.zeros(1)
-
-        return target_radius
-
-    def get_current_target_pos_range(self, span, target_area_dynamic_width_scale):
-        return target_area_dynamic_width_scale*(span - jp.mean(span, axis=0)) + jp.mean(span, axis=0)
-    
     def get_obs_vec(self, data, info):
         #TODO: simplify and move to MyoUserBase env
         obs_dict = self.get_obs_dict(data, info)
+        obs_dict = self.update_obs_with_pixels(obs_dict, info)
         obs = self.obsdict2obsvec(obs_dict)
         _updated_info = self.update_info(info, obs_dict)
         return obs, _updated_info
@@ -223,7 +188,7 @@ class MyoArmSteering(MyoUserBase):
         obs_dict['time'] = jp.array(data.time)
         
         # Normalise qpos
-        jnt_range = self.mjx_model.jnt_range[self._independent_joints]
+        jnt_range = self._mj_model.jnt_range[self._independent_joints]
         qpos = data.qpos[self._independent_qpos].copy()
         qpos = (qpos - jnt_range[:, 0]) / (jnt_range[:, 1] - jnt_range[:, 0])
         qpos = (qpos - 0.5) * 2
@@ -236,7 +201,9 @@ class MyoArmSteering(MyoUserBase):
         # Normalise act
         if self._na > 0:
             obs_dict['act']  = (data.act - 0.5) * 2
-        obs_dict['last_ctrl'] = info['last_ctrl']
+        
+        # Store current control input
+        obs_dict['last_ctrl'] = data.ctrl.copy()
         
         # # Smoothed average of motor actuation (only for motor actuators)  #; normalise
         # obs_dict['motor_act'] = info['motor_act']  #(self._motor_act.copy() - 0.5) * 2
@@ -261,9 +228,12 @@ class MyoArmSteering(MyoUserBase):
         distance_between_lines = jp.linalg.norm(start_line - end_line, axis=-1)
         obs_dict["distance_to_start_line"] = distance_to_start_line
         obs_dict["distance_to_end_line"] = distance_to_end_line
+        obs_dict["distance_between_lines"] = distance_between_lines
         obs_dict["phase_0_done"] = info["phase_0_done"] | (distance_to_start_line <= 0.01)
         obs_dict["phase_1_done"] = info["phase_1_done"] | (obs_dict["phase_0_done"] & (distance_to_end_line <= 0.01))
         obs_dict["dist_combined"] = (distance_to_start_line + distance_between_lines)*(~obs_dict["phase_0_done"]) + distance_to_end_line*(obs_dict["phase_0_done"])
+        obs_dict["phase_0_done_first"] = (~info["phase_0_done"]) & (distance_to_start_line <= 0.01)
+        obs_dict["phase_1_done_first"] = (~info["phase_1_done"]) & (obs_dict["phase_0_done"] & (distance_to_end_line <= 0.01))
 
         # # End-effector and target position
         # obs_dict['ee_pos'] = jp.vstack([data.site_xpos[self.tip_sids[isite]].copy() for isite in range(len(self.tip_sids))])
@@ -307,9 +277,27 @@ class MyoArmSteering(MyoUserBase):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
-            # return obsvec
             return {"proprioception": obsvec}
-        vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
+        if self.vision_mode == "rgbd_only":
+            return {"pixels/view_0": obs_dict["pixels/view_0"]}
+        elif self.vision_mode == "depth_only":
+            return {"pixels/depth": obs_dict["pixels/depth"]}
+        elif self.vision_mode == "depth":
+            return {"pixels/depth": obs_dict["pixels/depth"], "proprioception": obsvec}
+        elif self.vision_mode == "depth_w_aux_task":
+            #TODO: define auxiliary task for steering
+            target_pos = obs_dict["target_pos"]
+            target_radius = obs_dict["target_radius"]
+            aux_targets = jp.concatenate([target_pos, target_radius], axis=-1)
+            return {
+                "proprioception": obsvec,
+                "pixels/depth": obs_dict["pixels/depth"],
+                "vision_aux_targets": aux_targets,
+            }
+        vision_obs = {
+            "proprioception": obsvec,
+            "pixels/view_0": obs_dict["pixels/view_0"],
+        }
         if self.vision_mode == 'rgb+depth':
             vision_obs['pixels/depth'] = obs_dict['pixels/depth']
         return vision_obs
@@ -335,8 +323,8 @@ class MyoArmSteering(MyoUserBase):
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             ('reach',   1.*(jp.exp(-obs_dict["dist_combined"]*10.) - 1.)/10.),  #-1.*reach_dist)
-            ('bonus_0',   1.*(obs_dict['phase_0_done'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
-            ('bonus_1',   1.*(obs_dict['phase_1_done'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
+            ('bonus_0',   1.*(obs_dict['phase_0_done_first'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
+            ('bonus_1',   1.*(obs_dict['phase_1_done_first'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             # ('act_reg', -1.*act_mag),
             # # ('penalty', -1.*(np.any(reach_dist > far_th))),
@@ -360,7 +348,7 @@ class MyoArmSteering(MyoUserBase):
             'end_line': data.site_xpos[self.end_line_id],
         }
 
-    def reset(self, rng, target_pos=None, target_radius=None):
+    def reset(self, rng, render_token=None, target_pos=None, target_radius=None):
         # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
@@ -388,11 +376,12 @@ class MyoArmSteering(MyoUserBase):
         # if self.vision or self.eval_mode:
         #     self.update_target_visualsta(rget_pos=info['target_pos'], target_radius=info['target_radius'])
         
-        # # Generate inital observations
-        # # TODO: move the following lines into MyoUserBase.reset?
-        # if self.vision:
-        #     info.update(self.generate_pixels(data))
-
+        # Generate inital observations
+        # TODO: move the following lines into MyoUserBase.reset?
+        if self.vision:
+            # TODO: do we need to update target information for rendering?
+            # data = self.add_target_pos_to_data(data, info["target_pos"])
+            info.update(self.generate_pixels(data, render_token=render_token))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
@@ -401,8 +390,8 @@ class MyoArmSteering(MyoUserBase):
 
         reward, done = jp.zeros(2)
         metrics = {
-            'phase_0_done': jp.bool_(False),
-            'phase_1_done': jp.bool_(False),
+            'phase_0_done': 0.0,  #jp.bool_(False),
+            'phase_1_done': 0.0,  #jp.bool_(False),
             'distance_to_start_line': 0.0,
             'distance_phase_0': 0.0,
             'distance_phase_1': 0.0,
@@ -412,8 +401,9 @@ class MyoArmSteering(MyoUserBase):
         return State(data, obs, reward, done, metrics, info)
     
     def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
-        return self.reset(rng, **kwargs)
-    
+        render_token = info_before_reset["render_token"] if self.vision else None
+        return self.reset(rng, render_token=render_token, **kwargs)
+        
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
 
         rng, rng_reset = jax.random.split(rng, 2)
@@ -507,22 +497,24 @@ class MyoArmSteering(MyoUserBase):
 
         # # collect observations and reward
         # # obs = self.get_obs_vec(data, state.info)
-        # if self.vision:
-        #     pixels_dict = self.generate_pixels(data, state.info['render_token'])
-        #     state.info.update(pixels_dict)
+        if self.vision:
+            # TODO: do we need to update target information for rendering?
+            # data = self.add_target_pos_to_data(data, state.info["target_pos"])
+            pixels_dict = self.generate_pixels(data, state.info['render_token'])
+            state.info.update(pixels_dict)
         obs_dict = self.get_obs_dict(data, state.info)
+        obs_dict = self.update_obs_with_pixels(obs_dict, state.info)
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
         # rwd, done, update_info, metrics = self.get_rewards_and_done(obs_dict, state.info)
         _updated_info = self.update_info(state.info, obs_dict)
-        state.replace(info=_updated_info)
-
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
+        state.replace(info=_updated_info)
         
         done = rwd_dict['done']
         state.metrics.update(
-            phase_0_done = obs_dict["phase_0_done"],
-            phase_1_done = obs_dict["phase_1_done"],
+            phase_0_done = obs_dict["phase_0_done"].astype(jp.float32),
+            phase_1_done = obs_dict["phase_1_done"].astype(jp.float32),
             distance_to_start_line = obs_dict["distance_to_start_line"],
             distance_phase_0 = (~obs_dict["phase_0_done"])*(obs_dict["distance_to_start_line"] + obs_dict["distance_between_lines"]),
             distance_phase_1 = (obs_dict["phase_0_done"])*obs_dict["distance_to_end_line"],
@@ -533,3 +525,86 @@ class MyoArmSteering(MyoUserBase):
         return state.replace(
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
+    
+    def add_target_pos_to_data(self, data, target_pos):
+        xpos = data.xpos
+        geom_xpos = data.geom_xpos
+
+        xpos = xpos.at[self.target_body_id].set(target_pos)
+        geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
+        data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
+        return data
+
+    def render(
+        self,
+        trajectory: List[State],
+        height: int = 240,
+        width: int = 320,
+        camera: Optional[str] = None,
+        scene_option: Optional[mujoco.MjvOption] = None,
+        modify_scene_fns: Optional[
+            Sequence[Callable[[mujoco.MjvScene], None]]
+        ] = None,
+    ) -> Sequence[np.ndarray]:
+        return self.render_array(
+            self.mj_model,
+            trajectory,
+            height,
+            width,
+            camera,
+            scene_option=scene_option,
+            modify_scene_fns=modify_scene_fns,
+        )
+    
+    def update_target_visuals(self, mj_model, target_pos, target_radius):
+        mj_model.body_pos[self.target_body_id, :] = target_pos
+        mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
+
+    def render_array(self,
+        mj_model: mujoco.MjModel,
+        trajectory: Union[List[State], State],
+        height: int = 480,
+        width: int = 640,
+        camera: Optional[str] = None,
+        scene_option: Optional[mujoco.MjvOption] = None,
+        modify_scene_fns: Optional[
+            Sequence[Callable[[mujoco.MjvScene], None]]
+        ] = None,
+        hfield_data: Optional[jax.Array] = None,
+    ):
+        """Renders a trajectory as an array of images."""
+        renderer = mujoco.Renderer(mj_model, height=height, width=width)
+        camera = camera if camera is not None else -1
+
+        if hfield_data is not None:
+            mj_model.hfield_data = hfield_data.reshape(mj_model.hfield_data.shape)
+            mujoco.mjr_uploadHField(mj_model, renderer._mjr_context, 0)
+
+        def get_image(state, modify_scn_fn=None) -> np.ndarray:
+            d = mujoco.MjData(mj_model)
+            d.qpos, d.qvel = state.data.qpos, state.data.qvel
+            d.mocap_pos, d.mocap_quat = state.data.mocap_pos, state.data.mocap_quat
+            d.xfrc_applied = state.data.xfrc_applied
+            self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
+            # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
+            # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
+            # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
+            mujoco.mj_forward(mj_model, d)
+            renderer.update_scene(d, camera=camera, scene_option=scene_option)
+            if modify_scn_fn is not None:
+                modify_scn_fn(renderer.scene)
+            return renderer.render()
+
+        if isinstance(trajectory, list):
+            out = []
+            for i, state in enumerate(tqdm.tqdm(trajectory)):
+                if modify_scene_fns is not None:
+                    modify_scene_fn = modify_scene_fns[i]
+                else:
+                    modify_scene_fn = None
+                out.append(get_image(state, modify_scene_fn))
+        else:
+            out = get_image(trajectory)
+
+        renderer.close()
+        return out

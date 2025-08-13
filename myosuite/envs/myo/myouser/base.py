@@ -27,17 +27,18 @@ def get_default_config():
         model_path="myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml",
         ctrl_dt=0.002 * 25,  # Each control step is 25 physics steps
         sim_dt=0.002,
-        vision=False,
-        # vision = config_dict.create(
-        #     vision_mode="rgbd",
-        #     gpu_id=0,
-        #     render_batch_size=1024,
-        #     num_worlds=1024,
-        #     render_width=64,
-        #     render_height=64,
-        #     use_rasterizer=False,
-        #     enabled_geom_groups=[0, 1, 2],
-        # )
+        vision_mode='',
+        vision=config_dict.create(
+            # vision_mode="rgbd",
+            gpu_id=0,
+            render_batch_size=1024,
+            num_worlds=1024,
+            render_width=120,
+            render_height=120,
+            enabled_geom_groups=[0, 1, 2],
+            enabled_cameras=[0],
+            use_rasterizer=False,
+        ),
         muscle_config=config_dict.create(
             muscle_condition=None,
             sex=None,
@@ -57,7 +58,7 @@ def get_default_config():
         # episode_length=80,
     )
 
-ALLOWED_VISION_MODES = ("rgbd", "depth", "depth_w_aux_task")
+ALLOWED_VISION_MODES = ("rgb", "depth", "rgbd", "rgb+depth", "rgbd_only", "depth_only", "depth_w_aux_task")
 ALLOWED_MUSCLE_CONDITIONS = ("sarcopenia", "fatigue", "reafferentation", None)
 ALLOWED_RESET_TYPES = ("zero", "epsilon_uniform", "range_uniform", None)
 
@@ -98,6 +99,10 @@ class MyoUserBase(mjx_env.MjxEnv):
                 geom.contype = 0
                 print(f"Disabled contacts for cylinder geom named \"{geom.name}\"")
         return spec
+    
+    def modify_mj_model(self, mj_model):
+        """Allows task specific modifications to the mujoco model before it is compiled!"""
+        return mj_model
 
     def _prepare_mjx_model(self):
         spec = mujoco.MjSpec.from_file(self.xml_path)
@@ -110,6 +115,7 @@ class MyoUserBase(mjx_env.MjxEnv):
         mj_model.opt.ls_iterations = 50
         mj_model.opt.disableflags = mj_model.opt.disableflags | mjx.DisableBit.EULERDAMP
         mj_model.opt.timestep = self._config.sim_dt
+        mj_model = self.modify_mj_model(mj_model)
         self._mj_model = mj_model
         self._mjx_model = mjx.put_model(self._mj_model)
 
@@ -188,7 +194,7 @@ class MyoUserBase(mjx_env.MjxEnv):
             {
                 self._joint_names[idx]
                 for idx in np.unique(
-                    self._mj_model.eq_obj1id[self._mj_model.eq_active0.astype(bool)]
+                    self._mjx_model.eq_obj1id[self._mjx_model.eq_active0.astype(bool)]
                 )
             }
             if self._mjx_model.eq_obj1id is not None
@@ -252,9 +258,9 @@ class MyoUserBase(mjx_env.MjxEnv):
         assert self.muscle_condition in valid_muscle_conditions, f"Invalid muscle condition '{self.muscle_condition} (valid conditions are {valid_muscle_conditions})."
 
         if self.muscle_condition == "sarcopenia":
-            for mus_idx in range(self._mj_model.actuator_gainprm.shape[0]):
-                self._mj_model.actuator_gainprm[mus_idx, 2] = (
-                    0.5 * self._mj_model.actuator_gainprm[mus_idx, 2].copy()
+            for mus_idx in range(self._mjx_model.actuator_gainprm.shape[0]):
+                self._mjx_model.actuator_gainprm[mus_idx, 2] = (
+                    0.5 * self._mjx_model.actuator_gainprm[mus_idx, 2].copy()
                 )
 
         # for muscle fatigue we used the 3CC-r model
@@ -286,13 +292,13 @@ class MyoUserBase(mjx_env.MjxEnv):
         pass
     
     def _prepare_vision(self):
-        if not self._config.vision:
+        if not self._config.vision_mode:
             self.vision = False
             return
         self.vision = True
         from madrona_mjx.renderer import BatchRenderer
 
-        self.vision_mode = self._config.vision.vision_mode
+        self.vision_mode = self._config.vision_mode
         assert (
             self.vision_mode in ALLOWED_VISION_MODES
         ), f"Invalid vision mode: {self.vision_mode} (allowed modes: {ALLOWED_VISION_MODES})"
@@ -303,7 +309,7 @@ class MyoUserBase(mjx_env.MjxEnv):
             num_worlds=self._config.vision.num_worlds,
             batch_render_view_width=self._config.vision.render_width,
             batch_render_view_height=self._config.vision.render_height,
-            enabled_geom_groups=np.asarray([0, 1, 2]),
+            enabled_geom_groups=np.asarray(self._config.vision.enabled_geom_groups),
             enabled_cameras=np.asarray(self._config.vision.enabled_cameras),
             use_rasterizer=False,
             viz_gpu_hdls=None,
@@ -555,6 +561,23 @@ class MyoUserBase(mjx_env.MjxEnv):
             new_ctrl = new_ctrl.at[self.EIPpos].set(0)
 
         return new_ctrl
+
+    def update_obs_with_pixels(self, obs_dict, info):
+        if self.vision:
+            if (
+                self.vision_mode == "rgb"
+                or self.vision_mode == "rgbd"
+                or self.vision_mode == "rgbd_only"
+            ):
+                obs_dict["pixels/view_0"] = info["pixels/view_0"]
+            if (
+                self.vision_mode == "rgb+depth"
+                or self.vision_mode == "depth_only"
+                or self.vision_mode == "depth"
+                or self.vision_mode == "depth_w_aux_task"
+            ):
+                obs_dict["pixels/depth"] = info["pixels/depth"]
+        return obs_dict
 
     def generate_pixels(self, data, render_token=None):
         # Generates the view of the environment using the batch renderer

@@ -4,6 +4,12 @@
     <inertial pos="-0.0194693 -0.124635 3.52071e-05" quat="0.982593 0.00053772 0.000250291 0.185769" mass="8.01418" diaginertia="0.0768128 0.0574863 0.0458735"/>
     <joint name="r_z" pos="0 0 0" axis="0 0 1" stiffness="0" range="-6.28319 6.28319" armature="0" damping="0"/>
     <geom name="thorax" type="mesh" mesh="thorax"/>
+    <!-- <body euler="-1.57 0 0" pos=".1 -.455 -.02">
+        <geom name="thorax_coll0" type="capsule" class="arm_skin" size="0.080 0.077" pos="-.065 0 .070" euler="1.57 0 0"/>
+        <geom name="thorax_coll1" type="ellipsoid" class="arm_skin" size="0.095 0.140 0.140" pos="-.075 0 .200" euler="1.57 0 0"/>
+        <geom name="thorax_coll2" type="capsule" class="arm_skin" size="0.110 0.065" pos="-.090 0 .340" euler="1.57 0 0"/>
+        <geom name="thorax_coll3" type="capsule" class="arm_skin" size="0.075 0.120" pos="-.110 0 .425" euler="1.57 0 0"/>
+    </body> -->
     <site name="PECM1-P3" pos="-7e-05 0.00821 0.10454"/>
     <site name="PECM2-P4" pos="0.03091 -0.03922 0.09705"/>
     <site name="PECM2-P5" pos="0.02769 -0.04498 0.02271"/>
@@ -81,7 +87,7 @@
                   <inertial pos="0.018064 -0.140141 -0.012746" quat="0.407851 0.343714 -0.567755 0.627034" mass="1.99757" diaginertia="0.0128576 0.0121576 0.00239265"/>
                   <joint name="shoulder_rot" pos="0 0 0" axis="0.0048 0.999089 0.0424" range="-1.57 0.349066" user="1"/>
                   <geom name="humerus" type="mesh" mesh="humerus"/>
-                  <site name="DELT1-P1" pos="0.00896 -0.11883 0.00585"/>
+                  <geom name="humerus_coll" type="capsule" class="arm_skin" size="0.042 0.140" pos="0 -.13 0" euler="1.57 0 0"/>                  <site name="DELT1-P1" pos="0.00896 -0.11883 0.00585"/>
                   <site name="DELT1-P2" pos="0.01623 -0.11033 0.00412"/>
                   <site name="DELT2-P1" pos="0.00461 -0.13611 0.0056"/>
                   <site name="DELT3-P3" pos="0.00206 -0.07602 0.01045"/>
@@ -168,8 +174,15 @@
                     <site name="EPL-P1" pos="-0.01412 -0.09706 0.02952"/>
                     <body name="radius" pos="0.0004 -0.011503 0.019999">
                       <inertial pos="0.0336341 -0.181559 0.0156" quat="0.770264 0.63559 0.0119833 0.0507376" mass="0.23359" diaginertia="0.001 0.001 0.001"/>
+                      <geom name="radius_coll" type="capsule" class="arm_skin" size="0.030" fromto="0 0 0 0.015 -0.235841 0.028" euler="1.4 0.1 0.12"/>
+                      <camera name="hand_top" pos="0.02 -0.2 0.55" euler="0 0 0"/>
+                      <camera name="hand_bottom" pos="0.02 -0.2 -0.55" euler="0 3.14 0"/>
+                      <camera name="hand_side_inter" pos="0.5 -0.3 0" euler="1.57 1.57 0"/>
+                      <camera name="hand_side_exter" pos="-0.5 -0.3 0" euler="1.57 -1.57 0"/>
                       <joint name="pro_sup" pos="0 0 0" axis="-0.017161 0.992666 -0.119668" range="-1.5708 1.5708" user="1"/>
                       <geom name="radius" type="mesh" mesh="radius"/>
+                      <geom class="arm_skin" size="0.02" fromto="0.015 0 -.005 0.025 -0.24 0.025"/>
+                      <geom class="arm_skin" size="0.02" fromto="-.01 0 -.010 0.015 -0.24 0.025"/>
                       <site name="SUP-P1" pos="0.00996 -0.06096 0.00075"/>
                       <site name="SUP-P2" pos="0.01201 -0.0517 -0.00107"/>
                       <site name="BIClong-P11" pos="-0.002 -0.0375 -0.002"/>
@@ -391,6 +404,9 @@
                                 <body name="index3">
                                   <inertial pos="0 0 0" mass="0.001" diaginertia="0.001 0.001 0.001"/>
                                   <geom name="hand_2distph" type="mesh" mesh="hand_2distph"/>
+                                  <!-- Have inserted a tiny spherical geom at the fingertip - need to check if it works properly or not -->
+                                  <!-- TODO: Check if the fingertip contact actually works as intended or not! -->
+                                  <geom name="fingertip_contact" class="hand_skin" size="0.00001" type="sphere" pos="0.024 -0.149 -0.0065"/>
                                   <site name="fingertip" pos="0.024 -0.149 -0.0065" size="0.004" rgba="0.1 0.8 0.1 0"/>
                                 </body>
                               </body>

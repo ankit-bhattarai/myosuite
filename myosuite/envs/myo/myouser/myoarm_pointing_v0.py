@@ -41,18 +41,19 @@ def default_config() -> config_dict.ConfigDict:
         # model_path="myosuite/envs/myo/assets/arm/myoarm_reaching_myouser.xml",  #rf"../assets/arm/myoarm_relocate.xml"
         #TODO: use 'wrapper' xml file in assets rather than raw simhive file
         ctrl_dt=0.002 * 25,  # Each control step is 25 physics steps
-        sim_dt=0.002,        
-        vision=False,
-        # vision=config_dict.create(
-        #     vision_mode="rgbd",
-        #     gpu_id=0,
-        #     render_batch_size=1024,
-        #     num_worlds=1024,
-        #     render_width=64,
-        #     render_height=64,
-        #     use_rasterizer=False,
-        #     enabled_geom_groups=[0, 1, 2],
-        # ),
+        sim_dt=0.002,
+        vision_mode='',
+        vision=config_dict.create(
+            # vision_mode="rgbd",
+            gpu_id=0,
+            render_batch_size=1024,
+            num_worlds=1024,
+            render_width=120,
+            render_height=120,
+            use_rasterizer=False,
+            enabled_geom_groups=[0, 1, 2],
+            enabled_cameras=[0],
+        ),
         muscle_config=config_dict.create(
             muscle_condition=None,
             sex=None,
@@ -85,9 +86,8 @@ def default_config() -> config_dict.ConfigDict:
                 "qacc",
                 "ee_pos",
                 "act",
-                "target_pos",
-                "target_radius"
             ],
+            omni_keys=["target_pos", "target_radius"],
             weighted_reward_keys=config_dict.create(
                 reach=1,
                 bonus=8,
@@ -142,6 +142,16 @@ class MyoArmPointing(MyoUserBase):
 
         # Prepare observation components
         self.obs_keys = self._config.task_config.obs_keys
+        self.omni_keys = self._config.task_config.omni_keys
+        #TODO: call _prepare_vision() before _setup()?
+        if not self._config.vision_mode:
+            print(f"No vision, so adding {self.omni_keys} to obs_keys")
+            for key in self.omni_keys:
+                if key not in self.obs_keys:
+                    self.obs_keys.append(key)
+        else:
+            print(f"Vision, so not adding {self.omni_keys} to obs_keys")
+        print(f"Obs keys: {self.obs_keys}")
 
         # Prepare reward keys
         self.weighted_reward_keys = self._config.task_config.weighted_reward_keys
@@ -161,7 +171,7 @@ class MyoArmPointing(MyoUserBase):
 
         # Dwelling based selection -- fingertip needs to be inside target for some time
         self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
-        if self._config.vision:
+        if self._config.vision_mode:
             print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
             self.dwell_threshold *= 2   
 
@@ -225,6 +235,7 @@ class MyoArmPointing(MyoUserBase):
     def get_obs_vec(self, data, info):
         #TODO: simplify and move to MyoUserBase env
         obs_dict = self.get_obs_dict(data, info)
+        obs_dict = self.update_obs_with_pixels(obs_dict, info)
         obs = self.obsdict2obsvec(obs_dict)
         _updated_info = self.update_info(info, obs_dict)
         return obs, _updated_info
@@ -236,7 +247,7 @@ class MyoArmPointing(MyoUserBase):
         obs_dict['time'] = jp.array(data.time)
         
         # Normalise qpos
-        jnt_range = self.mjx_model.jnt_range[self._independent_joints]
+        jnt_range = self._mj_model.jnt_range[self._independent_joints]
         qpos = data.qpos[self._independent_qpos].copy()
         qpos = (qpos - jnt_range[:, 0]) / (jnt_range[:, 1] - jnt_range[:, 0])
         qpos = (qpos - 0.5) * 2
@@ -287,10 +298,10 @@ class MyoArmPointing(MyoUserBase):
 
         # obs_dict['target_area_dynamic_width_scale'] = info['target_area_dynamic_width_scale']
 
-        if self.vision:
-            obs_dict['pixels/view_0'] = info['pixels/view_0']
-            if self.vision_mode == 'rgb+depth':
-                obs_dict['pixels/depth'] = info['pixels/depth']
+        # if self.vision:
+        #     obs_dict['pixels/view_0'] = info['pixels/view_0']
+        #     if self.vision_mode == 'rgb+depth':
+        #         obs_dict['pixels/depth'] = info['pixels/depth']
         return obs_dict
     
     def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
@@ -300,9 +311,26 @@ class MyoArmPointing(MyoUserBase):
             obs_list.append(obs_dict[key].ravel()) # ravel helps with images
         obsvec = jp.concatenate(obs_list)
         if not self.vision:
-            # return obsvec
             return {"proprioception": obsvec}
-        vision_obs = {'proprioception': obsvec, 'pixels/view_0': obs_dict['pixels/view_0']}
+        if self.vision_mode == "rgbd_only":
+            return {"pixels/view_0": obs_dict["pixels/view_0"]}
+        elif self.vision_mode == "depth_only":
+            return {"pixels/depth": obs_dict["pixels/depth"]}
+        elif self.vision_mode == "depth":
+            return {"pixels/depth": obs_dict["pixels/depth"], "proprioception": obsvec}
+        elif self.vision_mode == "depth_w_aux_task":
+            target_pos = obs_dict["target_pos"]
+            target_radius = obs_dict["target_radius"]
+            aux_targets = jp.concatenate([target_pos, target_radius], axis=-1)
+            return {
+                "proprioception": obsvec,
+                "pixels/depth": obs_dict["pixels/depth"],
+                "vision_aux_targets": aux_targets,
+            }
+        vision_obs = {
+            "proprioception": obsvec,
+            "pixels/view_0": obs_dict["pixels/view_0"],
+        }
         if self.vision_mode == 'rgb+depth':
             vision_obs['pixels/depth'] = obs_dict['pixels/depth']
         return vision_obs
@@ -353,7 +381,7 @@ class MyoArmPointing(MyoUserBase):
 
         return rwd_dict
 
-    def reset(self, rng, target_pos=None, target_radius=None):
+    def reset(self, rng, target_pos=None, target_radius=None, render_token=None):
         # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
@@ -381,12 +409,14 @@ class MyoArmPointing(MyoUserBase):
         info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
         info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
         # if self.vision or self.eval_mode:
-        #     self.update_target_visualsta(rget_pos=info['target_pos'], target_radius=info['target_radius'])
+        #     self.update_target_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
         
         # Generate inital observations
         # TODO: move the following lines into MyoUserBase.reset?
         if self.vision:
-            info.update(self.generate_pixels(data))
+            # TODO: do we need to update target information for rendering?
+            # data = self.add_target_pos_to_data(data, info["target_pos"])
+            info.update(self.generate_pixels(data, render_token=render_token))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
         # obs = self.obsdict2obsvec(obs_dict)
@@ -405,7 +435,8 @@ class MyoArmPointing(MyoUserBase):
         return State(data, obs, reward, done, metrics, info)
     
     def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
-        return self.reset(rng, **kwargs)
+        render_token = info_before_reset["render_token"] if self.vision else None
+        return self.reset(rng, render_token=render_token, **kwargs)
     
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
 
@@ -500,9 +531,12 @@ class MyoArmPointing(MyoUserBase):
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
         if self.vision:
+            # TODO: do we need to update target information for rendering?
+            # data = self.add_target_pos_to_data(data, state.info["target_pos"])
             pixels_dict = self.generate_pixels(data, state.info['render_token'])
             state.info.update(pixels_dict)
         obs_dict = self.get_obs_dict(data, state.info)
+        obs_dict = self.update_obs_with_pixels(obs_dict, state.info)
         obs = self.obsdict2obsvec(obs_dict)
         rwd_dict = self.get_reward_dict(obs_dict)
 
@@ -526,6 +560,15 @@ class MyoArmPointing(MyoUserBase):
         return state.replace(
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
+    
+    def add_target_pos_to_data(self, data, target_pos):
+        xpos = data.xpos
+        geom_xpos = data.geom_xpos
+
+        xpos = xpos.at[self.target_body_id].set(target_pos)
+        geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
+        data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
+        return data
 
     def render(
         self,
