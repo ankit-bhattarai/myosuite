@@ -173,7 +173,7 @@ def main(experiment_id, project_id='mjx-training', n_train_steps=100_000_000, n_
     env_name,
     config_overrides={
       'model_path': path,
-      'episode_length': 300,
+      'episode_length': episode_length,
       'distance_reach_metric_coefficient': distance_reach_metric_coefficient,
       'x_reach_metric_coefficient': x_reach_metric_coefficient,
       'x_reach_weight': x_reach_weight,
