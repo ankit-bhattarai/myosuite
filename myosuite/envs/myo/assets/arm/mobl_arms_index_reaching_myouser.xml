@@ -17,6 +17,11 @@
             <geom name="target_sphere" type="sphere" size="0.05" rgba="0.1 0.8 0.1 1"/>
             <!-- <site name="fingertip_target" size="0.025" rgba="0.1 0.8 0.1 1" pos="0.5 0 0.8"/> -->
         </body>
+
+        <body name="fixed-eye" pos="0 0 1.2" quat="0.583833 0.399104 -0.399421 -0.583368">
+            <geom name="fixed-eye" quat="0.7106 0.25537 0.616985 0.221728" type="mesh" rgba="1 1 1 1" mesh="eye"/>
+            <camera name="fixed-eye" pos="0 0 0" fovy="120"/>
+        </body>
     </worldbody>
 
 </mujoco>
