@@ -109,6 +109,11 @@ class Steering(MyoUserBase):
         rng1, rng2 = jax.random.split(rng, 2)
         bottom_line, top_line = self.get_tunnel_limits(rng1, self.bottom, self.top, self.min_height)
         right_line, left_line = self.get_tunnel_limits(rng2, self.right, self.left, self.min_width)
+
+        #bottom_line = -0.3
+        #top_line = 0.3
+        #left_line = 0.3
+        #right_line = -0.3
         return bottom_line, top_line, left_line, right_line
     
 
@@ -279,43 +284,50 @@ class Steering(MyoUserBase):
         bottom_line_z = obs_dict['bottom_line'][2]
         top_line_z = obs_dict['top_line'][2]
 
-        dist_between_lines = jp.linalg.norm(end_line - start_line, axis=-1)
+        path_length = jp.linalg.norm(end_line[1] - start_line[1])
+        path_width = jp.linalg.norm(top_line_z - bottom_line_z)
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
-        dist_to_end_line = jp.linalg.norm(ee_pos - end_line, axis=-1)
+        dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
         # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
-        # start line when in phase 0
-        phase_0_to_1_transition_bonus = self.phase_0_to_1_transition_bonus * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+        # phase_0_to_1_transition_bonus = self.phase_0_to_1_transition_bonus * (1. - completed_phase_0) * (dist_to_start_line <= 0.01)
+
         # Update phase immediately based on current position
         touching_screen = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
         within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
-        within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.03)
+        within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.01)
 
         phase_0_completed = touching_screen * within_z_limits * within_y_dist
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed
 
-        phase_0_distance = dist_to_start_line + dist_between_lines
+        phase_0_distance = dist_to_start_line + path_length
         phase_1_distance = dist_to_end_line
 
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         d_coef = self.distance_reach_metric_coefficient
-        dist_reward = (jp.exp(-dist*d_coef) - 1.)/d_coef
+        dist_reward = - d_coef * dist # (jp.exp(-dist*d_coef) - 1.)/d_coef
 
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
         x_weight = self.x_reach_weight
         # If in phase 1 and phase_1_x_dist is greater than 0.01, give a reward of -phase_1_x_dist * x_weight
-        phase_1_x_reward = completed_phase_0 * (phase_1_x_dist >= 0.01) * x_weight * (-phase_1_x_dist)
+        # phase_1_x_reward = completed_phase_0 * (phase_1_x_dist >= 0.01) * x_weight * (-phase_1_x_dist)
 
-        phase_1_z_reward = completed_phase_0 * (1. - within_z_limits) * -2.0
- 
+        phase_1_x_reward = completed_phase_0 * x_weight * (-phase_1_x_dist) + (1 - completed_phase_0) * x_weight * (-0.5)
+
+        # phase_1_z_reward = completed_phase_0 * (1. - within_z_limits) * -2.0
+        softcons_limit = 3
+        relative_position = jp.linalg.norm(bottom_line_z - ee_pos[2])
+        softcons_for_bounds = softcons_limit * jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1) ** 15
+        phase_1_z_reward = completed_phase_0 * (-softcons_for_bounds) + (1 - completed_phase_0) * (-softcons_limit)
+
         crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1])
         touching_screen = 1.0 * (phase_1_x_dist <= 0.01)
 
         done = completed_phase_0 * crossed_line_y * touching_screen * within_z_limits
         
-        success_bonus = self.success_bonus * done
-
-        reward = dist_reward + success_bonus + phase_1_x_reward + phase_0_to_1_transition_bonus + phase_1_z_reward
+        reward_success = self.success_bonus 
+        reward_no_sucess = dist_reward + phase_1_x_reward + phase_1_z_reward
+        reward = done * reward_success + (1 - done) * reward_no_sucess
 
         # Reset phase only when episode ends
         completed_phase_0 = completed_phase_0 * (1. - done)
