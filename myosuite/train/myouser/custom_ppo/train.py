@@ -381,7 +381,6 @@ def train(
   key_envs = jnp.reshape(
       key_envs, (local_devices_to_use, -1) + key_envs.shape[1:]
   )
-  print(num_envs, local_devices_to_use, process_count, key_envs.shape)
   env_state = reset_fn(key_envs)
   # Discard the batch axes over devices and envs.
   obs_shape = jax.tree_util.tree_map(lambda x: x.shape[2:], env_state.obs)
