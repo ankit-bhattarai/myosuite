@@ -36,7 +36,7 @@ def custom_network_factory(obs_shape, action_size, preprocess_observations_fn,
     #   raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
     if not vision:
         return make_ppo_networks_no_vision(
-        proprioception_size=get_observation_size()['proprioception'][0],
+        proprioception_size=get_observation_size()['proprioception'],
         action_size=action_size,
         preprocess_observations_fn=preprocess_observations_fn,
         **network_factory_kwargs,
