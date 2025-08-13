@@ -41,9 +41,14 @@ def custom_network_factory(obs_shape, action_size, preprocess_observations_fn,
         preprocess_observations_fn=preprocess_observations_fn,
         **network_factory_kwargs,
         )
+    _pixel_obs_keys = [k for k in get_observation_size().keys() if k.startswith("pixels/")]
+    assert len(_pixel_obs_keys) > 0, f"If vision is enabled, at least one 'pixels/...' obs key is expected."
+    if len(_pixel_obs_keys) > 1:
+        raise NotImplementedError(f"Multiple visual perception keys are not allowed yet")
     return make_ppo_networks_with_vision(
         proprioception_size=get_observation_size()['proprioception'][0],
         action_size=action_size,
+        encoder_in_channels=get_observation_size()[_pixel_obs_keys[0]][-1],
         encoder_out_size=4,
         preprocess_observations_fn=preprocess_observations_fn,
         cheat_vision_aux_output=cheat_vision_aux_output,
@@ -345,6 +350,7 @@ class VisionEncoder(nnx.Module):
     def __init__(
         self,
         rngs: nnx.Rngs,
+        c_in: int = 1,
         c_hid: int = 32,
         vision_out_size: int = 14400,
         mlp_between_size: int = 256,
@@ -361,7 +367,7 @@ class VisionEncoder(nnx.Module):
         else:
             self.cheat_vision_aux_output = False
         self.conv1 = nnx.Conv(
-            1, c_hid, kernel_size=(3, 3), strides=2, rngs=rngs, use_bias=use_bias
+            c_in, c_hid, kernel_size=(3, 3), strides=2, rngs=rngs, use_bias=use_bias
         )
         self.conv2 = nnx.Conv(
             c_hid, c_hid, kernel_size=(3, 3), rngs=rngs, use_bias=use_bias
@@ -457,6 +463,7 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         self,
         proprioception_size: int,
         action_size: int,
+        encoder_in_channels: int,
         encoder_out_size: int,
         preprocess_observations_fn: Callable,
         rngs: nnx.Rngs,
@@ -488,6 +495,7 @@ class NetworkWithVision(PPONetworksUnifiedVision):
         proprioception_obs_key = "proprioception"
         vision_encoder = VisionEncoder(
             rngs=rngs, cheat_vision_aux_output=cheat_vision_aux_output,
+            c_in=encoder_in_channels,
             mlp_out_size=encoder_out_size,
             normalize_output=vision_encoder_normalize_output
         )
@@ -518,6 +526,7 @@ class NetworkWithVision(PPONetworksUnifiedVision):
 def make_ppo_networks_with_vision(
     proprioception_size: int,
     action_size: int,
+    encoder_in_channels: int,
     encoder_out_size: int,
     preprocess_observations_fn: Callable,
     policy_hidden_layer_sizes: Sequence[int] = (256, 256),  #[32, 32, 32, 32],
@@ -533,6 +542,7 @@ def make_ppo_networks_with_vision(
         NetworkWithVision,
         proprioception_size=proprioception_size,
         action_size=action_size,
+        encoder_in_channels=encoder_in_channels,
         encoder_out_size=encoder_out_size,
         preprocess_observations_fn=preprocess_observations_fn,
         policy_hidden_layer_sizes=policy_hidden_layer_sizes,
