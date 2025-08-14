@@ -29,7 +29,7 @@ from mujoco_playground import State
 
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
-from myosuite.envs.myo.myouser import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase
 
 
 def default_config() -> config_dict.ConfigDict:
@@ -133,7 +133,7 @@ def default_config() -> config_dict.ConfigDict:
     return env_config
 
 
-class MyoArmPointing(MyoUserBase):    
+class MyoUserPointing(MyoUserBase):    
     def _setup(self):
         """Task specific setup"""
         super()._setup()
