@@ -67,6 +67,8 @@ def default_config() -> config_dict.ConfigDict:
         ),
         
         task_config=config_dict.create(
+            distance_reach_metric_coefficient=10.,
+            screen_friction=0.1,
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
             omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
             weighted_reward_keys=config_dict.create(
@@ -77,7 +79,6 @@ def default_config() -> config_dict.ConfigDict:
                 phase_1_tunnel_penalty=-2,
                 #neural_effort=0,  #1e-4,
             ),
-            distance_reach_metric_coefficient=10.,
             max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
             reset_type="range_uniform",
@@ -118,7 +119,12 @@ def default_config() -> config_dict.ConfigDict:
     return env_config
 
 
-class MyoUserSteering(MyoUserBase):    
+class MyoUserSteering(MyoUserBase): 
+    def modify_mj_model(self, mj_model):
+        mj_model.geom('screen').friction = self._config.task_config.screen_friction
+        mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
+        return mj_model
+   
     def _setup(self):
         """Task specific setup"""
         super()._setup()
