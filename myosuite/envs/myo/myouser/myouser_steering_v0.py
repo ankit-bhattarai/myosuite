@@ -29,7 +29,7 @@ from mujoco_playground import State
 
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
-from myosuite.envs.myo.myouser import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase
 
 
 def default_config() -> config_dict.ConfigDict:
@@ -67,27 +67,17 @@ def default_config() -> config_dict.ConfigDict:
         ),
         
         task_config=config_dict.create(
-            reach_settings=config_dict.create(
-                ref_site="humphant",
-                # ref_site="R.Shoulder_marker",
-                target_origin_rel=[0., 0., 0.],
-                target_pos_range={
-                    "fingertip": [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]],
-                    # 'IFtip': [[-0.1, 0.225, -0.3], [0.1, 0.35, 0.3]],
-                },
-                target_radius_range={
-                    "fingertip": [0.05, 0.05],
-                    # 'IFtip': [0.05, 0.05],
-                },
-            ),
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
-            omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line'],
+            omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
             weighted_reward_keys=config_dict.create(
                 reach=1,
-                bonus_0=5,
-                bonus_1=12
+                bonus_0=0,
+                bonus_1=50,
+                phase_1_touch=1,
+                phase_1_tunnel_penalty=-2,
                 #neural_effort=0,  #1e-4,
             ),
+            distance_reach_metric_coefficient=10.,
             max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
             reset_type="range_uniform",
@@ -128,11 +118,10 @@ def default_config() -> config_dict.ConfigDict:
     return env_config
 
 
-class MyoArmSteering(MyoUserBase):    
+class MyoUserSteering(MyoUserBase):    
     def _setup(self):
         """Task specific setup"""
         super()._setup()
-        self.reach_settings = self._config.task_config.reach_settings
         self.max_duration = self._config.task_config.max_duration
 
         # Prepare observation components
@@ -158,16 +147,19 @@ class MyoArmSteering(MyoUserBase):
         self.end_line_id = self._mj_model.site("end_line").id
         self.fingertip_id = self._mj_model.site("fingertip").id
         self.screen_touch_id = self._mj_model.sensor("screen_touch").id
-        
-        # Dwelling based selection -- fingertip needs to be inside target for some time
-        self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
-        if self._config.vision_mode:
-            print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
-            self.dwell_threshold *= 2   
 
-        # Use early termination if target is not hit in time
-        self.max_steps_without_hit = self.max_duration/self.dt #corresponds to {max_duration} seconds; note that self.dt=self.mj_model.opt.timestep*self.n_substeps
-    
+        #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
+
+        self.distance_reach_metric_coefficient = self._config.task_config.distance_reach_metric_coefficient
+        
+        # Currently hardcoded
+        self.min_width = 0.3
+        self.min_height = 0.1
+        self.bottom = -0.3
+        self.top = 0.3
+        self.left = 0.3
+        self.right = -0.3
+        
     # def _prepare_after_init(self, data):
     #     super()._prepare_after_init(data)
         # # Define target origin, relative to which target positions will be generated
@@ -204,70 +196,70 @@ class MyoArmSteering(MyoUserBase):
         
         # Store current control input
         obs_dict['last_ctrl'] = data.ctrl.copy()
-        
-        # # Smoothed average of motor actuation (only for motor actuators)  #; normalise
-        # obs_dict['motor_act'] = info['motor_act']  #(self._motor_act.copy() - 0.5) * 2
-
 
         # End-effector and target position - read current position from data instead of cached info
         obs_dict['fingertip'] = data.site_xpos[self.fingertip_id]
         obs_dict['screen_pos'] = data.site_xpos[self.screen_id]
 
-        # Read positions directly from current data instead of stale info
-        obs_dict['start_line'] = data.site_xpos[self.start_line_id]
-        obs_dict['end_line'] = data.site_xpos[self.end_line_id]
-        obs_dict['top_line'] = data.site_xpos[self.top_line_id]
-        obs_dict['bottom_line'] = data.site_xpos[self.bottom_line_id]
-        obs_dict['touching_screen'] = 1.0 * (data.sensordata[self.screen_touch_id] > 0.0)
+        # # Read positions directly from current data instead of stale info
+        obs_dict['start_line'] = info['start_line']
+        obs_dict['end_line'] = info['end_line']
+        obs_dict['top_line'] = info['top_line']
+        obs_dict['bottom_line'] = info['bottom_line']
+        obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
 
+        completed_phase_0 = info['completed_phase_0']
+        completed_phase_1 = info['completed_phase_1']
+        ee_pos = obs_dict['fingertip']
         start_line = obs_dict['start_line']
-        fingertip = obs_dict['fingertip']
         end_line = obs_dict['end_line']
-        distance_to_start_line = jp.linalg.norm(fingertip - start_line, axis=-1)
-        distance_to_end_line = jp.linalg.norm(fingertip - end_line, axis=-1)
-        distance_between_lines = jp.linalg.norm(start_line - end_line, axis=-1)
-        obs_dict["distance_to_start_line"] = distance_to_start_line
-        obs_dict["distance_to_end_line"] = distance_to_end_line
-        obs_dict["distance_between_lines"] = distance_between_lines
-        obs_dict["phase_0_done"] = info["phase_0_done"] | (distance_to_start_line <= 0.01)
-        obs_dict["phase_1_done"] = info["phase_1_done"] | (obs_dict["phase_0_done"] & (distance_to_end_line <= 0.01))
-        obs_dict["dist_combined"] = (distance_to_start_line + distance_between_lines)*(~obs_dict["phase_0_done"]) + distance_to_end_line*(obs_dict["phase_0_done"])
-        obs_dict["phase_0_done_first"] = (~info["phase_0_done"]) & (distance_to_start_line <= 0.01)
-        obs_dict["phase_1_done_first"] = (~info["phase_1_done"]) & (obs_dict["phase_0_done"] & (distance_to_end_line <= 0.01))
+        bottom_line_z = obs_dict['bottom_line'][2]
+        top_line_z = obs_dict['top_line'][2]
+        dist_between_lines = jp.linalg.norm(end_line - start_line, axis=-1)
+        dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
+        dist_to_end_line = jp.linalg.norm(ee_pos - end_line, axis=-1)
 
-        # # End-effector and target position
-        # obs_dict['ee_pos'] = jp.vstack([data.site_xpos[self.tip_sids[isite]].copy() for isite in range(len(self.tip_sids))])
-        # #TODO: decide how to define ee_pos
-        # obs_dict['target_pos'] = info['target_pos']  #jp.vstack([data.site_xpos[self.target_sids[isite]].copy() for isite in range(len(self.tip_sids))])
-
-        # # Distance to target (used for rewards later)
-        # obs_dict['reach_dist'] = jp.linalg.norm(jp.array(obs_dict['target_pos']) - jp.array(obs_dict['ee_pos']), axis=-1)
-
-        # # Target radius
-        # obs_dict['target_radius'] = info['target_radius']   #jp.array([self.mj_model.site_size[self.target_sids[isite]][0] for isite in range(len(self.tip_sids))])
-        # # jax.debug.print(f"STEP-Obs: {obs_dict['target_radius']}")
-        # obs_dict['inside_target'] = jp.squeeze(obs_dict['reach_dist'] < obs_dict['target_radius'])
-        # # print(obs_dict['inside_target'], jp.ones(1))
-
-        # ## we require all end-effector--target pairs to have distance below the respective target radius
-        # # obs_dict['steps_inside_target'] = (info['steps_inside_target'] + jp.select(obs_dict['inside_target'], jp.ones(1))) * jp.select(obs_dict['inside_target'], jp.ones(1))
-        # # print(info['steps_inside_target'], jp.select(obs_dict['inside_target'], jp.ones(1)), (info['steps_inside_target'] + jp.select(obs_dict['inside_target'], jp.ones(1))), obs_dict['steps_inside_target'])
-        # _steps_inside_target = jp.select([obs_dict['inside_target']], [info['steps_inside_target'] + 1], 0)
-        # _target_timeout = info['steps_since_last_hit'] >= self.max_steps_without_hit
-        # # print("steps_inside_target", obs_dict['steps_inside_target'])
-        # obs_dict['target_success'] = _steps_inside_target >= self.dwell_threshold
-        # obs_dict['target_fail'] = ~obs_dict['target_success'] & _target_timeout
+        # Update phase immediately based on current position
+        touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
+        within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
+        within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.03)
+        phase_0_completed_now = touching_screen_phase_0 * within_z_limits * within_y_dist
+        completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed_now
         
-        # obs_dict['steps_inside_target'] = jp.select([obs_dict['target_success']], [0], _steps_inside_target)
-        # obs_dict['steps_since_last_hit'] = jp.select([obs_dict['target_success'] | obs_dict['target_fail']], [0], info['steps_since_last_hit'])
-        # obs_dict['trial_idx'] = info['trial_idx'] + jp.select([obs_dict['target_success'] | obs_dict['target_fail']], jp.ones(1))
-        # # print("trial_idx", obs_dict['trial_idx'])
-        # obs_dict['task_completed'] = obs_dict['trial_idx'] >= self.max_trials
+        crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1])
+        phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
+        touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
+        phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1 * within_z_limits
+        completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
 
-        # if self.vision:
-        #     obs_dict['pixels/view_0'] = info['pixels/view_0']
-        #     if self.vision_mode == 'rgb+depth':
-        #         obs_dict['pixels/depth'] = info['pixels/depth']
+        # Reset phase 0 when phase 1 is done (and episode ends)
+        ## TODO: delay this update to the step function, to ensure consistency between different observations (e.g. when defining the reward function)?
+        completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
+
+        obs_dict["con_0_touching_screen"] = touching_screen_phase_0
+        obs_dict["con_0_1_within_z_limits"] = within_z_limits
+        obs_dict["con_0_within_y_dist"] = within_y_dist
+        obs_dict["completed_phase_0"] = completed_phase_0
+        obs_dict['completed_phase_0_arr'] = jp.array([completed_phase_0])
+        obs_dict["con_1_crossed_line_y"] = crossed_line_y
+        obs_dict["con_1_touching_screen"] = touching_screen_phase_1
+        obs_dict["completed_phase_1"] = completed_phase_1
+
+        ## Compute distances
+        phase_0_distance = dist_to_start_line + dist_between_lines
+        phase_1_distance = dist_to_end_line
+        dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
+        
+        obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
+        obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
+        obs_dict["dist"] = dist
+        obs_dict["phase_1_x_dist"] = phase_1_x_dist
+
+        ## Additional observations
+        obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
+        obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
+        obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
+
         return obs_dict
     
     def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
@@ -307,9 +299,8 @@ class MyoArmSteering(MyoUserBase):
         info['last_ctrl'] = obs_dict['last_ctrl']
         # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
-        info['touching_screen'] = obs_dict['touching_screen']
-        info['phase_0_done'] = obs_dict['phase_0_done']
-        info['phase_1_done'] = obs_dict['phase_1_done']
+        info['completed_phase_0'] = obs_dict['completed_phase_0']
+        info['completed_phase_1'] = obs_dict['completed_phase_1']
 
         return info
     
@@ -317,27 +308,35 @@ class MyoArmSteering(MyoUserBase):
 
         ctrl_magnitude = jp.linalg.norm(obs_dict['last_ctrl'], axis=-1)
 
-        # act_mag = jp.linalg.norm(obs_dict['act'], axis=-1)/self._na if self._na != 0 else 0
-        # far_th = self.far_th*len(self.tip_sids) if jp.squeeze(obs_dict['time'])>2*self.dt else jp.inf
-        # near_th = len(self.tip_sids)*.0125
+        # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
+        # start line when in phase 0        
         rwd_dict = collections.OrderedDict((
             # Optional Keys
-            ('reach',   1.*(jp.exp(-obs_dict["dist_combined"]*10.) - 1.)/10.),  #-1.*reach_dist)
-            ('bonus_0',   1.*(obs_dict['phase_0_done_first'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
-            ('bonus_1',   1.*(obs_dict['phase_1_done_first'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
+            ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
+            ('bonus_0',   1.*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
+            ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
+            ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_1_touching_screen'])*(-obs_dict['phase_1_x_dist']))),
+            ('phase_1_tunnel_penalty',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
-            # ('act_reg', -1.*act_mag),
-            # # ('penalty', -1.*(np.any(reach_dist > far_th))),
             # # Must keys
-            # ('sparse',  -1.*(jp.linalg.norm(reach_dist, axis=-1) ** 2)),
-            # ('solved',  1.*(obs_dict['target_success'])),
-            ('done',    1.*(obs_dict['phase_1_done'])), #np.any(reach_dist > far_th))),
+            ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
         # print(rwd_dict.items())
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
 
         return rwd_dict
 
+    @staticmethod
+    def get_tunnel_limits(rng, low, high, min_size):
+        rng1, rng2 = jax.random.split(rng, 2)
+        small_low = low
+        small_high = high - min_size
+        small_line = jax.random.uniform(rng1) * (small_high - small_low) + small_low
+        large_low = small_line + min_size
+        large_high = high
+        large_line = jax.random.uniform(rng2) * (large_high - large_low) + large_low
+        return small_line, large_line
+    
     def get_relevant_positions(self, data: mjx.Data) -> dict[str, jax.Array]:
         return {
             'fingertip': data.site_xpos[self.fingertip_id],
@@ -347,6 +346,25 @@ class MyoArmSteering(MyoUserBase):
             'start_line': data.site_xpos[self.start_line_id],
             'end_line': data.site_xpos[self.end_line_id],
         }
+    
+    def get_custom_tunnel_centers(self, rng: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+        rng1, rng2 = jax.random.split(rng, 2)
+        bottom_line, top_line = self.get_tunnel_limits(rng1, self.bottom, self.top, self.min_height)
+        right_line, left_line = self.get_tunnel_limits(rng2, self.right, self.left, self.min_width)
+        return bottom_line, top_line, left_line, right_line
+
+    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data) -> dict[str, jax.Array]:
+        bottom_line, top_line, left_line, right_line = self.get_custom_tunnel_centers(rng)
+        width_midway = (left_line + right_line) / 2
+        height_midway = (top_line + bottom_line) / 2
+        relevant_positions = self.get_relevant_positions(data)
+        tunnel_positions = {}
+        tunnel_positions['bottom_line'] = relevant_positions['screen_pos'] + jp.array([0., width_midway, bottom_line])
+        tunnel_positions['top_line'] = relevant_positions['screen_pos'] + jp.array([0., width_midway, top_line])
+        tunnel_positions['start_line'] = relevant_positions['screen_pos'] + jp.array([0., left_line, height_midway])
+        tunnel_positions['end_line'] = relevant_positions['screen_pos'] + jp.array([0., right_line, height_midway])
+        tunnel_positions['screen_pos'] = relevant_positions['screen_pos']
+        return tunnel_positions
 
     def reset(self, rng, render_token=None, target_pos=None, target_radius=None):
         # jax.debug.print(f"RESET INIT")
@@ -355,26 +373,16 @@ class MyoArmSteering(MyoUserBase):
 
         # Reset biomechanical model
         data = self._reset_bm_model(rng)
-
-        # Reset counters
-        steps_since_last_hit, steps_inside_target, trial_idx = jp.zeros(3)
-        # self._target_success = jp.array(False)
         
         # Reset last control (used for observations only)
         last_ctrl = jp.zeros(self._nu)
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
-                # "motor_act": self._motor_act,
-                "phase_0_done": jp.bool_(False),
-                "phase_1_done": jp.bool_(False),
+                "completed_phase_0": jp.bool_(False),
+                "completed_phase_1": jp.bool_(False),
                 }
-        info.update(self.get_relevant_positions(data))
-        
-        # info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
-        # info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
-        # if self.vision or self.eval_mode:
-        #     self.update_target_visualsta(rget_pos=info['target_pos'], target_radius=info['target_radius'])
+        info.update(self.get_custom_tunnel(rng, data))
         
         # Generate inital observations
         # TODO: move the following lines into MyoUserBase.reset?
@@ -383,120 +391,39 @@ class MyoArmSteering(MyoUserBase):
             # data = self.add_target_pos_to_data(data, info["target_pos"])
             info.update(self.generate_pixels(data, render_token=render_token))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
-        # obs_dict = self.get_obs_dict(data, info)
-        # obs = self.obsdict2obsvec(obs_dict)
-
-        # self.generate_target(rng, obs_dict)
 
         reward, done = jp.zeros(2)
         metrics = {
-            'phase_0_done': 0.0,  #jp.bool_(False),
-            'phase_1_done': 0.0,  #jp.bool_(False),
-            'distance_to_start_line': 0.0,
+            'completed_phase_0': jp.bool_(False),
+            'completed_phase_1': jp.bool_(False),
+            'dist': 0.0,
             'distance_phase_0': 0.0,
             'distance_phase_1': 0.0,
-            'dist_combined': 0.0,
-        } #'bonus': zero}
+            'phase_1_x_dist': 0.0,
+            'touching_screen': jp.bool_(False),
+            'con_1_touching_screen': jp.bool_(False),
+        }
         
         return State(data, obs, reward, done, metrics, info)
     
     def auto_reset(self, rng, info_before_reset, **kwargs):
         render_token = info_before_reset["render_token"] if self.vision else None
         return self.reset(rng, render_token=render_token, **kwargs)
-        
-        # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
-
-        rng, rng_reset = jax.random.split(rng, 2)
-
-        # Reset counters
-        steps_since_last_hit, steps_inside_target, trial_idx = jp.zeros(3)
-        # trial_success_log_pointer_index = jp.zeros(1, dtype=jp.int32)
-        # trial_success_log = -1*jp.ones(self.success_log_buffer_length, dtype=jp.int32)
-        # self._target_success = jp.array(False)
-        
-        # Reset last control (used for observations only)
-        last_ctrl = jp.zeros(self._nu)  #inserting last_ctrl into pipeline_init is not required, assuming that auto_reset is never called during instatiation of an environment (reset should be used instead)
-
-        # self.robot.sync_sims(self.sim, self.sim_obsd)
-
-        if self.reset_type == "zero":
-            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng_reset)
-        elif self.reset_type == "epsilon_uniform":
-            reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng_reset)
-        elif self.reset_type == "range_uniform":
-            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng_reset)
-            data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act)
-            reset_qpos, reset_qvel, reset_act = self._reset_range_uniform(rng_reset, data)
-        else:
-            reset_qpos, reset_qvel, reset_act = None, None, None
-
-        data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act)
-
-        self._reset_bm_model(rng_reset)
-
-        info = {'rng': rng_reset,
-                'last_ctrl': last_ctrl,
-                'steps_inside_target': steps_inside_target,
-                'reach_dist': jp.array(0.),
-                'target_success': jp.array(False),
-                'steps_since_last_hit': steps_since_last_hit,
-                'target_fail': jp.array(False),
-                'trial_idx': trial_idx,
-                'task_completed': jp.array(False),
-                }
-        info['target_pos'] = self.generate_target_pos(rng_reset, target_pos=kwargs.get("target_pos", None))
-        info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
-        # if self.vision or self.eval_mode:
-        #     self.update_target_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
-
-        if self.vision:
-            info['render_token'] = info_before_reset['render_token']
-            pixels_dict = self.generate_pixels(data, render_token=info['render_token'])
-            info.update(pixels_dict)
-        obs, info = self.get_obs_vec(data, info)  #update info from observation made
-        # obs_dict = self.get_obs_dict(data, info)
-        # obs = self.obsdict2obsvec(obs_dict)
-
-        # jax.debug.print(f"obs: {obs}; info-target_radius: {info['target_radius']}")
-
-        # self.generate_target(rng1, obs_dict)
-
-        reward, done = jp.zeros(2)
-        metrics = {'success_rate': 0., #obs_dict['success_rate'],
-                    'reach_dist': 0.,
-                   }  #'bonus': zero}
-        
-        return State(data, obs, reward, done, metrics, info)
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
-        # jax.debug.print('Step start - completed_phase_0: {}', state.info['phase_0_done'])
-        # rng = jax.random.PRNGKey(seed=self.seed)  #TODO: fix/move this line, as it does not lead to random perturbations! (generate all random variables in reset function?)
+        # jax.debug.print('Step start - completed_phase_0: {}', state.info['completed_phase_0'])
         rng = state.info['rng']
-
-        # # increase step counter
-        # state.info['steps_since_last_hit'] = state.info['steps_since_last_hit'] + 1
-
-        # # Generate new target
-        # ## TODO: can we move the following lines after self.get_ctrl and mjx_env.step are called?
-        # rng, rng1, rng2 = jax.random.split(rng, 3)
-        # state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
-        # state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
-        # # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
-        # # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
-
-        data0 = state.data
         rng, rng_ctrl = jax.random.split(rng, 2)
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
         
         # step forward
         ## TODO: can we move parts of this code into MyoUserBase.step (as a super method)?
-        data = mjx_env.step(self.mjx_model, data0, new_ctrl, n_substeps=self.n_substeps)
+        data = mjx_env.step(self.mjx_model, state.data, new_ctrl, n_substeps=self.n_substeps)
         # if self.vision or self.eval_mode:
         #     self.update_target_visuals(target_pos=state.info['target_pos'], target_radius=state.info['target_radius'])
 
         # # collect observations and reward
-        # # obs = self.get_obs_vec(data, state.info)
         if self.vision:
             # TODO: do we need to update target information for rendering?
             # data = self.add_target_pos_to_data(data, state.info["target_pos"])
@@ -505,20 +432,22 @@ class MyoArmSteering(MyoUserBase):
         obs_dict = self.get_obs_dict(data, state.info)
         obs_dict = self.update_obs_with_pixels(obs_dict, state.info)
         obs = self.obsdict2obsvec(obs_dict)
+        
         rwd_dict = self.get_reward_dict(obs_dict)
-        # rwd, done, update_info, metrics = self.get_rewards_and_done(obs_dict, state.info)
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
         
         done = rwd_dict['done']
         state.metrics.update(
-            phase_0_done = obs_dict["phase_0_done"].astype(jp.float32),
-            phase_1_done = obs_dict["phase_1_done"].astype(jp.float32),
-            distance_to_start_line = obs_dict["distance_to_start_line"],
-            distance_phase_0 = (~obs_dict["phase_0_done"])*(obs_dict["distance_to_start_line"] + obs_dict["distance_between_lines"]),
-            distance_phase_1 = (obs_dict["phase_0_done"])*obs_dict["distance_to_end_line"],
-            dist_combined = obs_dict["dist_combined"],
+            completed_phase_0 = obs_dict["completed_phase_0"].astype(jp.bool_),
+            completed_phase_1 = obs_dict["completed_phase_1"].astype(jp.bool_),
+            dist = obs_dict["dist"],
+            distance_phase_0 = obs_dict["distance_phase_0"],
+            distance_phase_1 = obs_dict["distance_phase_1"],
+            phase_1_x_dist = obs_dict["phase_1_x_dist"],
+            touching_screen = obs_dict["touching_screen"].astype(jp.bool_),
+            con_1_touching_screen = obs_dict["con_1_touching_screen"].astype(jp.bool_),
         )
 
         # return self.forward(**kwargs)

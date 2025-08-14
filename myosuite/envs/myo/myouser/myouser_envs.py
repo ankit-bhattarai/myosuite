@@ -5,7 +5,7 @@ def get_observation_size(env_name, vision=False):
       if env_name == "MyoUserPointing":
         return {'proprioception': 48}  #112}  #151}  #48}
       elif env_name == "MyoUserSteering":
-        return {'proprioception': 59}
+        return {'proprioception': 63}
       else:
         raise NotImplementedError(f"No proprioception size available for env {env_name}")
     if vision == 'rgb':
