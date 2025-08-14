@@ -26,14 +26,12 @@ from jax import numpy as jp
 import mujoco
 from mujoco import mjx
 from brax.envs.base import Env, PipelineEnv, State, Wrapper
-from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper, AutoResetWrapper
+from brax.envs.wrappers.training import VmapWrapper, DomainRandomizationVmapWrapper, EpisodeWrapper
 from brax.base import System
 from brax import base
 
-from myosuite.envs.myo.myouser.utils import AdaptiveTargetWrapper
-
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.wrapper import Wrapper, BraxDomainRandomizationVmapWrapper, BraxAutoResetWrapper
+from mujoco_playground._src.wrapper import Wrapper, BraxDomainRandomizationVmapWrapper
 
 # class BraxDomainRandomizationVmapWrapper(Wrapper):
 #   """Brax wrapper for domain randomization."""
@@ -230,18 +228,26 @@ def wrap_curriculum_training(
     else:
       env = BraxDomainRandomizationVmapWrapper(env, randomization_fn)
     env = EpisodeWrapper(env, episode_length, action_repeat)
-    if adaptive_target_wrapper:
-      env = AdaptiveTargetWrapper(env)
-    # # else:
-    # #   env = BraxAutoResetWrapper(env)
-    #TODO: why does this not work without AdaptiveTargetWrapper? make sure that info is reset correctly!
+    env = AutoResetWrapper(env)
 
     return env
 
+
 class AutoResetWrapper(Wrapper):
-    def step(self, state: State, action: jax.Array) -> State:
+    """Automatically "resets" Brax envs that are done, without clearing info state."""
+
+    ## AutoReset Wrapper required to implement adaptive target curriculum; checks if episode is completed and calls reset inside this function;
+    ## WARNING: Due to the following lines, applying the default Brax AutoResetWrapper has no effect to this env!
+
+    def step(self, state: mjx_env.State, action: jax.Array):
+        if "steps" in state.info:
+            steps = state.info["steps"]
+            steps = jp.where(state.done, jp.zeros_like(steps), steps)
+            state.info.update(steps=steps)
         state = state.replace(done=jp.zeros_like(state.done))
         state = self.env.step(state, action)
+
+        # ####################################################################################
         rng = state.info["rng"]
 
         def where_done(x, y):
@@ -250,14 +256,25 @@ class AutoResetWrapper(Wrapper):
                 done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
             return jp.where(done, x, y)
 
-        state_after_reset = jax.vmap(self.env.reset)(rng)
+        state_after_reset = jax.vmap(self.env.auto_reset)(rng, state.info)
+        # state_after_reset = self.env.reset(rng)  #, state.info)
 
-        data = jax.tree.map(where_done, state_after_reset.data, state.data)
-        obs = jax.tree.map(where_done, state_after_reset.obs, state.obs)
+        for k in state.info:
+            state_after_reset.info[k] = state_after_reset.info.get(k, state.info[k])
+
+        data = jax.tree.map(
+            where_done, state_after_reset.data, state.data  # state.pipeline_state
+        )
+        # obs_dict = jax.tree.map(where_done, obs_dict_after_reset, obs_dict)
+        obs = jax.tree.map(where_done, state_after_reset.obs, state.obs)  # state.obs)
         info = jax.tree.map(where_done, state_after_reset.info, state.info)
 
-        return state.replace(
+        return mjx_env.State(
             data=data,
             obs=obs,
+            reward=state.reward,
+            done=state.done,
+            metrics=state.metrics,
             info=info,
         )
+

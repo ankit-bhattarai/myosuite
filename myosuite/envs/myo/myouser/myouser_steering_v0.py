@@ -400,7 +400,7 @@ class MyoArmSteering(MyoUserBase):
         
         return State(data, obs, reward, done, metrics, info)
     
-    def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
+    def auto_reset(self, rng, info_before_reset, **kwargs):
         render_token = info_before_reset["render_token"] if self.vision else None
         return self.reset(rng, render_token=render_token, **kwargs)
         
@@ -415,7 +415,7 @@ class MyoArmSteering(MyoUserBase):
         # self._target_success = jp.array(False)
         
         # Reset last control (used for observations only)
-        last_ctrl = jp.zeros(self._nu)  #inserting last_ctrl into pipeline_init is not required, assuming that reset_with_curriculum is never called during instatiation of an environment (reset should be used instead)
+        last_ctrl = jp.zeros(self._nu)  #inserting last_ctrl into pipeline_init is not required, assuming that auto_reset is never called during instatiation of an environment (reset should be used instead)
 
         # self.robot.sync_sims(self.sim, self.sim_obsd)
 
@@ -585,10 +585,10 @@ class MyoArmSteering(MyoUserBase):
             d.qpos, d.qvel = state.data.qpos, state.data.qvel
             d.mocap_pos, d.mocap_quat = state.data.mocap_pos, state.data.mocap_quat
             d.xfrc_applied = state.data.xfrc_applied
-            self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
-            # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
-            # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
-            # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
+            # self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
+            # # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
+            # # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
+            # # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
             mujoco.mj_forward(mj_model, d)
             renderer.update_scene(d, camera=camera, scene_option=scene_option)
             if modify_scn_fn is not None:

@@ -434,7 +434,7 @@ class MyoArmPointing(MyoUserBase):
         
         return State(data, obs, reward, done, metrics, info)
     
-    def reset_with_curriculum(self, rng, info_before_reset, **kwargs):
+    def auto_reset(self, rng, info_before_reset, **kwargs):
         render_token = info_before_reset["render_token"] if self.vision else None
         return self.reset(rng, render_token=render_token, **kwargs)
     
@@ -449,7 +449,7 @@ class MyoArmPointing(MyoUserBase):
         # self._target_success = jp.array(False)
         
         # Reset last control (used for observations only)
-        last_ctrl = jp.zeros(self._nu)  #inserting last_ctrl into pipeline_init is not required, assuming that reset_with_curriculum is never called during instatiation of an environment (reset should be used instead)
+        last_ctrl = jp.zeros(self._nu)  #inserting last_ctrl into pipeline_init is not required, assuming that auto_reset is never called during instatiation of an environment (reset should be used instead)
 
         # self.robot.sync_sims(self.sim, self.sim_obsd)
 

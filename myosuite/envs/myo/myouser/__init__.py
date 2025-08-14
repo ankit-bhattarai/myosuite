@@ -3,6 +3,24 @@
 Authors  :: Vikash Kumar (vikashplus@gmail.com), Vittorio Caggiano (caggiano@gmail.com)
 ================================================= """
 
+
+from mujoco_playground import registry
+
+## Register MyoUser environments and their variants
+from myosuite.envs.myo.myouser.myouser_pointing_v0 import MyoUserPointing
+from myosuite.envs.myo.myouser.myouser_pointing_v0 import default_config as MyoUserPointing_config
+from myosuite.envs.myo.myouser.myouser_steering_v0 import MyoUserSteering
+from myosuite.envs.myo.myouser.myouser_steering_v0 import default_config as MyoUserSteering_config
+
+# registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
+registry.manipulation.register_environment("MyoUserPointing", MyoUserPointing, MyoUserPointing_config)
+registry.manipulation.register_environment("MyoUserSteering", MyoUserSteering, MyoUserSteering_config)
+
+
+
+## TODO: register variants
+## WARNING: deprecated code, relies on outdated myosuite register_env_variant rather than mujoco_playground
+
 from myosuite.utils import gym; register=gym.register
 from myosuite.envs.env_variants import register_env_variant
 
