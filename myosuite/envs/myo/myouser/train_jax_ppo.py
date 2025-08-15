@@ -26,6 +26,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from myosuite.train.utils.train import train_or_load_checkpoint
+from myosuite.envs.myo.myouser.utils import render_traj
 from etils import epath
 import jax
 import jax.numpy as jp
@@ -447,7 +448,7 @@ def main(argv):
   env, make_inference_fn, params = train_or_load_checkpoint(_ENV_NAME.value, env_cfg,
                     ppo_params=ppo_params,
                     logdir=logdir,
-                    checkpoint_path= _LOAD_CHECKPOINT_PATH.value,
+                    checkpoint_path=_LOAD_CHECKPOINT_PATH.value,
                     progress_fn=progress_fn,
                     vision=_VISION.value,
                     domain_randomization=_DOMAIN_RANDOMIZATION.value,
@@ -530,11 +531,25 @@ def main(argv):
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = False
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = False
 
-  frames = eval_env.render(
-      traj, height=480, width=640, #scene_option=scene_option
+  # render front view
+  frames = render_traj(
+      traj, eval_env, height=480, width=640, camera="fixed-eye", 
+      #scene_option=scene_option
   )
   media.write_video(logdir / "rollout.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout.mp4'.")
+  if _USE_WANDB.value and not _PLAY_ONLY.value:
+    wandb.log({'video': wandb.Video(str(logdir / "rollout.mp4"), fps=fps, format="mp4")})
+
+  # render side view
+  frames = render_traj(
+      traj, eval_env, height=480, width=640, camera=None,
+      #scene_option=scene_option
+  )
+  media.write_video(logdir / "rollout_1.mp4", frames, fps=fps)
+  print("Rollout video saved as 'rollout_1.mp4'.")
+  if _USE_WANDB.value and not _PLAY_ONLY.value:
+    wandb.log({'video': wandb.Video(str(logdir / "rollout_1.mp4"), fps=fps, format="mp4")})
 
 if __name__ == "__main__":
   jax.config.parse_flags_with_absl()  #allow for debugging flags such as --jax_debug_nans=True or --jax_disable_jit=True

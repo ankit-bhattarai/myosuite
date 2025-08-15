@@ -289,7 +289,7 @@ def train(
     num_evals: the number of evals to run during the entire training run.
       Increasing the number of evals increases total training time
     eval_env: an optional environment for eval only, defaults to `environment`
-    num_eval_envs: the number of envs to use for evluation. Each env will run 1
+    num_eval_envs: the number of envs to use for evaluation. Each env will run 1
       episode, and all envs run in parallel during eval.
     deterministic_eval: whether to run the eval with a deterministic policy
     log_training_metrics: whether to log training metrics and callback to

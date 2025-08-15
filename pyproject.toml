@@ -37,7 +37,7 @@ dependencies = [
     "pink-noise-rl",
     "packaging",
     "gitpython",
-    "wandb",
+    "wandb[media]",
     "hydra-core",
 ]
 [project.optional-dependencies]

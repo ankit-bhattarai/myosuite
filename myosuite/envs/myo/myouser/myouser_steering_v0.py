@@ -14,6 +14,7 @@
 # ==============================================================================
 """Base class for MyoUser Arm Steering model."""
 import collections
+import numpy as np
 
 import jax
 import jax.numpy as jp
@@ -63,13 +64,14 @@ def default_config() -> config_dict.ConfigDict:
         
         task_config=config_dict.create(
             distance_reach_metric_coefficient=10.,
+            screen_distance_x=0.5,  #0.59
             screen_friction=0.1,
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
             omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
             weighted_reward_keys=config_dict.create(
                 reach=1,
                 # bonus_0=0,
-                bonus_1=50,
+                bonus_1=10,
                 phase_1_touch=1,
                 phase_1_tunnel=3,  #-2,
                 #neural_effort=0,  #1e-4,
@@ -121,6 +123,7 @@ def default_config() -> config_dict.ConfigDict:
 
 class MyoUserSteering(MyoUserBase): 
     def modify_mj_model(self, mj_model):
+        mj_model.body('screen').pos[:] = np.array([self._config.task_config.screen_distance_x, mj_model.body('screen').pos[1], mj_model.body('screen').pos[2]])
         mj_model.geom('screen').friction = self._config.task_config.screen_friction
         mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
         return mj_model
@@ -157,7 +160,7 @@ class MyoUserSteering(MyoUserBase):
         #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
 
         self.distance_reach_metric_coefficient = self._config.task_config.distance_reach_metric_coefficient
-        
+
         # Currently hardcoded
         self.min_width = 0.3
         self.min_height = 0.1
@@ -239,7 +242,6 @@ class MyoUserSteering(MyoUserBase):
         phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1 * within_z_limits
         completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
 
-        # softcons_limit = 3
         relative_position = jp.linalg.norm(ee_pos[2] - bottom_line_z)
         softcons_for_bounds = jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1) ** 15
         
@@ -395,8 +397,8 @@ class MyoUserSteering(MyoUserBase):
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
-                "completed_phase_0": jp.bool_(False),
-                "completed_phase_1": jp.bool_(False),
+                "completed_phase_0": 0.0,
+                "completed_phase_1": 0.0,
                 }
         info.update(self.get_custom_tunnel(rng, data))
         
@@ -410,15 +412,15 @@ class MyoUserSteering(MyoUserBase):
 
         reward, done = jp.zeros(2)
         metrics = {
-            'completed_phase_0': jp.bool_(False),
-            'completed_phase_1': jp.bool_(False),
+            'completed_phase_0': 0.0,
+            'completed_phase_1': 0.0,
             'dist': 0.0,
             'distance_phase_0': 0.0,
             'distance_phase_1': 0.0,
             'phase_1_x_dist': 0.0,
-            'con_0_touching_screen': jp.bool_(False),
-            'con_1_touching_screen': jp.bool_(False),
-            'con_1_crossed_line_y': jp.bool_(False),
+            'con_0_touching_screen': 0.0,
+            'con_1_touching_screen': 0.0,
+            'con_1_crossed_line_y': 0.0,
             'softcons_for_bounds': 0.0,
         }
         
@@ -458,15 +460,15 @@ class MyoUserSteering(MyoUserBase):
         
         done = rwd_dict['done']
         state.metrics.update(
-            completed_phase_0 = obs_dict["completed_phase_0"].astype(jp.bool_),
-            completed_phase_1 = obs_dict["completed_phase_1"].astype(jp.bool_),
+            completed_phase_0 = obs_dict["completed_phase_0"],
+            completed_phase_1 = obs_dict["completed_phase_1"],
             dist = obs_dict["dist"],
             distance_phase_0 = obs_dict["distance_phase_0"],
             distance_phase_1 = obs_dict["distance_phase_1"],
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
-            con_0_touching_screen = obs_dict["con_0_touching_screen"].astype(jp.bool_),
-            con_1_touching_screen = obs_dict["con_1_touching_screen"].astype(jp.bool_),
-            con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"].astype(jp.bool_),
+            con_0_touching_screen = obs_dict["con_0_touching_screen"],
+            con_1_touching_screen = obs_dict["con_1_touching_screen"],
+            con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
         )
 
@@ -485,7 +487,7 @@ class MyoUserSteering(MyoUserBase):
     #     return data
 
     def update_task_visuals(self, mj_model, state):
-        screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])
+        screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])  #need to re-introduce site pos offset from xml file that was ignored in get_custom_tunnel() to ensure that task visuals properly appear in front of the screen 
         top_line = state.info["top_line"]
         bottom_line = state.info["bottom_line"]
         start_line = state.info["start_line"]

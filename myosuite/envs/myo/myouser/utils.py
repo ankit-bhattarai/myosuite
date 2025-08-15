@@ -1,5 +1,8 @@
 import os
+from typing import Callable, List, Optional, Sequence
 import mujoco
+from mujoco_playground import State
+from mujoco_playground._src import mjx_env
 import numpy as np
 
 import jax
@@ -14,7 +17,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
                     seed=123, n_episodes=1):
     """
     Generate an evaluation trajectory from a stored checkpoint policy.
-    
+
     You can either call this method by directly passing the checkpoint, env, jitted policy, etc. (useful if checkpoint was already loaded in advance, e.g., in a Jupyter notebook file), 
     or let this method load the env and policy from scratch by passing only checkpoint_path and env_name (takes ~1min).
     """
@@ -62,14 +65,24 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
 
     return rollout
 
-def render_traj(rollout, eval_env, render_every=1, 
-                notebook_context=True):
+def render_traj(rollout: List[State],
+                eval_env: mjx_env.MjxEnv, 
+                height: int = 240,
+                width: int = 320,
+                render_every: int = 1, 
+                camera: Optional[int | str] = "fixed-eye",
+                scene_option: Optional[mujoco.MjvOption] = None,
+                modify_scene_fns: Optional[
+                    Sequence[Callable[[mujoco.MjvScene], None]]
+                ] = None,
+                notebook_context: bool = True):
     ## if called outside a jupyter notebook file, use notebook_context=False
 
-    render_every = 1
     traj = rollout[::render_every]
-    # mod_fns = modify_scene_fns[::render_every]
-    frames = eval_env.render(traj, camera="fixed-eye") #, modify_scene_fns=mod_fns)
+    if modify_scene_fns is not None:
+        modify_scene_fns = modify_scene_fns[::render_every]
+    frames = eval_env.render(traj, height=height, width=width, camera=camera,
+                            scene_option=scene_option, modify_scene_fns=modify_scene_fns)
     # rewards = [s.reward for s in rollout]
     
     if notebook_context:

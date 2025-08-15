@@ -205,7 +205,6 @@ def wrap_curriculum_training(
     randomization_fn: Optional[
         Callable[[mjx.Model], Tuple[mjx.Model, mjx.Model]]
     ] = None,
-    adaptive_target_wrapper=True
 ) -> Wrapper:
     """Common wrapper pattern for all training agents.
 
