@@ -72,19 +72,19 @@ def default_config() -> config_dict.ConfigDict:
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
             omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
             weighted_reward_keys=config_dict.create(
-                # reach=1,
-                # bonus_0=0,
-                # bonus_1=50,
-                # phase_1_touch=1,
-                # phase_1_tunnel_penalty=-2,
-                # #neural_effort=0,  #1e-4,
-                
-                ## old reward fct. (florian's branch):
                 reach=1,
-                bonus_0_old=5,
-                bonus_1_old=12,
+                # bonus_0=0,
+                bonus_1=10,
+                phase_1_touch=1,
+                phase_1_tunnel=3,  #-2,
+                #neural_effort=0,  #1e-4,
+                
+                # ## old reward fct. (florian's branch):
+                # reach=1,
+                # bonus_0_old=5,
+                # bonus_1_old=12,
             ),
-            max_duration=4., # timelimit per trial, in seconds
+            max_duration=20., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
             reset_type="range_uniform",
         ),
@@ -157,7 +157,7 @@ class MyoUserSteering(MyoUserBase):
         self.start_line_id = self._mj_model.site("start_line").id
         self.end_line_id = self._mj_model.site("end_line").id
         self.fingertip_id = self._mj_model.site("fingertip").id
-        self.screen_touch_id = self._mj_model.sensor("screen_touch").id
+        # self.screen_touch_id = self._mj_model.sensor("screen_touch").id
 
         #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
 
@@ -217,7 +217,7 @@ class MyoUserSteering(MyoUserBase):
         obs_dict['end_line'] = info['end_line']
         obs_dict['top_line'] = info['top_line']
         obs_dict['bottom_line'] = info['bottom_line']
-        obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
+        # obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
 
         completed_phase_0 = info['completed_phase_0']
         completed_phase_1 = info['completed_phase_1']
@@ -226,14 +226,15 @@ class MyoUserSteering(MyoUserBase):
         end_line = obs_dict['end_line']
         bottom_line_z = obs_dict['bottom_line'][2]
         top_line_z = obs_dict['top_line'][2]
-        dist_between_lines = jp.linalg.norm(end_line - start_line, axis=-1)
+        path_length = jp.linalg.norm(end_line[1] - start_line[1])
+        path_width = jp.linalg.norm(top_line_z - bottom_line_z)
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
-        dist_to_end_line = jp.linalg.norm(ee_pos - end_line, axis=-1)
+        dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
         # Update phase immediately based on current position
         touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
         within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
-        within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.03)
+        within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.01)
         phase_0_completed_now = touching_screen_phase_0 * within_z_limits * within_y_dist
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed_now
         
@@ -243,6 +244,10 @@ class MyoUserSteering(MyoUserBase):
         phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1 * within_z_limits
         completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
 
+        # softcons_limit = 3
+        relative_position = jp.linalg.norm(ee_pos[2] - bottom_line_z)
+        softcons_for_bounds = jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1) ** 15
+        
         # Reset phase 0 when phase 1 is done (and episode ends)
         ## TODO: delay this update to the step function, to ensure consistency between different observations (e.g. when defining the reward function)?
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
@@ -255,9 +260,10 @@ class MyoUserSteering(MyoUserBase):
         obs_dict["con_1_crossed_line_y"] = crossed_line_y
         obs_dict["con_1_touching_screen"] = touching_screen_phase_1
         obs_dict["completed_phase_1"] = completed_phase_1
+        obs_dict["softcons_for_bounds"] = softcons_for_bounds
 
         ## Compute distances
-        phase_0_distance = dist_to_start_line + dist_between_lines
+        phase_0_distance = dist_to_start_line + path_length
         phase_1_distance = dist_to_end_line
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         
@@ -323,13 +329,15 @@ class MyoUserSteering(MyoUserBase):
         # start line when in phase 0        
         rwd_dict = collections.OrderedDict((
             # Optional Keys
-            ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
+            # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
+            ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]),  #-1.*reach_dist)
              ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
              ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
-            ('bonus_0',   1.*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
-            ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
-            ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_1_touching_screen'])*(-obs_dict['phase_1_x_dist']))),
-            ('phase_1_tunnel_penalty',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
+            ('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
+            ('bonus_1',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
+            ('phase_1_touch',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
+            # ('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
+            ('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
@@ -413,8 +421,9 @@ class MyoUserSteering(MyoUserBase):
             'distance_phase_0': 0.0,
             'distance_phase_1': 0.0,
             'phase_1_x_dist': 0.0,
-            'touching_screen': jp.bool_(False),
+            'con_0_touching_screen': jp.bool_(False),
             'con_1_touching_screen': jp.bool_(False),
+            'softcons_for_bounds': 0.0,
         }
         
         return State(data, obs, reward, done, metrics, info)
@@ -459,8 +468,9 @@ class MyoUserSteering(MyoUserBase):
             distance_phase_0 = obs_dict["distance_phase_0"],
             distance_phase_1 = obs_dict["distance_phase_1"],
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
-            touching_screen = obs_dict["touching_screen"].astype(jp.bool_),
+            con_0_touching_screen = obs_dict["con_0_touching_screen"].astype(jp.bool_),
             con_1_touching_screen = obs_dict["con_1_touching_screen"].astype(jp.bool_),
+            softcons_for_bounds = obs_dict["softcons_for_bounds"],
         )
 
         # return self.forward(**kwargs)
