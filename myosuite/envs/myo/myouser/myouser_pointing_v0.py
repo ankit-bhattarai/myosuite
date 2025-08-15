@@ -13,13 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 """Base class for MyoUser Arm Pointing model."""
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Sequence, Optional, Union
 import collections
 import tqdm
 
-from etils import epath
-import numpy as np
 import jax
 import jax.numpy as jp
 from ml_collections import config_dict
@@ -183,7 +179,7 @@ class MyoUserPointing(MyoUserBase):
         # Define target origin, relative to which target positions will be generated
         self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
     
-    # def update_target_visuals(self, target_pos, target_radius):
+    # def update_task_visuals(self, target_pos, target_radius):
     #     self.mj_model.body_pos[self.target_body_id, :] = target_pos
     #     self.mj_model.geom_size[self.target_geom_id, 0] = target_radius
 
@@ -409,7 +405,7 @@ class MyoUserPointing(MyoUserBase):
         info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
         info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
         # if self.vision or self.eval_mode:
-        #     self.update_target_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
+        #     self.update_task_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
         
         # Generate inital observations
         # TODO: move the following lines into MyoUserBase.reset?
@@ -481,7 +477,7 @@ class MyoUserPointing(MyoUserBase):
         info['target_pos'] = self.generate_target_pos(rng_reset, target_pos=kwargs.get("target_pos", None))
         info['target_radius'] = self.generate_target_size(rng_reset, target_radius=kwargs.get("target_radius", None))
         # if self.vision or self.eval_mode:
-        #     self.update_target_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
+        #     self.update_task_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
 
         if self.vision:
             info['render_token'] = info_before_reset['render_token']
@@ -526,7 +522,7 @@ class MyoUserPointing(MyoUserBase):
         ## TODO: can we move parts of this code into MyoUserBase.step (as a super method)?
         data = mjx_env.step(self.mjx_model, data0, new_ctrl, n_substeps=self.n_substeps)
         # if self.vision or self.eval_mode:
-        #     self.update_target_visuals(target_pos=state.info['target_pos'], target_radius=state.info['target_radius'])
+        #     self.update_task_visuals(target_pos=state.info['target_pos'], target_radius=state.info['target_radius'])
 
         # collect observations and reward
         # obs = self.get_obs_vec(data, state.info)
@@ -569,77 +565,10 @@ class MyoUserPointing(MyoUserBase):
         geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
         data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
         return data
-
-    def render(
-        self,
-        trajectory: List[State],
-        height: int = 240,
-        width: int = 320,
-        camera: Optional[str] = None,
-        scene_option: Optional[mujoco.MjvOption] = None,
-        modify_scene_fns: Optional[
-            Sequence[Callable[[mujoco.MjvScene], None]]
-        ] = None,
-    ) -> Sequence[np.ndarray]:
-        return self.render_array(
-            self.mj_model,
-            trajectory,
-            height,
-            width,
-            camera,
-            scene_option=scene_option,
-            modify_scene_fns=modify_scene_fns,
-        )
     
-    def update_target_visuals(self, mj_model, target_pos, target_radius):
+    def update_task_visuals(self, mj_model, state):
+        target_pos=state.info["target_pos"]
+        target_radius=state.info["target_radius"]
+
         mj_model.body_pos[self.target_body_id, :] = target_pos
         mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
-
-    def render_array(self,
-        mj_model: mujoco.MjModel,
-        trajectory: Union[List[State], State],
-        height: int = 480,
-        width: int = 640,
-        camera: Optional[str] = None,
-        scene_option: Optional[mujoco.MjvOption] = None,
-        modify_scene_fns: Optional[
-            Sequence[Callable[[mujoco.MjvScene], None]]
-        ] = None,
-        hfield_data: Optional[jax.Array] = None,
-    ):
-        """Renders a trajectory as an array of images."""
-        renderer = mujoco.Renderer(mj_model, height=height, width=width)
-        camera = camera if camera is not None else -1
-
-        if hfield_data is not None:
-            mj_model.hfield_data = hfield_data.reshape(mj_model.hfield_data.shape)
-            mujoco.mjr_uploadHField(mj_model, renderer._mjr_context, 0)
-
-        def get_image(state, modify_scn_fn=None) -> np.ndarray:
-            d = mujoco.MjData(mj_model)
-            d.qpos, d.qvel = state.data.qpos, state.data.qvel
-            d.mocap_pos, d.mocap_quat = state.data.mocap_pos, state.data.mocap_quat
-            d.xfrc_applied = state.data.xfrc_applied
-            self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
-            # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
-            # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
-            # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
-            mujoco.mj_forward(mj_model, d)
-            renderer.update_scene(d, camera=camera, scene_option=scene_option)
-            if modify_scn_fn is not None:
-                modify_scn_fn(renderer.scene)
-            return renderer.render()
-
-        if isinstance(trajectory, list):
-            out = []
-            for i, state in enumerate(tqdm.tqdm(trajectory)):
-                if modify_scene_fns is not None:
-                    modify_scene_fn = modify_scene_fns[i]
-                else:
-                    modify_scene_fn = None
-                out.append(get_image(state, modify_scene_fn))
-        else:
-            out = get_image(trajectory)
-
-        renderer.close()
-        return out
