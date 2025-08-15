@@ -57,7 +57,7 @@ def default_config() -> config_dict.ConfigDict:
         muscle_config=config_dict.create(
             muscle_condition=None,
             sex=None,
-            control_type="default",   #"relative"
+            control_type="default",   #"default", "relative"
             noise_params=config_dict.create(
                 sigdepnoise_type=None,
                 sigdepnoise_level=0.103,
@@ -72,12 +72,17 @@ def default_config() -> config_dict.ConfigDict:
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
             omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
             weighted_reward_keys=config_dict.create(
+                # reach=1,
+                # bonus_0=0,
+                # bonus_1=50,
+                # phase_1_touch=1,
+                # phase_1_tunnel_penalty=-2,
+                # #neural_effort=0,  #1e-4,
+                
+                ## old reward fct. (florian's branch):
                 reach=1,
-                bonus_0=0,
-                bonus_1=50,
-                phase_1_touch=1,
-                phase_1_tunnel_penalty=-2,
-                #neural_effort=0,  #1e-4,
+                bonus_0_old=5,
+                bonus_1_old=12,
             ),
             max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
@@ -319,6 +324,8 @@ class MyoUserSteering(MyoUserBase):
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
+             ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
+             ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
             ('bonus_0',   1.*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_1_touching_screen'])*(-obs_dict['phase_1_x_dist']))),
