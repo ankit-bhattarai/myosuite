@@ -613,7 +613,7 @@ class MyoUserBase(mjx_env.MjxEnv):
     ########################################
     def update_task_visuals(self, mj_model, state):
         pass
-    
+
     def render(
         self,
         trajectory: List[State],

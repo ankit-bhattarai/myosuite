@@ -12,6 +12,13 @@ import mediapy as media
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, env_cfg=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
                     seed=123, n_episodes=1):
+    """
+    Generate an evaluation trajectory from a stored checkpoint policy.
+    
+    You can either call this method by directly passing the checkpoint, env, jitted policy, etc. (useful if checkpoint was already loaded in advance, e.g., in a Jupyter notebook file), 
+    or let this method load the env and policy from scratch by passing only checkpoint_path and env_name (takes ~1min).
+    """
+
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
         assert env_cfg is not None, "If no checkpoint path is provided, env config must be passed directly as 'env_cfg'"

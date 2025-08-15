@@ -13,13 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 """Base class for MyoUser Arm Steering model."""
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Sequence, Optional, Union
 import collections
-import tqdm
 
-from etils import epath
-import numpy as np
 import jax
 import jax.numpy as jp
 from ml_collections import config_dict
@@ -74,7 +69,7 @@ def default_config() -> config_dict.ConfigDict:
             weighted_reward_keys=config_dict.create(
                 reach=1,
                 # bonus_0=0,
-                bonus_1=10,
+                bonus_1=50,
                 phase_1_touch=1,
                 phase_1_tunnel=3,  #-2,
                 #neural_effort=0,  #1e-4,
@@ -84,7 +79,7 @@ def default_config() -> config_dict.ConfigDict:
                 # bonus_0_old=5,
                 # bonus_1_old=12,
             ),
-            max_duration=20., # timelimit per trial, in seconds
+            max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
             reset_type="range_uniform",
         ),
@@ -151,7 +146,7 @@ class MyoUserSteering(MyoUserBase):
         # Prepare reward keys
         self.weighted_reward_keys = self._config.task_config.weighted_reward_keys
 
-        self.screen_id = self._mj_model.geom("screen").id
+        self.screen_id = self._mj_model.site("screen").id
         self.top_line_id = self._mj_model.site("top_line").id
         self.bottom_line_id = self._mj_model.site("bottom_line").id
         self.start_line_id = self._mj_model.site("start_line").id
@@ -334,7 +329,7 @@ class MyoUserSteering(MyoUserBase):
              ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
              ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
             ('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
-            ('bonus_1',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
+            ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
             # ('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
             ('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
@@ -423,6 +418,7 @@ class MyoUserSteering(MyoUserBase):
             'phase_1_x_dist': 0.0,
             'con_0_touching_screen': jp.bool_(False),
             'con_1_touching_screen': jp.bool_(False),
+            'con_1_crossed_line_y': jp.bool_(False),
             'softcons_for_bounds': 0.0,
         }
         
@@ -470,6 +466,7 @@ class MyoUserSteering(MyoUserBase):
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
             con_0_touching_screen = obs_dict["con_0_touching_screen"].astype(jp.bool_),
             con_1_touching_screen = obs_dict["con_1_touching_screen"].astype(jp.bool_),
+            con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"].astype(jp.bool_),
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
         )
 
@@ -478,85 +475,24 @@ class MyoUserSteering(MyoUserBase):
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
     
-    def add_target_pos_to_data(self, data, target_pos):
-        xpos = data.xpos
-        geom_xpos = data.geom_xpos
+    # def add_target_pos_to_data(self, data, target_pos):
+    #     xpos = data.xpos
+    #     geom_xpos = data.geom_xpos
 
-        xpos = xpos.at[self.target_body_id].set(target_pos)
-        geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
-        data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
-        return data
+    #     xpos = xpos.at[self.target_body_id].set(target_pos)
+    #     geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
+    #     data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
+    #     return data
 
-    def render(
-        self,
-        trajectory: List[State],
-        height: int = 240,
-        width: int = 320,
-        camera: Optional[str] = None,
-        scene_option: Optional[mujoco.MjvOption] = None,
-        modify_scene_fns: Optional[
-            Sequence[Callable[[mujoco.MjvScene], None]]
-        ] = None,
-    ) -> Sequence[np.ndarray]:
-        return self.render_array(
-            self.mj_model,
-            trajectory,
-            height,
-            width,
-            camera,
-            scene_option=scene_option,
-            modify_scene_fns=modify_scene_fns,
-        )
-    
-    def update_target_visuals(self, mj_model, target_pos, target_radius):
-        mj_model.body_pos[self.target_body_id, :] = target_pos
-        mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
+    def update_task_visuals(self, mj_model, state):
+        screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])
+        top_line = state.info["top_line"]
+        bottom_line = state.info["bottom_line"]
+        start_line = state.info["start_line"]
+        end_line = state.info["end_line"]
 
-    def render_array(self,
-        mj_model: mujoco.MjModel,
-        trajectory: Union[List[State], State],
-        height: int = 480,
-        width: int = 640,
-        camera: Optional[str] = None,
-        scene_option: Optional[mujoco.MjvOption] = None,
-        modify_scene_fns: Optional[
-            Sequence[Callable[[mujoco.MjvScene], None]]
-        ] = None,
-        hfield_data: Optional[jax.Array] = None,
-    ):
-        """Renders a trajectory as an array of images."""
-        renderer = mujoco.Renderer(mj_model, height=height, width=width)
-        camera = camera if camera is not None else -1
-
-        if hfield_data is not None:
-            mj_model.hfield_data = hfield_data.reshape(mj_model.hfield_data.shape)
-            mujoco.mjr_uploadHField(mj_model, renderer._mjr_context, 0)
-
-        def get_image(state, modify_scn_fn=None) -> np.ndarray:
-            d = mujoco.MjData(mj_model)
-            d.qpos, d.qvel = state.data.qpos, state.data.qvel
-            d.mocap_pos, d.mocap_quat = state.data.mocap_pos, state.data.mocap_quat
-            d.xfrc_applied = state.data.xfrc_applied
-            # self.update_target_visuals(mj_model=mj_model, target_pos=state.info["target_pos"], target_radius=state.info["target_radius"])
-            # # d.xpos, d.xmat = state.data.xpos, state.data.xmat.reshape(mj_model.nbody, -1)  #for bodies/geoms without joints (target spheres etc.)
-            # # d.geom_xpos, d.geom_xmat = state.data.geom_xpos, state.data.geom_xmat.reshape(mj_model.ngeom, -1)  #for geoms in bodies without joints (target spheres etc.)
-            # # d.site_xpos, d.site_xmat = state.data.site_xpos, state.data.site_xmat.reshape(mj_model.nsite, -1)
-            mujoco.mj_forward(mj_model, d)
-            renderer.update_scene(d, camera=camera, scene_option=scene_option)
-            if modify_scn_fn is not None:
-                modify_scn_fn(renderer.scene)
-            return renderer.render()
-
-        if isinstance(trajectory, list):
-            out = []
-            for i, state in enumerate(tqdm.tqdm(trajectory)):
-                if modify_scene_fns is not None:
-                    modify_scene_fn = modify_scene_fns[i]
-                else:
-                    modify_scene_fn = None
-                out.append(get_image(state, modify_scene_fn))
-        else:
-            out = get_image(trajectory)
-
-        renderer.close()
-        return out
+        # As we need to modify model pos for rendering (data xpos will be overwritten), we need to provide coordinates relative to parent body, which can be done by subtracting 'screen' site xpos (requires this site to be placed inside 'screen' body with pos='0 0 0'!)
+        mj_model.site_pos[self.top_line_id, :] = top_line - screen_pos
+        mj_model.site_pos[self.bottom_line_id, :] = bottom_line - screen_pos
+        mj_model.site_pos[self.start_line_id, :] = start_line - screen_pos
+        mj_model.site_pos[self.end_line_id, :] = end_line - screen_pos

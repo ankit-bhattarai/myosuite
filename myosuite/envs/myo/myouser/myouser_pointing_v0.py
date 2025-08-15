@@ -567,8 +567,8 @@ class MyoUserPointing(MyoUserBase):
         return data
     
     def update_task_visuals(self, mj_model, state):
-        target_pos=state.info["target_pos"]
-        target_radius=state.info["target_radius"]
+        target_pos = state.info["target_pos"]
+        target_radius = state.info["target_radius"]
 
         mj_model.body_pos[self.target_body_id, :] = target_pos
         mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
