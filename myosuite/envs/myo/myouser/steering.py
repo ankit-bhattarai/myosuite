@@ -221,7 +221,7 @@ class Steering(MyoUserBase):
         metrics = {
             'success_rate': 0.0,
              'dist': 0.0,
-             'touching_screen': jp.bool_(False),
+             'touching_screen': 0.0,
              'completed_phase_0': 0.0,
         }
 
@@ -367,7 +367,7 @@ class Steering(MyoUserBase):
         obs_dict['end_line'] = info['end_line']
         obs_dict['top_line'] = info['top_line']
         obs_dict['bottom_line'] = info['bottom_line']
-        obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
+        obs_dict['touching_screen'] = 1.0 *(jp.linalg.norm(data.site_xpos[self.fingertip_id][0] - info['start_line'][0]) <= 0.01)
         obs_dict['completed_phase_0'] = info['completed_phase_0']
         obs_dict['completed_phase_0_arr'] = jp.array([info['completed_phase_0']])
 

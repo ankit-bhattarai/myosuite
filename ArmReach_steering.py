@@ -363,7 +363,7 @@ def touching_screen_in_phase_1(states):
   timesteps = []
   for state in states:
     if bool(state.info['completed_phase_0']):
-      timesteps.append(bool(state.info['touching_screen']))
+      timesteps.append((state.info['touching_screen']))
   return jp.mean(jp.array(timesteps))
 
 def log_eval_metrics(timestep, metrics, video_path=None, fps=None):
