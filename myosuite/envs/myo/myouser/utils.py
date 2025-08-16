@@ -24,6 +24,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
 
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
+        ## TODO: directly pass episode_length rather than env_cfg, if checkpoint_path is None
         assert env_cfg is not None, "If no checkpoint path is provided, env config must be passed directly as 'env_cfg'"
         assert jit_inference_fn is not None, "If no checkpoint path is provided, policy must be passed directly as 'jit_inference_fn'"
         assert jit_reset is not None, "If no checkpoint path is provided, jitted reset function must be passed directly as 'jit_reset'"
@@ -88,8 +89,8 @@ def render_traj(rollout: List[State],
     if notebook_context:
         media.show_video(frames, fps=1.0 / eval_env.dt / render_every)
     else:
-        return media.show_video(frames, fps=1.0 / eval_env.dt / render_every, return_html=True)
-
+        #return media.show_video(frames, fps=1.0 / eval_env.dt / render_every, return_html=True)
+        return frames
 
 def update_target_visuals(scn, target_pos, target_size,
                           rgba=[0., 1., 0., 1.]):

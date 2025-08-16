@@ -12,7 +12,7 @@ from mujoco_playground import registry
 
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
-from myosuite.train.utils.wrapper import wrap_curriculum_training
+from myosuite.train.utils.wrapper import wrap_myosuite_training
 from myosuite.envs.myo.myouser.myouser_envs import get_observation_size
 
 def rscope_fn(full_states, obs, rew, done):
@@ -39,7 +39,8 @@ def train_or_load_checkpoint(env_name,
                     logdir=None,
                     checkpoint_path=None,
                     policy_params_fn_checkpoints=None,
-                    progress_fn=None,
+                    progress_fn=lambda *args: None,
+                    progress_fn_eval_video=lambda *args: None,
                     vision=False,
                     domain_randomization=False,
                     rscope_envs=None,
@@ -124,7 +125,7 @@ def train_or_load_checkpoint(env_name,
         )
 
     if vision:
-        env = wrap_curriculum_training(
+        env = wrap_myosuite_training(
             env,
             vision=True,
             num_vision_envs=env_cfg.vision.render_batch_size,
@@ -151,7 +152,7 @@ def train_or_load_checkpoint(env_name,
         restore_checkpoint_path=restore_checkpoint_path,
         # save_checkpoint_path=ckpt_path,
         # wrap_env_fn=None if vision else wrapper.wrap_for_brax_training,
-        wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_curriculum_training,
+        wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_myosuite_training,
         num_eval_envs=num_eval_envs,
     )
 
@@ -166,7 +167,7 @@ def train_or_load_checkpoint(env_name,
 
         if not vision:
             rscope_env = registry.load(env_name, config=env_cfg)
-            rscope_env = wrap_curriculum_training(  #wrapper.wrap_for_brax_training(
+            rscope_env = wrap_myosuite_training(  #wrapper.wrap_for_brax_training(
                 rscope_env,
                 episode_length=ppo_params.episode_length,
                 action_repeat=ppo_params.action_repeat,
@@ -195,10 +196,13 @@ def train_or_load_checkpoint(env_name,
 
         def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
             policy_params_fn_checkpoints(current_step, make_policy, params)
+            # progress_fn_eval_video(current_step, make_policy, params)
             rscope_handle.set_make_policy(make_policy)
             rscope_handle.dump_rollout(params)
     else:
-        policy_params_fn = policy_params_fn_checkpoints
+        def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
+            policy_params_fn_checkpoints(current_step, make_policy, params)
+            progress_fn_eval_video(current_step, make_policy, params)
     
     if not eval_mode:
         print("Starting to JIT compile...")

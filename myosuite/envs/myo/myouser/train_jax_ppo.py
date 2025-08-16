@@ -26,7 +26,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from myosuite.train.utils.train import train_or_load_checkpoint
-from myosuite.envs.myo.myouser.utils import render_traj
+from myosuite.envs.myo.myouser.utils import evaluate_policy, render_traj
 from etils import epath
 import jax
 import jax.numpy as jp
@@ -308,6 +308,43 @@ class ProgressLogger:
         except:
           pass
 
+class ProgressEvalVideoLogger:
+  def __init__(self, logdir, eval_env):
+    self.logdir = logdir
+    ckpt_path = logdir / "checkpoints"
+    ckpt_path.mkdir(parents=True, exist_ok=True)
+    self.checkpoint_path = ckpt_path
+    self.eval_env = eval_env
+
+  def progress_eval_video(self, num_steps, make_policy, params):
+    # Log to Weights & Biases
+    if _USE_WANDB.value and not _PLAY_ONLY.value:
+      # Rollout trajectory
+      ## TODO: rollout policy (see e.g. rscope.BraxRolloutSaver class for reference)
+      raise NotImplementedError()
+      # make_policy(params, deterministic=True)
+      # rollout = evaluate_policy(checkpoint_path=self.checkpoint_path, env_name=env_name)
+      
+      fps = 1.0 / self.eval_env.dt
+
+      # render front view
+      frames = render_traj(
+          rollout, self.eval_env, height=480, width=640, camera="fixed-eye",
+          notebook_context=False,
+      )
+      media.write_video(self.checkpoint_path / f"{num_steps}.mp4", frames, fps=fps)
+      if _USE_WANDB.value and not _PLAY_ONLY.value:
+        wandb.log({'eval/front_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
+
+      # render side view
+      frames = render_traj(
+          rollout, self.eval_env, height=480, width=640, camera=None,
+          notebook_context=False,
+      )
+      media.write_video(self.checkpoint_path / f"{num_steps}_1.mp4", frames, fps=fps)
+      if _USE_WANDB.value and not _PLAY_ONLY.value:
+        wandb.log({'eval/side_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}_1.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
+
 def set_global_seed(seed=0):
     """Set global random seeds for reproducible results."""
     import random
@@ -444,12 +481,17 @@ def main(argv):
                                    local_plotting=False)
   progress_fn = progress_logger.progress
 
+  # progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env)
+  # progress_fn_eval_video = progress_eval_video_logger.progress_eval_video
+  progress_fn_eval_video = lambda *args: None
+
   # Train or load the model
   env, make_inference_fn, params = train_or_load_checkpoint(_ENV_NAME.value, env_cfg,
                     ppo_params=ppo_params,
                     logdir=logdir,
                     checkpoint_path=_LOAD_CHECKPOINT_PATH.value,
                     progress_fn=progress_fn,
+                    progress_fn_eval_video=progress_fn_eval_video,
                     vision=_VISION.value,
                     domain_randomization=_DOMAIN_RANDOMIZATION.value,
                     rscope_envs=_RSCOPE_ENVS.value,
@@ -475,6 +517,7 @@ def main(argv):
   jit_inference_fn = jax.jit(inference_fn)
 
   # Prepare for evaluation
+  ## TODO: use myosuite.envs.myo.myouser.utils.evaluate_policy instead
   eval_env = (
       None if _VISION.value else registry.load(_ENV_NAME.value, config=env_cfg)
   )
@@ -533,23 +576,25 @@ def main(argv):
 
   # render front view
   frames = render_traj(
-      traj, eval_env, height=480, width=640, camera="fixed-eye", 
+      traj, eval_env, height=480, width=640, camera="fixed-eye",
+      notebook_context=False,
       #scene_option=scene_option
   )
   media.write_video(logdir / "rollout.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout.mp4'.")
   if _USE_WANDB.value and not _PLAY_ONLY.value:
-    wandb.log({'video': wandb.Video(str(logdir / "rollout.mp4"), fps=fps, format="mp4")})
+    wandb.log({'final_policy/front_view': wandb.Video(str(logdir / "rollout.mp4"), format="mp4")})  #, fps=fps)})
 
   # render side view
   frames = render_traj(
       traj, eval_env, height=480, width=640, camera=None,
+      notebook_context=False,
       #scene_option=scene_option
   )
   media.write_video(logdir / "rollout_1.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout_1.mp4'.")
   if _USE_WANDB.value and not _PLAY_ONLY.value:
-    wandb.log({'video': wandb.Video(str(logdir / "rollout_1.mp4"), fps=fps, format="mp4")})
+    wandb.log({'final_policy/side_view': wandb.Video(str(logdir / "rollout_1.mp4"), format="mp4")})  #, fps=fps)})
 
 if __name__ == "__main__":
   jax.config.parse_flags_with_absl()  #allow for debugging flags such as --jax_debug_nans=True or --jax_disable_jit=True

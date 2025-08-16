@@ -196,7 +196,7 @@ class MadronaWrapper:
     return getattr(self._env.unwrapped, name)
 
 
-def wrap_curriculum_training(
+def wrap_myosuite_training(
     env: mjx_env.MjxEnv,
     vision: bool = False,
     num_vision_envs: int = 1,
