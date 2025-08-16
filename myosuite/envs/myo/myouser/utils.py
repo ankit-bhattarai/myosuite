@@ -63,6 +63,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
             # modify_scene_fns.append(functools.partial(update_target_visuals, target_pos=state.info["target_pos"].flatten(), target_size=state.info["target_radius"].flatten()))
             if state.done.all():
                 break
+        eval_key, reset_keys = jax.random.split(eval_key)
 
     return rollout
 
