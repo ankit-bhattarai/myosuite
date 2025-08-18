@@ -26,7 +26,8 @@ from absl import app
 from absl import flags
 from absl import logging
 from myosuite.train.utils.train import train_or_load_checkpoint
-from myosuite.envs.myo.myouser.utils import evaluate_policy, render_traj
+from myosuite.envs.myo.myouser.evaluate import evaluate_policy
+from myosuite.envs.myo.myouser.utils import render_traj
 from etils import epath
 import jax
 import jax.numpy as jp
