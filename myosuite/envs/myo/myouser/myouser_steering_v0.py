@@ -25,8 +25,33 @@ from mujoco_playground import State
 
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
-from myosuite.envs.myo.myouser.base import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
+from dataclasses import dataclass, field
+from typing import List, Dict
 
+@dataclass
+class SteeringTaskConfig:
+    distance_reach_metric_coefficient: float = 10.
+    screen_distance_x: float = 0.5
+    screen_friction: float = 0.1
+    obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'])
+    weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
+        "reach": 1,
+        "bonus_1": 10,
+        "phase_1_touch": 1,
+        "phase_1_tunnel": 3,
+        "neural_effort": 0,
+    })
+    max_duration: float = 4.
+    max_trials: int = 1
+    reset_type: str = "range_uniform"
+
+@dataclass
+class SteeringEnvConfig(BaseEnvConfig):
+    env_name: str = "MyoUserSteering"
+    model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_steering_myouser.xml"
+    task_config: SteeringTaskConfig = field(default_factory=lambda: SteeringTaskConfig())
 
 def default_config() -> config_dict.ConfigDict:
     #TODO: update/make use of env_config parameters!

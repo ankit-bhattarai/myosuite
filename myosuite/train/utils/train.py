@@ -142,6 +142,9 @@ def train_or_load_checkpoint(env_name,
 
     if "num_eval_envs" in training_params:
         del training_params["num_eval_envs"]
+    
+    if "load_checkpoint_path" in training_params:
+        del training_params["load_checkpoint_path"]
 
     train_fn = functools.partial(
         ppo.train,

@@ -161,11 +161,13 @@ _TRAINING_METRICS_STEPS = flags.DEFINE_integer(
 )
 
 class ProgressLogger:
-  def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None):
+  def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None, log_wandb=True, log_tb=True):
     self.times = [datetime.now()]
     self.writer = writer
     self.ppo_params = ppo_params
     self.local_plotting = local_plotting
+    self.log_wandb = log_wandb
+    self.log_tb = log_tb
 
     if self.local_plotting:
       assert logdir is not None, "logdir must be provided if local_plotting is True"
@@ -195,11 +197,11 @@ class ProgressLogger:
         print(f'Starting training...')
 
     # Log to Weights & Biases
-    if _USE_WANDB.value and not _PLAY_ONLY.value:
+    if self.log_wandb:
       wandb.log({'num_steps': num_steps, **metrics}, step=num_steps)
 
     # Log to TensorBoard
-    if _USE_TB.value and not _PLAY_ONLY.value and self.writer is not None:
+    if self.log_tb and self.writer is not None:
       for key, value in metrics.items():
         self.writer.add_scalar(key, value, num_steps)
       self.writer.flush()
@@ -207,7 +209,7 @@ class ProgressLogger:
     if 'eval/episode_reward' in metrics:
     # if self.ppo_params.num_evals > 0:
       print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
-    if not _USE_WANDB.value and not _USE_TB.value and self.ppo_params.log_training_metrics:
+    if not self.log_wandb and not self.log_tb and self.ppo_params.log_training_metrics:
       if "episode/sum_reward" in metrics:
         print(
             f"{num_steps}: mean episode"
@@ -316,7 +318,7 @@ class ProgressLogger:
           pass
 
 class ProgressEvalVideoLogger:
-  def __init__(self, logdir, eval_env):
+  def __init__(self, logdir, eval_env, log_wandb=True):
     self.logdir = logdir
     ckpt_path = logdir / "checkpoints"
     ckpt_path.mkdir(parents=True, exist_ok=True)
@@ -325,7 +327,7 @@ class ProgressEvalVideoLogger:
 
   def progress_eval_video(self, num_steps, make_policy, params):
     # Log to Weights & Biases
-    if _USE_WANDB.value and not _PLAY_ONLY.value:
+    if self.log_wandb:
       # Rollout trajectory
       ## TODO: rollout policy (see e.g. rscope.BraxRolloutSaver class for reference)
       raise NotImplementedError()
@@ -382,78 +384,26 @@ def set_global_seed(seed=0):
 
 #   raise ValueError(f"Env {env_name} not found in {registry.ALL_ENVS}.")
 
+import hydra
+from hydra_cli import Config
+from omegaconf import OmegaConf
+from ml_collections.config_dict import ConfigDict
 
-def main(argv):
+@hydra.main(version_base=None, config_name="config")
+def main(cfg: Config):
+  container = OmegaConf.to_container(cfg, throw_on_missing=True, resolve=True)
+  container['env']['vision'] = container['vision']
+  config = ConfigDict(container)
   """Run training and evaluation for the specified environment."""
 
   # Set global seed for reproducibility
-  set_global_seed(_SEED.value)
+  set_global_seed(config.run.seed)
 
-  del argv
   print(f"Current backend: {jax.default_backend()}")
   # Load environment configuration
-  env_cfg = registry.get_default_config(_ENV_NAME.value)  #default_config()
+  env_cfg = config.env
 
-  ppo_params = env_cfg.ppo_config  #get_rl_config(_ENV_NAME.value)
-
-  if _NUM_TIMESTEPS.present:
-    ppo_params.num_timesteps = _NUM_TIMESTEPS.value
-  if _PLAY_ONLY.present:
-    ppo_params.num_timesteps = 0
-  if _NUM_EVALS.present:
-    ppo_params.num_evals = _NUM_EVALS.value
-  if _REWARD_SCALING.present:
-    ppo_params.reward_scaling = _REWARD_SCALING.value
-  if _EPISODE_LENGTH.present:
-    ppo_params.episode_length = _EPISODE_LENGTH.value
-  if _NORMALIZE_OBSERVATIONS.present:
-    ppo_params.normalize_observations = _NORMALIZE_OBSERVATIONS.value
-  if _ACTION_REPEAT.present:
-    ppo_params.action_repeat = _ACTION_REPEAT.value
-  if _UNROLL_LENGTH.present:
-    ppo_params.unroll_length = _UNROLL_LENGTH.value
-  if _NUM_MINIBATCHES.present:
-    ppo_params.num_minibatches = _NUM_MINIBATCHES.value
-  if _NUM_UPDATES_PER_BATCH.present:
-    ppo_params.num_updates_per_batch = _NUM_UPDATES_PER_BATCH.value
-  if _DISCOUNTING.present:
-    ppo_params.discounting = _DISCOUNTING.value
-  if _LEARNING_RATE.present:
-    ppo_params.learning_rate = _LEARNING_RATE.value
-  if _ENTROPY_COST.present:
-    ppo_params.entropy_cost = _ENTROPY_COST.value
-  if _NUM_ENVS.present:
-    ppo_params.num_envs = _NUM_ENVS.value
-  if _NUM_EVAL_ENVS.present:
-    ppo_params.num_eval_envs = _NUM_EVAL_ENVS.value
-  if _BATCH_SIZE.present:
-    ppo_params.batch_size = _BATCH_SIZE.value
-  if _MAX_GRAD_NORM.present:
-    ppo_params.max_grad_norm = _MAX_GRAD_NORM.value
-  if _CLIPPING_EPSILON.present:
-    ppo_params.clipping_epsilon = _CLIPPING_EPSILON.value
-  if _POLICY_HIDDEN_LAYER_SIZES.present:
-    ppo_params.network_factory.policy_hidden_layer_sizes = list(
-        map(int, _POLICY_HIDDEN_LAYER_SIZES.value)
-    )
-  if _VALUE_HIDDEN_LAYER_SIZES.present:
-    ppo_params.network_factory.value_hidden_layer_sizes = list(
-        map(int, _VALUE_HIDDEN_LAYER_SIZES.value)
-    )
-  if _POLICY_OBS_KEY.present:
-    ppo_params.network_factory.policy_obs_key = _POLICY_OBS_KEY.value
-  if _VALUE_OBS_KEY.present:
-    ppo_params.network_factory.value_obs_key = _VALUE_OBS_KEY.value
-
-  if _VISION.value:
-    env_cfg.vision_mode = _VISION.value
-    env_cfg.vision.render_batch_size = ppo_params.num_envs
-  
-  # env = registry.load(_ENV_NAME.value, config=env_cfg)
-  if _LOG_TRAINING_METRICS.present:
-    ppo_params.log_training_metrics = _LOG_TRAINING_METRICS.value
-  if _TRAINING_METRICS_STEPS.present:
-    ppo_params.training_metrics_steps = _TRAINING_METRICS_STEPS.value
+  ppo_params = config.rl  #get_rl_config(_ENV_NAME.value)
 
   print(f"Environment Config:\n{env_cfg}")
   print(f"PPO Training Parameters:\n{ppo_params}")
@@ -462,9 +412,9 @@ def main(argv):
   # Generate unique experiment name
   now = datetime.now()
   timestamp = now.strftime("%Y%m%d-%H%M%S")
-  exp_name = f"{_ENV_NAME.value}-{timestamp}"
-  if _SUFFIX.value is not None:
-    exp_name += f"-{_SUFFIX.value}"
+  exp_name = f"{env_cfg.env_name}-{timestamp}"
+  if config.wandb.suffix is not None:
+    exp_name += f"-{config.wandb.suffix}"
   print(f"Experiment name: {exp_name}")
 
   # Set up logging directory
@@ -473,13 +423,13 @@ def main(argv):
   print(f"Logs are being stored in: {logdir}")
 
   # Initialize Weights & Biases if required
-  if _USE_WANDB.value and not _PLAY_ONLY.value:
-    wandb.init(project="mjxrl", entity="bayreuth", name=exp_name)
+  if config.wandb.enabled and not config.run.play_only:
+    wandb.init(project=config.wandb.project, name=exp_name)
     wandb.config.update(env_cfg.to_dict())
-    wandb.config.update({"env_name": _ENV_NAME.value})
+    wandb.config.update({"env_name": env_cfg.env_name})
 
   # Initialize TensorBoard if required
-  if _USE_TB.value and not _PLAY_ONLY.value:
+  if config.run.use_tb and not config.run.play_only:
     writer = SummaryWriter(logdir)
   else:
     writer = None
@@ -493,17 +443,17 @@ def main(argv):
   progress_fn_eval_video = lambda *args: None
 
   # Train or load the model
-  env, make_inference_fn, params = train_or_load_checkpoint(_ENV_NAME.value, env_cfg,
+  env, make_inference_fn, params = train_or_load_checkpoint(env_cfg.env_name, env_cfg,
                     ppo_params=ppo_params,
                     logdir=logdir,
-                    checkpoint_path=_LOAD_CHECKPOINT_PATH.value,
+                    checkpoint_path=config.rl.load_checkpoint_path,
                     progress_fn=progress_fn,
                     progress_fn_eval_video=progress_fn_eval_video,
-                    vision=_VISION.value,
-                    domain_randomization=_DOMAIN_RANDOMIZATION.value,
-                    rscope_envs=_RSCOPE_ENVS.value,
-                    deterministic_rscope=_DETERMINISTIC_RSCOPE.value,
-                    seed=_SEED.value)
+                    vision=config.vision.enabled,
+                    domain_randomization=config.run.domain_randomization,
+                    rscope_envs=config.run.rscope_envs,
+                    deterministic_rscope=config.run.deterministic_rscope,
+                    seed=config.run.seed)
 
   # print("Done training.")
   # if len(times) > 1:
@@ -525,13 +475,15 @@ def main(argv):
 
   # Prepare for evaluation
   ## TODO: use myosuite.envs.myo.myouser.utils.evaluate_policy instead
+  breakpoint()
   eval_env = (
-      None if _VISION.value else registry.load(_ENV_NAME.value, config=env_cfg)
+      None if config.vision.enabled else registry.load(env_cfg.env_name, config=env_cfg)
   )
   num_envs = 1
-  if _VISION.value:
+  breakpoint()
+  if config.vision.enabled:
     eval_env = env
-    num_envs = env_cfg.vision.render_batch_size
+    num_envs = config.vision.num_worlds
   eval_env.enable_eval_mode()
 
   jit_reset = jax.jit(eval_env.reset)
@@ -539,22 +491,22 @@ def main(argv):
 
   rng = jax.random.PRNGKey(123)
   rng, reset_rng = jax.random.split(rng)
-  if _VISION.value:
+  if config.vision.enabled:
     reset_rng = jp.asarray(jax.random.split(reset_rng, num_envs))
   state = jit_reset(reset_rng)
   state0 = (
-      jax.tree_util.tree_map(lambda x: x[0], state) if _VISION.value else state
+      jax.tree_util.tree_map(lambda x: x[0], state) if config.vision.enabled else state
   )
   rollout = [state0]
 
   # Run evaluation rollout
-  for _ in range(env_cfg.ppo_config.episode_length): #TODO: fix where episode_length should be defined
+  for _ in range(ppo_params.episode_length): #TODO: fix where episode_length should be defined
     act_rng, rng = jax.random.split(rng)
     ctrl, _ = jit_inference_fn(state.obs, act_rng)
     state = jit_step(state, ctrl)
     state0 = (
         jax.tree_util.tree_map(lambda x: x[0], state)
-        if _VISION.value
+        if config.vision.enabled
         else state
     )
     rollout.append(state0)
@@ -589,7 +541,7 @@ def main(argv):
   )
   media.write_video(logdir / "rollout.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout.mp4'.")
-  if _USE_WANDB.value and not _PLAY_ONLY.value:
+  if config.wandb.enabled and not config.run.play_only:
     wandb.log({'final_policy/front_view': wandb.Video(str(logdir / "rollout.mp4"), format="mp4")})  #, fps=fps)})
 
   # render side view
@@ -600,9 +552,9 @@ def main(argv):
   )
   media.write_video(logdir / "rollout_1.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout_1.mp4'.")
-  if _USE_WANDB.value and not _PLAY_ONLY.value:
+  if config.wandb.enabled and not config.run.play_only:
     wandb.log({'final_policy/side_view': wandb.Video(str(logdir / "rollout_1.mp4"), format="mp4")})  #, fps=fps)})
 
 if __name__ == "__main__":
   jax.config.parse_flags_with_absl()  #allow for debugging flags such as --jax_debug_nans=True or --jax_disable_jit=True
-  app.run(main)
+  main()
