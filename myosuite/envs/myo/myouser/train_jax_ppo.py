@@ -485,6 +485,7 @@ def main(argv):
   # progress_fn_eval_video = progress_eval_video_logger.progress_eval_video
   progress_fn_eval_video = lambda *args: None
 
+  ## TRAINING/LOADING CHECKPOINT
   # Train or load the model
   env, make_inference_fn, params = train_or_load_checkpoint(_ENV_NAME.value, env_cfg,
                     ppo_params=ppo_params,
@@ -497,71 +498,41 @@ def main(argv):
                     rscope_envs=_RSCOPE_ENVS.value,
                     deterministic_rscope=_DETERMINISTIC_RSCOPE.value,
                     seed=_SEED.value)
+  if ppo_params.num_timesteps > 0:
+    print("Done training.")
+  else:
+    print("Done loading checkpoint.")
 
-  # print("Done training.")
-  # if len(times) > 1:
-  #   print(f"Time to JIT compile: {times[1] - times[0]}")
-  #   print(f"Time to train: {times[-1] - times[1]}")
   times = progress_logger.times
   if ppo_params.num_timesteps > 0 and len(times) > 2:
     # print(f'time to JIT compile: {times[1] - times[0]}')
     print(f'time to train: {times[-1] - times[1]}')
 
+  ## STORING CHECKPOINT
   with open(logdir / 'playground_params.pickle', 'wb') as handle:
       pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+  ## EVALUATING CHECKPOINT
   print("Starting inference...")
 
-  # Create inference function
+  # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
   jit_inference_fn = jax.jit(inference_fn)
+  jit_reset = jax.jit(env.reset)
+  jit_step = jax.jit(env.step)
 
   # Prepare for evaluation
-  ## TODO: use myosuite.envs.myo.myouser.utils.evaluate_policy instead
-  eval_env = (
-      None if _VISION.value else registry.load(_ENV_NAME.value, config=env_cfg)
-  )
-  num_envs = 1
-  if _VISION.value:
-    eval_env = env
-    num_envs = env_cfg.vision.render_batch_size
-  eval_env.enable_eval_mode()
-
-  jit_reset = jax.jit(eval_env.reset)
-  jit_step = jax.jit(eval_env.step)
-
-  rng = jax.random.PRNGKey(123)
-  rng, reset_rng = jax.random.split(rng)
-  if _VISION.value:
-    reset_rng = jp.asarray(jax.random.split(reset_rng, num_envs))
-  state = jit_reset(reset_rng)
-  state0 = (
-      jax.tree_util.tree_map(lambda x: x[0], state) if _VISION.value else state
-  )
-  rollout = [state0]
-
-  # Run evaluation rollout
-  for _ in range(env_cfg.ppo_config.episode_length): #TODO: fix where episode_length should be defined
-    act_rng, rng = jax.random.split(rng)
-    ctrl, _ = jit_inference_fn(state.obs, act_rng)
-    state = jit_step(state, ctrl)
-    state0 = (
-        jax.tree_util.tree_map(lambda x: x[0], state)
-        if _VISION.value
-        else state
-    )
-    rollout.append(state0)
-    if state0.done:
-      break
+  rollout = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
+                            eval_env=env, env_cfg=env_cfg, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
+                            seed=123,  #seed=_SEED.value,  #TODO: use different seed?
+                            n_episodes=10)  #TODO: n_episodes as hydra config param?
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
 
   # Render and save the rollout
   render_every = 2
-  fps = 1.0 / eval_env.dt / render_every
+  fps = 1.0 / env.dt / render_every
   print(f"FPS for rendering: {fps}")
-
   traj = rollout[::render_every]
-
   with h5py.File(logdir / 'traj.h5', 'w') as h5f:
       h5f.create_dataset('qpos', data=[s.data.qpos for s in traj])
       h5f.create_dataset('ctrl', data=[s.data.ctrl for s in traj])
@@ -576,7 +547,7 @@ def main(argv):
 
   # render front view
   frames = render_traj(
-      traj, eval_env, height=480, width=640, camera="fixed-eye",
+      traj, env, height=480, width=640, camera="fixed-eye",
       notebook_context=False,
       #scene_option=scene_option
   )
@@ -587,7 +558,7 @@ def main(argv):
 
   # render side view
   frames = render_traj(
-      traj, eval_env, height=480, width=640, camera=None,
+      traj, env, height=480, width=640, camera=None,
       notebook_context=False,
       #scene_option=scene_option
   )
@@ -595,6 +566,7 @@ def main(argv):
   print("Rollout video saved as 'rollout_1.mp4'.")
   if _USE_WANDB.value and not _PLAY_ONLY.value:
     wandb.log({'final_policy/side_view': wandb.Video(str(logdir / "rollout_1.mp4"), format="mp4")})  #, fps=fps)})
+
 
 if __name__ == "__main__":
   jax.config.parse_flags_with_absl()  #allow for debugging flags such as --jax_debug_nans=True or --jax_disable_jit=True
