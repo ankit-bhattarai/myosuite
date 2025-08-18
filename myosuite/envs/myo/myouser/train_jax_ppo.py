@@ -309,43 +309,6 @@ class ProgressLogger:
         except:
           pass
 
-class ProgressEvalVideoLogger:
-  def __init__(self, logdir, eval_env):
-    self.logdir = logdir
-    ckpt_path = logdir / "checkpoints"
-    ckpt_path.mkdir(parents=True, exist_ok=True)
-    self.checkpoint_path = ckpt_path
-    self.eval_env = eval_env
-
-  def progress_eval_video(self, num_steps, make_policy, params):
-    # Log to Weights & Biases
-    if _USE_WANDB.value and not _PLAY_ONLY.value:
-      # Rollout trajectory
-      ## TODO: rollout policy (see e.g. rscope.BraxRolloutSaver class for reference)
-      raise NotImplementedError()
-      # make_policy(params, deterministic=True)
-      # rollout = evaluate_policy(checkpoint_path=self.checkpoint_path, env_name=env_name)
-      
-      fps = 1.0 / self.eval_env.dt
-
-      # render front view
-      frames = render_traj(
-          rollout, self.eval_env, height=480, width=640, camera="fixed-eye",
-          notebook_context=False,
-      )
-      media.write_video(self.checkpoint_path / f"{num_steps}.mp4", frames, fps=fps)
-      if _USE_WANDB.value and not _PLAY_ONLY.value:
-        wandb.log({'eval/front_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
-
-      # render side view
-      frames = render_traj(
-          rollout, self.eval_env, height=480, width=640, camera=None,
-          notebook_context=False,
-      )
-      media.write_video(self.checkpoint_path / f"{num_steps}_1.mp4", frames, fps=fps)
-      if _USE_WANDB.value and not _PLAY_ONLY.value:
-        wandb.log({'eval/side_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}_1.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
-
 def set_global_seed(seed=0):
     """Set global random seeds for reproducible results."""
     import random
@@ -482,10 +445,6 @@ def main(argv):
                                    local_plotting=False)
   progress_fn = progress_logger.progress
 
-  # progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env)
-  # progress_fn_eval_video = progress_eval_video_logger.progress_eval_video
-  progress_fn_eval_video = lambda *args: None
-
   ## TRAINING/LOADING CHECKPOINT
   # Train or load the model
   env, make_inference_fn, params = train_or_load_checkpoint(_ENV_NAME.value, env_cfg,
@@ -493,7 +452,7 @@ def main(argv):
                     logdir=logdir,
                     checkpoint_path=_LOAD_CHECKPOINT_PATH.value,
                     progress_fn=progress_fn,
-                    progress_fn_eval_video=progress_fn_eval_video,
+                    log_wandb_videos=_USE_WANDB.value and not _PLAY_ONLY.value,
                     vision=_VISION.value,
                     domain_randomization=_DOMAIN_RANDOMIZATION.value,
                     rscope_envs=_RSCOPE_ENVS.value,
@@ -524,8 +483,8 @@ def main(argv):
 
   # Prepare for evaluation
   rollout = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
-                            eval_env=env, env_cfg=env_cfg, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
-                            seed=123,  #seed=_SEED.value,  #TODO: use different seed?
+                            eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
+                            seed=123,  #seed=_SEED.value,  #TODO: add eval_seed to hydra/config
                             n_episodes=10)  #TODO: n_episodes as hydra config param?
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
 
