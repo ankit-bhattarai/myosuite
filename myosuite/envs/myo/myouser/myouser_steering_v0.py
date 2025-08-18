@@ -162,7 +162,7 @@ class MyoUserSteering(MyoUserBase):
         self.obs_keys = self._config.task_config.obs_keys
         self.omni_keys = self._config.task_config.omni_keys
         #TODO: call _prepare_vision() before _setup()?
-        if not self._config.vision_mode:
+        if not self._config.vision.enabled:
             print(f"No vision, so adding {self.omni_keys} to obs_keys")
             for key in self.omni_keys:
                 if key not in self.obs_keys:

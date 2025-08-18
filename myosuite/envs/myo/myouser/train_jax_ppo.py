@@ -475,12 +475,10 @@ def main(cfg: Config):
 
   # Prepare for evaluation
   ## TODO: use myosuite.envs.myo.myouser.utils.evaluate_policy instead
-  breakpoint()
   eval_env = (
       None if config.vision.enabled else registry.load(env_cfg.env_name, config=env_cfg)
   )
   num_envs = 1
-  breakpoint()
   if config.vision.enabled:
     eval_env = env
     num_envs = config.vision.num_worlds
