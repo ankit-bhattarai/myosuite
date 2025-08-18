@@ -10,12 +10,15 @@ from mujoco_playground import registry
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import MyoUserPointing
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import default_config as MyoUserPointing_config
 from myosuite.envs.myo.myouser.myouser_steering_v0 import MyoUserSteering
+from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import MyoUserCircularSteering
+
 from myosuite.envs.myo.myouser.myouser_steering_v0 import default_config as MyoUserSteering_config
+from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import default_config as MyoUserCircularSteering_config
 
 # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
 registry.manipulation.register_environment("MyoUserPointing", MyoUserPointing, MyoUserPointing_config)
 registry.manipulation.register_environment("MyoUserSteering", MyoUserSteering, MyoUserSteering_config)
-
+registry.manipulation.register_environment("MyoUserCircularSteering", MyoUserCircularSteering, MyoUserCircularSteering_config)
 
 
 ## TODO: register variants
