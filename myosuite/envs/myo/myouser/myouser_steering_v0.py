@@ -174,14 +174,6 @@ class MyoUserSteering(MyoUserBase):
         # # Define target origin, relative to which target positions will be generated
         # self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
 
-    def get_obs_vec(self, data, info):
-        #TODO: simplify and move to MyoUserBase env
-        obs_dict = self.get_obs_dict(data, info)
-        obs_dict = self.update_obs_with_pixels(obs_dict, info)
-        obs = self.obsdict2obsvec(obs_dict)
-        _updated_info = self.update_info(info, obs_dict)
-        return obs, _updated_info
-
     def get_obs_dict(self, data, info):
         rng = info['rng']
 
@@ -275,38 +267,6 @@ class MyoUserSteering(MyoUserBase):
         obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
 
         return obs_dict
-    
-    def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
-        #TODO: simplify and move to MyoUserBase env
-        obs_list = [jp.zeros(0)]
-        for key in self.obs_keys:
-            obs_list.append(obs_dict[key].ravel()) # ravel helps with images
-        obsvec = jp.concatenate(obs_list)
-        if not self.vision:
-            return {"proprioception": obsvec}
-        if self.vision_mode == "rgbd_only":
-            return {"pixels/view_0": obs_dict["pixels/view_0"]}
-        elif self.vision_mode == "depth_only":
-            return {"pixels/depth": obs_dict["pixels/depth"]}
-        elif self.vision_mode == "depth":
-            return {"pixels/depth": obs_dict["pixels/depth"], "proprioception": obsvec}
-        elif self.vision_mode == "depth_w_aux_task":
-            #TODO: define auxiliary task for steering
-            target_pos = obs_dict["target_pos"]
-            target_radius = obs_dict["target_radius"]
-            aux_targets = jp.concatenate([target_pos, target_radius], axis=-1)
-            return {
-                "proprioception": obsvec,
-                "pixels/depth": obs_dict["pixels/depth"],
-                "vision_aux_targets": aux_targets,
-            }
-        vision_obs = {
-            "proprioception": obsvec,
-            "pixels/view_0": obs_dict["pixels/view_0"],
-        }
-        if self.vision_mode == 'rgb+depth':
-            vision_obs['pixels/depth'] = obs_dict['pixels/depth']
-        return vision_obs
     
     def update_info(self, info, obs_dict):
         # TODO: is this really needed? can we drop (almost all) info keys?

@@ -561,6 +561,43 @@ class MyoUserBase(mjx_env.MjxEnv):
 
         return new_ctrl
 
+    def get_obs_vec(self, data, info):
+        obs_dict = self.get_obs_dict(data, info)
+        obs_dict = self.update_obs_with_pixels(obs_dict, info)
+        obs = self.obsdict2obsvec(obs_dict)
+        _updated_info = self.update_info(info, obs_dict)
+        return obs, _updated_info
+    
+    def obsdict2obsvec(self, obs_dict) -> jp.ndarray:
+        obs_list = [jp.zeros(0)]
+        for key in self.obs_keys:
+            obs_list.append(obs_dict[key].ravel()) # ravel helps with images
+        obsvec = jp.concatenate(obs_list)
+        if not self.vision:
+            return {"proprioception": obsvec}
+        if self.vision_mode == "rgbd_only":
+            return {"pixels/view_0": obs_dict["pixels/view_0"]}
+        elif self.vision_mode == "depth_only":
+            return {"pixels/depth": obs_dict["pixels/depth"]}
+        elif self.vision_mode == "depth":
+            return {"pixels/depth": obs_dict["pixels/depth"], "proprioception": obsvec}
+        elif self.vision_mode == "depth_w_aux_task":
+            _obsvec_w_aux_task = self.get_obs_vec_aux_task(obs_dict, obsvec)
+            if _obsvec_w_aux_task is not None:
+                return _obsvec_w_aux_task
+            else:
+                raise NotImplementedError(f"Cannot get observation vector for vision_mode 'depth_w_aux_task': get_obs_vec_aux_task() is missing from {self.__class__}")
+        vision_obs = {
+            "proprioception": obsvec,
+            "pixels/view_0": obs_dict["pixels/view_0"],
+        }
+        if self.vision_mode == 'rgb+depth':
+            vision_obs['pixels/depth'] = obs_dict['pixels/depth']
+        return vision_obs
+    
+    def get_obs_vec_aux_task(self, obs_dict, obsvec) -> jp.ndarray:
+        pass
+
     def update_obs_with_pixels(self, obs_dict, info):
         if self.vision:
             if (
