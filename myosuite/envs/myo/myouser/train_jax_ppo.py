@@ -42,8 +42,15 @@ from mujoco_playground import registry
 # from mujoco_playground.config import manipulation_params
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["MADRONA_MWGPU_KERNEL_CACHE"] = "/scratch/fjf33/madrona_mjx/build/kernel_cache"
-os.environ["MADRONA_BVH_KERNEL_CACHE"] = "/scratch/fjf33/madrona_mjx/build/bvh_cache"
+try:
+  import madrona_mjx
+  location = madrona_mjx.__file__.split('/src/')[0]
+  os.environ["MADRONA_MWGPU_KERNEL_CACHE"] = f"{location}/build/kernel_cache"
+  os.environ["MADRONA_BVH_KERNEL_CACHE"] = f"{location}/build/bvh_cache"
+  print(f'Using cached Madrona MJX kernels at: {location}/build')
+except:
+  print("Madrona MJX not found, can't use any vision components for training!")
+
 os.environ["MUJOCO_GL"] = "egl"
 xla_flags = os.environ.get('XLA_FLAGS', '')
 xla_flags += ' --xla_gpu_triton_gemm_any=True'
