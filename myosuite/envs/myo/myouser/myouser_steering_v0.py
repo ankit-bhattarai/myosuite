@@ -72,9 +72,9 @@ def default_config() -> config_dict.ConfigDict:
                 reach=1,
                 # bonus_0=0,
                 bonus_1=10,
-                phase_1_touch=1,
-                phase_1_tunnel=3,  #-2,
-                #neural_effort=0,  #1e-4,
+                phase_1_touch=7,
+                phase_1_tunnel=5,  #-2,
+                neural_effort=0.005,  #1e-4,
                 
                 # ## old reward fct. (florian's branch):
                 # reach=1,
@@ -162,8 +162,8 @@ class MyoUserSteering(MyoUserBase):
         self.distance_reach_metric_coefficient = self._config.task_config.distance_reach_metric_coefficient
 
         # Currently hardcoded
-        self.min_width = 0.3
-        self.min_height = 0.1
+        self.min_width = 0.05
+        self.min_height = 0.05
         self.bottom = -0.3
         self.top = 0.3
         self.left = 0.3
@@ -339,7 +339,7 @@ class MyoUserSteering(MyoUserBase):
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
-        # print(rwd_dict.items())
+
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
 
         return rwd_dict
@@ -473,6 +473,7 @@ class MyoUserSteering(MyoUserBase):
         )
 
         # return self.forward(**kwargs)
+
         return state.replace(
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
