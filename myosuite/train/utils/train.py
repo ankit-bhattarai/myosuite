@@ -13,7 +13,6 @@ from mujoco_playground import registry
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
 from myosuite.train.utils.wrapper import wrap_myosuite_training
-from myosuite.envs.myo.myouser.myouser_envs import get_observation_size
 
 def rscope_fn(full_states, obs, rew, done):
   """
@@ -117,7 +116,7 @@ def train_or_load_checkpoint(env_name,
     # else:
     #     network_factory = network_fn
 
-    network_factory = functools.partial(networks.custom_network_factory, vision=vision, get_observation_size=functools.partial(get_observation_size, env_name=env_name, vision=vision), **getattr(ppo_params, "network_factory", {}))
+    network_factory = functools.partial(networks.custom_network_factory, vision=vision, **getattr(ppo_params, "network_factory", {}))
 
     if domain_randomization:
         training_params["randomization_fn"] = registry.get_domain_randomizer(

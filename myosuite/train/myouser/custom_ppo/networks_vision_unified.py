@@ -25,30 +25,24 @@ from typing import Optional, Callable, Sequence, Any, Tuple
 
 
 def custom_network_factory(obs_shape, action_size, preprocess_observations_fn,
-                           get_observation_size=lambda x: {'proprioception': (x['proprioception'].shape[0],)},  #TODO: remove this dependency
                            vision=False,
                            cheat_vision_aux_output=False, **network_factory_kwargs):
-    # if activation_function == 'swish':
-    #   activation = linen.swish
-    # elif activation_function == 'relu':
-    #   activation = linen.relu
-    # else:
-    #   raise NotImplementedError(f'Not implemented anything for activation function {activation_function}')
+    proprioception_size = obs_shape['proprioception'][0]
     if not vision:
         return make_ppo_networks_no_vision(
-        proprioception_size=get_observation_size()['proprioception'],
+        proprioception_size=proprioception_size,
         action_size=action_size,
         preprocess_observations_fn=preprocess_observations_fn,
         **network_factory_kwargs,
         )
-    _pixel_obs_keys = [k for k in get_observation_size().keys() if k.startswith("pixels/")]
+    _pixel_obs_keys = [k for k in obs_shape.keys() if k.startswith("pixels/")]
     assert len(_pixel_obs_keys) > 0, f"If vision is enabled, at least one 'pixels/...' obs key is expected."
     if len(_pixel_obs_keys) > 1:
         raise NotImplementedError(f"Multiple visual perception keys are not allowed yet")
     return make_ppo_networks_with_vision(
-        proprioception_size=get_observation_size()['proprioception'][0],
+        proprioception_size=proprioception_size,
         action_size=action_size,
-        encoder_in_channels=get_observation_size()[_pixel_obs_keys[0]][-1],
+        encoder_in_channels=obs_shape[_pixel_obs_keys[0]][-1],
         encoder_out_size=4,
         preprocess_observations_fn=preprocess_observations_fn,
         cheat_vision_aux_output=cheat_vision_aux_output,
