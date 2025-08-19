@@ -16,7 +16,7 @@ OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "
 @dataclass
 class WANDBEnabledConfig:
     enabled: bool = True
-    entity: Union[str, None] = None # None by default so it uses the default entity override to choose a different entity
+    entity: Union[str, None] = 'hci-biomechsims' # Set to this by default, choose a different entity for personal projects
     name: Union[str, None] = '${env.env_name}-${now:%Y%m%d}-${now:%H%M%S}${check_string:${run.suffix}}'
     project: str = "MJXRL"
     tags: Union[List[str], None] = None
