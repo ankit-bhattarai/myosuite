@@ -6,6 +6,9 @@ import jax
 import jax.numpy as jp
 
 from mujoco_playground import registry
+import wandb
+import mediapy as media
+
 # from brax.training.agents.ppo import networks as ppo_networks
 # from brax.training.agents.ppo import networks_vision as ppo_networks_vision
 # from brax.training.agents.ppo import train as ppo
@@ -13,6 +16,174 @@ from mujoco_playground import registry
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
 from myosuite.train.utils.wrapper import wrap_myosuite_training
+from myosuite.envs.myo.myouser.myouser_envs import get_observation_size
+from myosuite.envs.myo.myouser.evaluate import evaluate_policy
+from myosuite.envs.myo.myouser.utils import render_traj
+
+class ProgressEvalVideoLoggerDEPRECATED:
+  def __init__(self, logdir, eval_env,
+               seed=123,
+               deterministic=True,
+               n_episodes=10,
+               episode_length=None,
+               height=480,
+               width=640,
+               cameras=[None],
+               ):
+    self.logdir = logdir
+    ckpt_path = logdir / "checkpoints"
+    ckpt_path.mkdir(parents=True, exist_ok=True)
+    self.checkpoint_path = ckpt_path
+    self.eval_env = eval_env
+    self.seed = seed
+    self.eval_key = jax.random.PRNGKey(seed)
+    self.deterministic = deterministic
+    self.n_episodes = n_episodes
+
+    if episode_length is None:
+        episode_length = eval_env._config.ppo_config.episode_length  #TODO: verify _config attribute exists after integrating hydra
+    self.episode_length = episode_length
+
+    self.height = height
+    self.width = width
+    self.cameras = cameras
+    self.n_cameras = len(cameras)
+
+  def rollout_traj_frames(self, make_policy, params):
+    rollout = []
+    # TODO: use jax.lax.scan instead of for-loop
+    for ep_id in range(self.n_episodes):
+      traj_frames = self._rollout(make_policy, params)
+      rollout.extend(traj_frames)
+    return rollout
+
+  def _rollout(self, make_policy, params):
+    ## code is partially based on rscope.BraxRolloutSaver class
+
+    key_unroll, key_reset = jax.random.split(self.eval_key)
+    policy = make_policy(params, deterministic=self.deterministic)
+    state = self.eval_env.reset(key_reset)
+
+    # Collect complete rollout
+    def step_fn(c):
+      state, key, i, rollout_frames = c
+      key, key_ctrl = jax.random.split(key)
+      ctrl, _ = policy(state.obs, key_ctrl)
+      state = self.eval_env.step(state, ctrl)
+      for camera_id, camera in enumerate(self.cameras):
+        frames = self.eval_env.render_array(self.eval_env.mj_model, state, height=self.height, width=self.width, camera=camera)
+        rollout_frames = rollout_frames.at[camera_id, i].set(frames)
+      # return (state, key), jax.tree.map(lambda x: x[: self.rscope_envs], full_ret)
+      return (state, key, i+1, rollout_frames)
+    
+    def cond_fn(c):
+      state, key, i, rollout_frames = c
+      return ~state.done.all()
+    
+    # _, rollout = jax.lax.scan(
+    #     step_fn,
+    #     (state, key_unroll),
+    #     None,
+    #     length=self.episode_length,
+    # )
+    
+    rollout_frames = jp.zeros((self.n_cameras, self.episode_length, self.height, self.width, 3))  #TODO: allow for different render modes, e.g. RGB-D?
+    state, key, num_steps, rollout_frames = jax.lax.while_loop(
+        cond_fn,
+        step_fn,
+        (state, key_unroll, 0, rollout_frames),
+    )
+
+    return rollout_frames
+
+  def progress_eval_video(self, current_step, make_policy, params):
+    raise ValueError  #TODO: this attempt to run jitted rendering does not work, as we can neither store all states in jax arrays for later rendering, nor render directly on traced arrays
+    # Log to Weights & Biases
+
+    # Rollout trajectory
+    # rollout = evaluate_policy(checkpoint_path=self.checkpoint_path, env_name=env_name)
+    frames = self.rollout_traj_frames(make_policy=make_policy, params=params)
+    
+    fps = 1.0 / self.eval_env.dt
+    for camera_id, camera in enumerate(self.cameras):
+        camera_frames = frames[camera_id]
+        if camera is None:
+            camera_suffix = ""
+        else:
+            camera_suffix = "_" + camera
+        media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", camera_frames, fps=fps)
+        wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+
+class ProgressEvalVideoLogger:
+  def __init__(self, logdir, eval_env,
+               seed=123,
+               deterministic=True,
+               n_episodes=10,
+               episode_length=None,
+               height=480,
+               width=640,
+               cameras=[None],
+               ):
+    self.logdir = logdir
+    ckpt_path = logdir / "checkpoints"
+    ckpt_path.mkdir(parents=True, exist_ok=True)
+    self.checkpoint_path = ckpt_path
+    self.eval_env = eval_env
+    self.seed = seed
+    self.eval_key = jax.random.PRNGKey(seed)
+    self.deterministic = deterministic
+    self.n_episodes = n_episodes
+
+    if episode_length is None:
+        episode_length = eval_env._config.ppo_config.episode_length  #TODO: verify _config attribute exists after integrating hydra
+    self.episode_length = episode_length
+
+    self.height = height
+    self.width = width
+    self.cameras = cameras
+    self.n_cameras = len(cameras)
+
+    self.jit_reset = jax.jit(eval_env.reset)
+    self.jit_step = jax.jit(eval_env.step)
+
+  def progress_eval_video(self, current_step, make_policy, params):
+    # Log to Weights & Biases
+
+    # Rollout trajectory
+    # make_policy(params, deterministic=True)
+    jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
+    rollout = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step)
+
+    fps = 1.0 / self.eval_env.dt
+
+    for camera in self.cameras:
+        if camera is None:
+            camera_suffix = ""
+        else:
+            camera_suffix = "_" + camera
+        frames = render_traj(
+            rollout, self.eval_env, height=480, width=640, camera=camera,
+            notebook_context=False,
+        )
+        media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", frames, fps=fps)
+        wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+
+    # # render front view
+    # frames = render_traj(
+    #     rollout, self.eval_env, height=480, width=640, camera="fixed-eye",
+    #     notebook_context=False,
+    # )
+    # media.write_video(self.checkpoint_path / f"{current_step}.mp4", frames, fps=fps)
+    # wandb.log({'eval_vis/front_view': wandb.Video(str(self.checkpoint_path / f"{current_step}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+
+    # # render side view
+    # frames = render_traj(
+    #     rollout, self.eval_env, height=480, width=640, camera=None,
+    #     notebook_context=False,
+    # )
+    # media.write_video(self.checkpoint_path / f"{num_steps}_1.mp4", frames, fps=fps)
+    # wandb.log({'eval_vis/side_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}_1.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
+
 
 def rscope_fn(full_states, obs, rew, done):
   """
@@ -38,7 +209,7 @@ def train_or_load_checkpoint(env_name,
                     checkpoint_path=None,
                     policy_params_fn_checkpoints=None,
                     progress_fn=lambda *args: None,
-                    progress_fn_eval_video=lambda *args: None,
+                    log_wandb_videos=False,
                     vision=False,
                     domain_randomization=False,
                     rscope_envs=None,
@@ -202,6 +373,17 @@ def train_or_load_checkpoint(env_name,
             rscope_handle.set_make_policy(make_policy)
             rscope_handle.dump_rollout(params)
     else:
+        if log_wandb_videos:
+            progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env,
+                                                                seed=123, #TODO: add eval_seed to args
+                                                                n_episodes=10,
+                                                                #episode_length=80,
+                                                                cameras=["fixed-eye", None]
+                                                                )
+            progress_fn_eval_video = progress_eval_video_logger.progress_eval_video
+        else:
+            progress_fn_eval_video = lambda *args: None
+
         def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
             policy_params_fn_checkpoints(current_step, make_policy, params)
             progress_fn_eval_video(current_step, make_policy, params)
