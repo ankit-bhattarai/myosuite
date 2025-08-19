@@ -69,97 +69,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="jax")
 warnings.filterwarnings("ignore", category=UserWarning, module="absl")
 
 
-_ENV_NAME = flags.DEFINE_string(
-    "env_name",
-    "MyoElbow",
-    f"Name of the environment. One of {', '.join(registry.ALL_ENVS)}",
-)
-_VISION = flags.DEFINE_string("vision", '', "Whether and which type of vision input to use")
-_LOAD_CHECKPOINT_PATH = flags.DEFINE_string(
-    "load_checkpoint_path", None, "Path to load checkpoint from"
-)
-_SUFFIX = flags.DEFINE_string("suffix", None, "Suffix for the experiment name")
-_PLAY_ONLY = flags.DEFINE_boolean(
-    "play_only", False, "If true, only play with the model and do not train"
-)
-_USE_WANDB = flags.DEFINE_boolean(
-    "use_wandb",
-    True,
-    "Use Weights & Biases for logging (ignored in play-only mode)",
-)
-_USE_TB = flags.DEFINE_boolean(
-    "use_tb", True, "Use TensorBoard for logging (ignored in play-only mode)"
-)
-_DOMAIN_RANDOMIZATION = flags.DEFINE_boolean(
-    "domain_randomization", False, "Use domain randomization"
-)
-_SEED = flags.DEFINE_integer("seed", 1, "Random seed")
-_NUM_TIMESTEPS = flags.DEFINE_integer(
-    "num_timesteps", 1_000_000, "Number of timesteps"
-)
-_NUM_EVALS = flags.DEFINE_integer("num_evals", 5, "Number of evaluations")
-_REWARD_SCALING = flags.DEFINE_float("reward_scaling", 0.1, "Reward scaling")
-_EPISODE_LENGTH = flags.DEFINE_integer("episode_length", 1000, "Episode length")
-_NORMALIZE_OBSERVATIONS = flags.DEFINE_boolean(
-    "normalize_observations", True, "Normalize observations"
-)
-_ACTION_REPEAT = flags.DEFINE_integer("action_repeat", 1, "Action repeat")
-_UNROLL_LENGTH = flags.DEFINE_integer("unroll_length", 10, "Unroll length")
-_NUM_MINIBATCHES = flags.DEFINE_integer(
-    "num_minibatches", 8, "Number of minibatches"
-)
-_NUM_UPDATES_PER_BATCH = flags.DEFINE_integer(
-    "num_updates_per_batch", 8, "Number of updates per batch"
-)
-_DISCOUNTING = flags.DEFINE_float("discounting", 0.97, "Discounting")
-_LEARNING_RATE = flags.DEFINE_float("learning_rate", 5e-4, "Learning rate")
-_ENTROPY_COST = flags.DEFINE_float("entropy_cost", 5e-3, "Entropy cost")
-_NUM_ENVS = flags.DEFINE_integer("num_envs", 1024, "Number of environments")
-_NUM_EVAL_ENVS = flags.DEFINE_integer(
-    "num_eval_envs", 128, "Number of evaluation environments"
-)
-_BATCH_SIZE = flags.DEFINE_integer("batch_size", 256, "Batch size")
-_MAX_GRAD_NORM = flags.DEFINE_float("max_grad_norm", 1.0, "Max grad norm")
-_CLIPPING_EPSILON = flags.DEFINE_float(
-    "clipping_epsilon", 0.2, "Clipping epsilon for PPO"
-)
-_POLICY_HIDDEN_LAYER_SIZES = flags.DEFINE_list(
-    "policy_hidden_layer_sizes",
-    [64, 64, 64],
-    "Policy hidden layer sizes",
-)
-_VALUE_HIDDEN_LAYER_SIZES = flags.DEFINE_list(
-    "value_hidden_layer_sizes",
-    [64, 64, 64],
-    "Value hidden layer sizes",
-)
-_POLICY_OBS_KEY = flags.DEFINE_string(
-    "policy_obs_key", "state", "Policy obs key"
-)
-_VALUE_OBS_KEY = flags.DEFINE_string("value_obs_key", "state", "Value obs key")
-_RSCOPE_ENVS = flags.DEFINE_integer(
-    "rscope_envs",
-    None,
-    "Number of parallel environment rollouts to save for the rscope viewer",
-)
-_DETERMINISTIC_RSCOPE = flags.DEFINE_boolean(
-    "deterministic_rscope",
-    True,
-    "Run deterministic rollouts for the rscope viewer",
-)
-_LOG_TRAINING_METRICS = flags.DEFINE_boolean(
-    "log_training_metrics",
-    True,
-    "Whether to log training metrics and callback to progress_fn. Significantly"
-    " slows down training if too frequent.",
-)
-_TRAINING_METRICS_STEPS = flags.DEFINE_integer(
-    "training_metrics_steps",
-    1_000_000,
-    "Number of steps between logging training metrics. Increase if training"
-    " experiences slowdown.",
-)
-
 class ProgressLogger:
   def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None, log_wandb=True, log_tb=True):
     self.times = [datetime.now()]
@@ -368,22 +277,6 @@ def set_global_seed(seed=0):
     print(f"Global random seed set to {seed} for reproducible results")
 
 
-# def get_rl_config(env_name: str) -> config_dict.ConfigDict:
-#   if env_name in mujoco_playground.manipulation._envs:
-#     if _VISION.value:
-#       return manipulation_params.brax_vision_ppo_config(env_name)
-#     return manipulation_params.brax_ppo_config(env_name)
-#   elif env_name in mujoco_playground.locomotion._envs:
-#     if _VISION.value:
-#       return locomotion_params.brax_vision_ppo_config(env_name)
-#     return locomotion_params.brax_ppo_config(env_name)
-#   elif env_name in mujoco_playground.dm_control_suite._envs:
-#     if _VISION.value:
-#       return dm_control_suite_params.brax_vision_ppo_config(env_name)
-#     return dm_control_suite_params.brax_ppo_config(env_name)
-
-#   raise ValueError(f"Env {env_name} not found in {registry.ALL_ENVS}.")
-
 import hydra
 from hydra_cli import Config
 from omegaconf import OmegaConf
@@ -403,7 +296,7 @@ def main(cfg: Config):
   # Load environment configuration
   env_cfg = config.env
 
-  ppo_params = config.rl  #get_rl_config(_ENV_NAME.value)
+  ppo_params = config.rl
 
   print(f"Environment Config:\n{env_cfg}")
   print(f"PPO Training Parameters:\n{ppo_params}")
