@@ -46,6 +46,12 @@ class SteeringTaskConfig:
     max_duration: float = 4.
     max_trials: int = 1
     reset_type: str = "range_uniform"
+    min_width: float = 0.3
+    min_height: float = 0.1
+    bottom: float = -0.3
+    top: float = 0.3
+    left: float = 0.3
+    right: float = -0.3
 
 @dataclass
 class SteeringEnvConfig(BaseEnvConfig):
@@ -187,12 +193,12 @@ class MyoUserSteering(MyoUserBase):
         self.distance_reach_metric_coefficient = self._config.task_config.distance_reach_metric_coefficient
 
         # Currently hardcoded
-        self.min_width = 0.3
-        self.min_height = 0.1
-        self.bottom = -0.3
-        self.top = 0.3
-        self.left = 0.3
-        self.right = -0.3
+        self.min_width = self._config.task_config.min_width
+        self.min_height = self._config.task_config.min_height
+        self.bottom = self._config.task_config.bottom
+        self.top = self._config.task_config.top
+        self.left = self._config.task_config.left
+        self.right = self._config.task_config.right
         
     # def _prepare_after_init(self, data):
     #     super()._prepare_after_init(data)
