@@ -154,7 +154,9 @@ def default_config() -> config_dict.ConfigDict:
 
 class MyoUserSteering(MyoUserBase): 
     def modify_mj_model(self, mj_model):
-        mj_model.body('screen').pos[:] = np.array([self._config.task_config.screen_distance_x, mj_model.body('screen').pos[1], mj_model.body('screen').pos[2]])
+        default_screen_distance_x = 0.50  #distance from humphant body; corresponds to default screen pos[0] value in xml file
+
+        mj_model.body('screen').pos[0] += self._config.task_config.screen_distance_x - default_screen_distance_x
         mj_model.geom('screen').friction = self._config.task_config.screen_friction
         mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
         return mj_model
