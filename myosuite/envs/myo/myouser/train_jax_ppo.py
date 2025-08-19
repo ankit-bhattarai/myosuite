@@ -131,7 +131,6 @@ def main(cfg: Config):
                     checkpoint_path=config.rl.load_checkpoint_path,
                     progress_fn=progress_fn,
                     log_wandb_videos=config.wandb.enabled and not config.run.play_only,
-                    progress_fn_eval_video=progress_fn_eval_video,
                     vision=config.vision.enabled,
                     domain_randomization=config.run.domain_randomization,
                     rscope_envs=config.run.rscope_envs,
