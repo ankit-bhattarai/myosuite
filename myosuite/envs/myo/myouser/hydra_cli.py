@@ -7,6 +7,9 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
 from enum import Enum
 from hydra.utils import instantiate, call
+from hydra.core.global_hydra import GlobalHydra
+from hydra import initialize, compose
+from ml_collections import ConfigDict
 from myosuite.envs.myo.myouser.base import BaseEnvConfig, RLConfig
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import PointingEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
@@ -85,6 +88,28 @@ cs.store(group="env", name="pointing", node=PointingEnvConfig)
 cs.store(group="env", name="steering", node=SteeringEnvConfig)
 cs.store(group="rl", name="rl_config", node=RLConfig)
 cs.store(group="run", name="run", node=RunConfig)
+
+
+def load_config_interactive(overrides=[]):
+    """
+    Use this function to load the config interactively from a jupyer notebook.
+
+    Example Usage:
+    ----
+    >>> from myosuite.envs.myo.myouser.hydra_cli import load_config_interactive
+    >>> overrides=["env=pointing", "env.task_config.reach_settings.target_radius_range.fingertip=[0.01,0.15]"]
+    >>> config_dict=load_config_interactive(overrides)
+    """
+    # Clear any existing Hydra instance
+    GlobalHydra.instance().clear()
+    
+    with initialize(version_base=None, config_path=None):
+        cfg = compose(config_name="config", overrides=overrides)
+    
+    container = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+    container['env']['vision'] = container['vision']
+    config = ConfigDict(container)
+    return config
 
 @hydra.main(version_base=None, config_name="config")
 def my_app(cfg: Config) -> None:
