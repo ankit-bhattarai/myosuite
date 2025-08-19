@@ -24,7 +24,7 @@ class WANDBEnabledConfig:
 class WANDBDisabledConfig:
     enabled: bool = False
 
-class VisionModes(Enum):
+class VisionModes(str, Enum):
     rgbd = 'rgbd'
     depth = 'depth'
 
