@@ -353,7 +353,7 @@ class MyoUserBase(mjx_env.MjxEnv):
         self.vision = True
         from madrona_mjx.renderer import BatchRenderer
 
-        self.vision_mode = self._config.vision_mode
+        self.vision_mode = self._config.vision.vision_mode
         assert (
             self.vision_mode in ALLOWED_VISION_MODES
         ), f"Invalid vision mode: {self.vision_mode} (allowed modes: {ALLOWED_VISION_MODES})"

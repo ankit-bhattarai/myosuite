@@ -15,7 +15,7 @@ from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
 class WANDBEnabledConfig:
     enabled: bool = True
     entity: Union[str, None] = None # None by default so it uses the default entity override to choose a different entity
-    suffix: Union[str, None] = None
+    name: Union[str, None] = '${env.env_name}-${now:%Y%m%d}-${now:%H%M%S}-${run.suffix}'
     project: str = "MJXRL"
     tags: Union[List[str], None] = None
     group: Union[str, None] = None
@@ -60,6 +60,8 @@ class RunConfig:
     rscope_envs: Union[int, None] = None
     deterministic_rscope: bool = True
     domain_randomization: bool = False
+    suffix: Union[str, None] = None
+    local_plotting: bool = False
 
 @dataclass
 class Config:

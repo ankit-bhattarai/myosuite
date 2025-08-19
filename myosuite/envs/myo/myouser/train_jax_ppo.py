@@ -26,7 +26,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from myosuite.train.utils.train import train_or_load_checkpoint
-from myosuite.envs.myo.myouser.utils import evaluate_policy, render_traj
+from myosuite.envs.myo.myouser.utils import evaluate_policy, render_traj, ProgressLogger, set_global_seed
 from etils import epath
 import jax
 import jax.numpy as jp
@@ -37,11 +37,19 @@ from tensorboardX import SummaryWriter
 import wandb
 
 from mujoco_playground import registry
-# from mujoco_playground.config import dm_control_suite_params
-# from mujoco_playground.config import locomotion_params
-# from mujoco_playground.config import manipulation_params
+
+
+import hydra
+from hydra_cli import Config
+from omegaconf import OmegaConf
+from ml_collections.config_dict import ConfigDict
+
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["MUJOCO_GL"] = "egl"
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
 try:
   import madrona_mjx
   location = madrona_mjx.__file__.split('/src/')[0]
@@ -50,11 +58,6 @@ try:
   print(f'Using cached Madrona MJX kernels at: {location}/build')
 except:
   print("Madrona MJX not found, can't use any vision components for training!")
-
-os.environ["MUJOCO_GL"] = "egl"
-xla_flags = os.environ.get('XLA_FLAGS', '')
-xla_flags += ' --xla_gpu_triton_gemm_any=True'
-os.environ['XLA_FLAGS'] = xla_flags
 
 # Ignore the info logs from brax
 logging.set_verbosity(logging.WARNING)
@@ -69,162 +72,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="jax")
 warnings.filterwarnings("ignore", category=UserWarning, module="absl")
 
 
-class ProgressLogger:
-  def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None, log_wandb=True, log_tb=True):
-    self.times = [datetime.now()]
-    self.writer = writer
-    self.ppo_params = ppo_params
-    self.local_plotting = local_plotting
-    self.log_wandb = log_wandb
-    self.log_tb = log_tb
-
-    if self.local_plotting:
-      assert logdir is not None, "logdir must be provided if local_plotting is True"
-      self.logdir = logdir
-
-      class PlotParams(object):
-        def __init__(self, ppo_params):
-          self.x_data = []
-          self.y_data = []
-          self.ydataerr = []
-          self.times = [datetime.now()]
-
-          self.x_data_train = []
-          self.y_data_train = []
-          self.y_data_train_length = []
-          self.y_data_train_success = []
-          self.y_data_train_curriculum_state = []
-
-          self.max_y, self.min_y = 150, 0
-          self.max_episode_length = ppo_params.episode_length
-      self._plt_params = PlotParams(self.ppo_params)
-  
-  def progress(self, num_steps, metrics):
-    self.times.append(datetime.now())
-    if len(self.times) == 2:
-        print(f'time to JIT compile: {self.times[1] - self.times[0]}')
-        print(f'Starting training...')
-
-    # Log to Weights & Biases
-    if self.log_wandb:
-      wandb.log({'num_steps': num_steps, **metrics}, step=num_steps)
-
-    # Log to TensorBoard
-    if self.log_tb and self.writer is not None:
-      for key, value in metrics.items():
-        self.writer.add_scalar(key, value, num_steps)
-      self.writer.flush()
-
-    if 'eval/episode_reward' in metrics:
-    # if self.ppo_params.num_evals > 0:
-      print(f"{num_steps}: reward={metrics['eval/episode_reward']:.3f} episode_length={metrics['eval/avg_episode_length']:.3f}")
-    if not self.log_wandb and not self.log_tb and self.ppo_params.log_training_metrics:
-      if "episode/sum_reward" in metrics:
-        print(
-            f"{num_steps}: mean episode"
-            f" reward={metrics['episode/sum_reward']:.3f}"
-        )
-    
-    if self.local_plotting:
-      if self.ppo_params.num_evals > 0 and 'eval/episode_reward' in metrics:
-        ## called during evaluation
-        # print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
-        #     task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
-        #     episode length: {metrics['eval/avg_episode_length']}")
-        self._plt_params.times.append(datetime.now())
-        self._plt_params.x_data.append(num_steps)
-        self._plt_params.y_data.append(metrics['eval/episode_reward'])
-        self._plt_params.ydataerr.append(metrics['eval/episode_reward_std'])
-
-        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
-        plt.ylim([self._plt_params.min_y, self._plt_params.max_y])
-
-        plt.xlabel('# environment steps')
-        plt.ylabel('reward per episode')
-        plt.title(f'y={self._plt_params.y_data[-1]:.3f}')
-
-        plt.errorbar(
-            self._plt_params.x_data, self._plt_params.y_data, yerr=self._plt_params.ydataerr)
-        plt.show()
-        
-        fig_path = self.logdir / 'progress.png'
-        plt.savefig(fig_path)
-      elif self.ppo_params.log_training_metrics and 'episode/sum_reward' in metrics:
-        ## called during training
-            # print(f"num steps: {num_steps}, eval/episode_reward: {metrics['eval/episode_reward']}, \
-            # task coverage: {metrics['eval/episode_target_area_dynamic_width_scale']}, success rate: {metrics['eval/episode_success_rate']}, \
-            # episode length: {metrics['eval/avg_episode_length']}")
-        self._plt_params.times.append(datetime.now())
-        self._plt_params.x_data_train.append(num_steps)
-        self._plt_params.y_data_train.append(metrics['episode/sum_reward'])
-        self._plt_params.y_data_train_length.append(metrics['episode/length'])
-        self._plt_params.y_data_train_success.append(metrics['episode/success_rate'])
-        self._plt_params.y_data_train_curriculum_state.append(metrics['episode/target_area_dynamic_width_scale'])
-
-        ## Reward
-        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
-        plt.ylim([self._plt_params.min_y, self._plt_params.max_y])
-
-        plt.xlabel('# environment steps')
-        plt.ylabel('reward per episode')
-        plt.title(f'y={self._plt_params.y_data_train[-1]:.3f}')
-
-        plt.errorbar(
-            self._plt_params.x_data_train, self._plt_params.y_data_train) # yerr=ydataerr)
-        plt.show()
-
-        fig_path = self.logdir / 'progress_train_reward.png'
-        plt.savefig(fig_path)
-        plt.close()
-
-        ## Episode length
-        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
-        plt.ylim([0, self._plt_params.max_episode_length * 1.1])
-
-        plt.xlabel('# environment steps')
-        plt.ylabel('episode length')
-        plt.title(f'length={self._plt_params.y_data_train_length[-1]:.3f}')
-        plt.errorbar(
-            self._plt_params.x_data_train, self._plt_params.y_data_train_length) # yerr=ydataerr)
-        plt.show()
-        plt.show()
-
-        fig_path = self.logdir / 'progress_train_length.png'
-        plt.savefig(fig_path)
-        plt.close()
-        
-        ## Success rate
-        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
-        plt.ylim([0, 1])
-
-        plt.xlabel('# environment steps')
-        plt.ylabel('success rate')
-        plt.title(f'success={self._plt_params.y_data_train_success[-1]:.3f}')
-        plt.errorbar(
-            self._plt_params.x_data_train, self._plt_params.y_data_train_success) # yerr=ydataerr)
-        plt.show()
-
-        fig_path = self.logdir / 'progress_train_success.png'
-        plt.savefig(fig_path)
-        plt.close()
-        
-        ## Curriculum state
-        plt.xlim([0, self.ppo_params.num_timesteps * 1.25])
-        plt.ylim([0, 1])
-
-        plt.xlabel('# environment steps')
-        plt.ylabel('curriculum state')
-        plt.title(f'width={self._plt_params.y_data_train_curriculum_state[-1]:.3f}')
-        plt.errorbar(
-            self._plt_params.x_data_train, self._plt_params.y_data_train_curriculum_state) # yerr=ydataerr)
-        plt.show()
-
-        fig_path = self.logdir / 'progress_train_curriculum.png'
-        try:
-          plt.savefig(fig_path)
-          plt.close()
-        except:
-          pass
 
 class ProgressEvalVideoLogger:
   def __init__(self, logdir, eval_env, log_wandb=True):
@@ -263,30 +110,14 @@ class ProgressEvalVideoLogger:
       if _USE_WANDB.value and not _PLAY_ONLY.value:
         wandb.log({'eval/side_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}_1.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
 
-def set_global_seed(seed=0):
-    """Set global random seeds for reproducible results."""
-    import random
-    import numpy as np
-        
-    # Set Python random seed
-    random.seed(seed)
-    
-    # Set NumPy random seed
-    np.random.seed(seed)
-    
-    print(f"Global random seed set to {seed} for reproducible results")
 
-
-import hydra
-from hydra_cli import Config
-from omegaconf import OmegaConf
-from ml_collections.config_dict import ConfigDict
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: Config):
   container = OmegaConf.to_container(cfg, throw_on_missing=True, resolve=True)
   container['env']['vision'] = container['vision']
   config = ConfigDict(container)
+  print(f"Config: ", OmegaConf.to_yaml(container), sep='\n')
   """Run training and evaluation for the specified environment."""
 
   # Set global seed for reproducibility
@@ -298,18 +129,16 @@ def main(cfg: Config):
 
   ppo_params = config.rl
 
-  print(f"Environment Config:\n{env_cfg}")
-  print(f"PPO Training Parameters:\n{ppo_params}")
-
-
   # Generate unique experiment name
-  now = datetime.now()
-  timestamp = now.strftime("%Y%m%d-%H%M%S")
-  exp_name = f"{env_cfg.env_name}-{timestamp}"
-  if config.wandb.suffix is not None:
-    exp_name += f"-{config.wandb.suffix}"
+  if not config.wandb.enabled:  
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d-%H%M%S")
+    exp_name = f"{env_cfg.env_name}-{timestamp}"
+    suffix = "" if config.run.suffix is None else f"-{config.run.suffix}"
+    exp_name += suffix
+  else:
+    exp_name = config.wandb.name
   print(f"Experiment name: {exp_name}")
-
   # Set up logging directory
   logdir = epath.Path("logs").resolve() / exp_name
   logdir.mkdir(parents=True, exist_ok=True)
@@ -317,8 +146,10 @@ def main(cfg: Config):
 
   # Initialize Weights & Biases if required
   if config.wandb.enabled and not config.run.play_only:
-    wandb.init(project=config.wandb.project, name=exp_name)
-    wandb.config.update(env_cfg.to_dict())
+    wandb_params = config.wandb.to_dict()
+    wandb_params.pop('enabled')
+    wandb.init(**wandb_params)
+    wandb.config.update(config.to_dict())
     wandb.config.update({"env_name": env_cfg.env_name})
 
   # Initialize TensorBoard if required
@@ -328,7 +159,7 @@ def main(cfg: Config):
     writer = None
   
   progress_logger = ProgressLogger(writer=writer, ppo_params=ppo_params, logdir=logdir,
-                                   local_plotting=False)
+                                   local_plotting=config.run.local_plotting, log_wandb=config.wandb.enabled, log_tb=config.run.use_tb)
   progress_fn = progress_logger.progress
 
   # progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env)
@@ -348,10 +179,6 @@ def main(cfg: Config):
                     deterministic_rscope=config.run.deterministic_rscope,
                     seed=config.run.seed)
 
-  # print("Done training.")
-  # if len(times) > 1:
-  #   print(f"Time to JIT compile: {times[1] - times[0]}")
-  #   print(f"Time to train: {times[-1] - times[1]}")
   times = progress_logger.times
   if ppo_params.num_timesteps > 0 and len(times) > 2:
     # print(f'time to JIT compile: {times[1] - times[0]}')
