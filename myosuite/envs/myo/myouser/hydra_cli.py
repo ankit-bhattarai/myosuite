@@ -11,11 +11,13 @@ from myosuite.envs.myo.myouser.base import BaseEnvConfig, RLConfig
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import PointingEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
 
+OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "-" + str(x))
+
 @dataclass
 class WANDBEnabledConfig:
     enabled: bool = True
     entity: Union[str, None] = None # None by default so it uses the default entity override to choose a different entity
-    name: Union[str, None] = '${env.env_name}-${now:%Y%m%d}-${now:%H%M%S}-${run.suffix}'
+    name: Union[str, None] = '${env.env_name}-${now:%Y%m%d}-${now:%H%M%S}${check_string:${run.suffix}}'
     project: str = "MJXRL"
     tags: Union[List[str], None] = None
     group: Union[str, None] = None
