@@ -19,8 +19,64 @@ from mujoco_playground import State
 from mujoco_playground._src import mjx_env
 from ml_collections import config_dict
 from myosuite.envs.myo.fatigue import CumulativeFatigue
+from typing import Union
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import Tuple
+from omegaconf import MISSING, OmegaConf
 
+OmegaConf.register_new_resolver("int_divide", lambda x, y: int(x / y))
 
+@dataclass
+class NoiseParams:
+    sigdepnoise_type: Union[str, None] = None
+    sigdepnoise_level: float = 0.103
+    constantnoise_type: Union[str, None] = None
+    constantnoise_level: float = 0.185
+
+@dataclass
+class MuscleConfig:
+    muscle_condition: Union[str, None] = None
+    sex: Union[str, None] = None
+    control_type: str = "default"
+    noise_params: NoiseParams = field(default_factory=lambda: NoiseParams())
+
+@dataclass
+class BaseEnvConfig:
+    env_name: str = MISSING
+    model_path: str = MISSING
+    ctrl_dt: float = 0.002 * 25
+    sim_dt: float = 0.002
+    muscle_config: MuscleConfig = field(default_factory=lambda: MuscleConfig())
+    eval_mode: bool = False
+    
+@dataclass
+class RLConfig:
+    num_timesteps: int = 15_000_000
+    log_training_metrics: bool = True
+    training_metrics_steps: int = 100000
+    num_evals: int = 0
+    reward_scaling: float = 0.1
+    episode_length: int = "${int_divide:${env.task_config.max_duration},${env.ctrl_dt}}" #TODO: check and fix this dependency!
+    clipping_epsilon: float = 0.3
+    normalize_observations: bool = True
+    action_repeat: int = 1
+    unroll_length: int = 10
+    num_minibatches: int = 8
+    num_updates_per_batch: int = 8
+    num_resets_per_eval: int = 1
+    discounting: float = 0.97
+    learning_rate: float = 3e-4
+    entropy_cost: float = 0.001
+    num_envs: int = 1024
+    batch_size: int = 128
+    max_grad_norm: float = 1.0
+    network_factory: Dict[str, Any] = field(default_factory=lambda: {
+        "policy_hidden_layer_sizes": (256, 256),
+        "value_hidden_layer_sizes": (256, 256),
+    })
+    load_checkpoint_path: Union[str, None] = None
+    
 def get_default_config():
     return config_dict.create(
         model_path="myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml",
@@ -291,13 +347,13 @@ class MyoUserBase(mjx_env.MjxEnv):
         pass
     
     def _prepare_vision(self):
-        if not self._config.vision_mode:
+        if not self._config.vision.enabled:
             self.vision = False
             return
         self.vision = True
         from madrona_mjx.renderer import BatchRenderer
 
-        self.vision_mode = self._config.vision_mode
+        self.vision_mode = self._config.vision.vision_mode
         assert (
             self.vision_mode in ALLOWED_VISION_MODES
         ), f"Invalid vision mode: {self.vision_mode} (allowed modes: {ALLOWED_VISION_MODES})"

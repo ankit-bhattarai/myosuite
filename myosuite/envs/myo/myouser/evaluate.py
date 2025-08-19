@@ -5,8 +5,9 @@ from ml_collections import ConfigDict
 import json
 
 def evaluate_policy(checkpoint_path=None, env_name=None,
-                    eval_env=None, env_cfg=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
-                    seed=123, n_episodes=1):
+                    eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
+                    seed=123, n_episodes=1,
+                    ep_length=None):
     """
     Generate an evaluation trajectory from a stored checkpoint policy.
 
@@ -17,15 +18,14 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
         ## TODO: directly pass episode_length rather than env_cfg, if checkpoint_path is None
-        assert env_cfg is not None, "If no checkpoint path is provided, env config must be passed directly as 'env_cfg'"
         assert jit_inference_fn is not None, "If no checkpoint path is provided, policy must be passed directly as 'jit_inference_fn'"
         assert jit_reset is not None, "If no checkpoint path is provided, jitted reset function must be passed directly as 'jit_reset'"
         assert jit_step is not None, "If no checkpoint path is provided, jitted step function must be passed directly as 'jit_step'"
     else:
         assert env_name is not None, "If checkpoint path is provided, env name must also be passed as 'env_name'"
         with open(os.path.join(checkpoint_path, "config.json"), "r") as f:
-            env_cfg = ConfigDict(json.load(f))
-        eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, env_cfg, ppo_params=env_cfg.ppo_config, eval_mode=True, checkpoint_path=checkpoint_path)
+            config = ConfigDict(json.load(f))
+        eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
         jit_inference_fn = jax.jit(make_inference_fn(params, deterministic=True))
         jit_reset = jax.jit(eval_env.reset)
         jit_step = jax.jit(eval_env.step)
@@ -35,11 +35,14 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     rollout = []
     # modify_scene_fns = []
 
+    if ep_length is None:
+        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)  #TODO
+
     for _ in range(n_episodes):
         state = jit_reset(reset_keys)
         rollout.append(state)
         # modify_scene_fns.append(functools.partial(update_target_visuals, target_pos=state.info["target_pos"].flatten(), target_size=state.info["target_radius"].flatten()))
-        for i in range(env_cfg.ppo_config.episode_length):
+        for i in range(ep_length):
             eval_key, key = jax.random.split(eval_key)
             ctrl, _ = jit_inference_fn(state.obs, key)  #VARIANT 1
             # ctrl = deterministic_policy(state.obs)  #VARIANT 2

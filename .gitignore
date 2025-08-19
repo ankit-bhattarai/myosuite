@@ -131,3 +131,5 @@ myosuite/agents/nohup.out
 myosuite/agents/outputs
 **/checkpoints/
 logs/
+wandb/
+outputs/
