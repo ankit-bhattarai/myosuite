@@ -36,7 +36,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     # modify_scene_fns = []
 
     if ep_length is None:
-        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)  #TODO
+        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
 
     for _ in range(n_episodes):
         state = jit_reset(reset_keys)

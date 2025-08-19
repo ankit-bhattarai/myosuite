@@ -24,7 +24,7 @@ class ProgressEvalVideoLoggerDEPRECATED:
                seed=123,
                deterministic=True,
                n_episodes=10,
-               episode_length=None,
+               ep_length=None,
                height=480,
                width=640,
                cameras=[None],
@@ -39,9 +39,9 @@ class ProgressEvalVideoLoggerDEPRECATED:
     self.deterministic = deterministic
     self.n_episodes = n_episodes
 
-    if episode_length is None:
-        episode_length = eval_env._config.ppo_config.episode_length  #TODO: verify _config attribute exists after integrating hydra
-    self.episode_length = episode_length
+    if ep_length is None:
+        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
+    self.episode_length = ep_length
 
     self.height = height
     self.width = width
@@ -118,7 +118,7 @@ class ProgressEvalVideoLogger:
                seed=123,
                deterministic=True,
                n_episodes=10,
-               episode_length=None,
+               ep_length=None,
                height=480,
                width=640,
                cameras=[None],
@@ -133,9 +133,9 @@ class ProgressEvalVideoLogger:
     self.deterministic = deterministic
     self.n_episodes = n_episodes
 
-    if episode_length is None:
-        episode_length = eval_env._config.ppo_config.episode_length  #TODO: verify _config attribute exists after integrating hydra
-    self.episode_length = episode_length
+    if ep_length is None:
+        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
+    self.episode_length = ep_length
 
     self.height = height
     self.width = width
@@ -376,7 +376,7 @@ def train_or_load_checkpoint(env_name,
             progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env,
                                                                 seed=123, #TODO: add eval_seed to args
                                                                 n_episodes=10,
-                                                                #episode_length=80,
+                                                                #ep_length=80,
                                                                 cameras=["fixed-eye", None]
                                                                 )
             progress_fn_eval_video = progress_eval_video_logger.progress_eval_video
