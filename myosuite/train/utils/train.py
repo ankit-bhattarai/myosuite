@@ -32,9 +32,8 @@ def rscope_fn(full_states, obs, rew, done):
   )
 
 def train_or_load_checkpoint(env_name, 
-                    env_cfg,
+                    config,
                     eval_mode=False,
-                    ppo_params=None,
                     logdir=None,
                     checkpoint_path=None,
                     policy_params_fn_checkpoints=None,
@@ -47,7 +46,8 @@ def train_or_load_checkpoint(env_name,
                     seed=1,):
     
     # env_cfg = registry.get_default_config(env_name)  #default_config()
-    ppo_params = ppo_params if ppo_params is not None else env_cfg.ppo_config
+    env_cfg = config.env
+    ppo_params = config.rl
     if eval_mode:
         ppo_params.num_timesteps = 0  #only load the model, do not train
 
@@ -80,7 +80,7 @@ def train_or_load_checkpoint(env_name,
 
     # Save environment configuration
     with open(ckpt_path / "config.json", "w", encoding="utf-8") as fp:
-        json.dump(env_cfg.to_dict(), fp, indent=4)
+        json.dump(config.to_dict(), fp, indent=4)
 
     if vision:
         env_cfg.vision_mode = vision

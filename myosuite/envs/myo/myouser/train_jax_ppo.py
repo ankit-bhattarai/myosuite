@@ -169,8 +169,7 @@ def main(cfg: Config):
 
   ## TRAINING/LOADING CHECKPOINT
   # Train or load the model
-  env, make_inference_fn, params = train_or_load_checkpoint(env_cfg.env_name, env_cfg,
-                    ppo_params=ppo_params,
+  env, make_inference_fn, params = train_or_load_checkpoint(env_cfg.env_name, config,
                     logdir=logdir,
                     checkpoint_path=config.rl.load_checkpoint_path,
                     progress_fn=progress_fn,
@@ -205,7 +204,7 @@ def main(cfg: Config):
 
   # Prepare for evaluation
   rollout = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
-                            eval_env=env, env_cfg=env_cfg, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
+                            eval_env=env, config=config, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
                             seed=123,  #seed=_SEED.value,  #TODO: use different seed?
                             n_episodes=10)  #TODO: n_episodes as hydra config param?
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
