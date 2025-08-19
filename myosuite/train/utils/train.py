@@ -16,7 +16,6 @@ import mediapy as media
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
 from myosuite.train.utils.wrapper import wrap_myosuite_training
-from myosuite.envs.myo.myouser.myouser_envs import get_observation_size
 from myosuite.envs.myo.myouser.evaluate import evaluate_policy
 from myosuite.envs.myo.myouser.utils import render_traj
 
