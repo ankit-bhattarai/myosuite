@@ -185,7 +185,6 @@ class ProgressEvalVideoLogger:
     # wandb.log({'eval_vis/side_view': wandb.Video(str(self.checkpoint_path / f"{num_steps}_1.mp4"), format="mp4")}, step=num_steps)  #, fps=fps)}, step=num_steps)
 
 
-
 def rscope_fn(full_states, obs, rew, done):
   """
   All arrays are of shape (unroll_length, rscope_envs, ...)
@@ -204,9 +203,8 @@ def rscope_fn(full_states, obs, rew, done):
   )
 
 def train_or_load_checkpoint(env_name, 
-                    env_cfg,
+                    config,
                     eval_mode=False,
-                    ppo_params=None,
                     logdir=None,
                     checkpoint_path=None,
                     policy_params_fn_checkpoints=None,
@@ -219,7 +217,8 @@ def train_or_load_checkpoint(env_name,
                     seed=1,):
     
     # env_cfg = registry.get_default_config(env_name)  #default_config()
-    ppo_params = ppo_params if ppo_params is not None else env_cfg.ppo_config
+    env_cfg = config.env
+    ppo_params = config.rl
     if eval_mode:
         ppo_params.num_timesteps = 0  #only load the model, do not train
 
@@ -252,7 +251,7 @@ def train_or_load_checkpoint(env_name,
 
     # Save environment configuration
     with open(ckpt_path / "config.json", "w", encoding="utf-8") as fp:
-        json.dump(env_cfg.to_dict(), fp, indent=4)
+        json.dump(config.to_dict(), fp, indent=4)
 
     if vision:
         env_cfg.vision_mode = vision
@@ -288,7 +287,7 @@ def train_or_load_checkpoint(env_name,
     # else:
     #     network_factory = network_fn
 
-    network_factory = functools.partial(networks.custom_network_factory, vision=vision, get_observation_size=functools.partial(get_observation_size, env_name=env_name, vision=vision), **getattr(ppo_params, "network_factory", {}))
+    network_factory = functools.partial(networks.custom_network_factory, vision=vision, **getattr(ppo_params, "network_factory", {}))
 
     if domain_randomization:
         training_params["randomization_fn"] = registry.get_domain_randomizer(
@@ -313,6 +312,9 @@ def train_or_load_checkpoint(env_name,
 
     if "num_eval_envs" in training_params:
         del training_params["num_eval_envs"]
+    
+    if "load_checkpoint_path" in training_params:
+        del training_params["load_checkpoint_path"]
 
     train_fn = functools.partial(
         ppo.train,

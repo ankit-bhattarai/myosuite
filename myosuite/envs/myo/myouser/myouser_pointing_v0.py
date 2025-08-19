@@ -25,8 +25,45 @@ from mujoco_playground import State
 
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
-from myosuite.envs.myo.myouser.base import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
+from dataclasses import dataclass, field
+from typing import List, Dict
 
+@dataclass
+class ReachSettings:
+    ref_site: str = "humphant"
+    target_origin_rel: List[float] = field(default_factory=lambda: [0., 0., 0.])
+    target_pos_range: Dict[str, List[List[float]]] = field(default_factory=lambda: {
+        "fingertip": [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]],
+    })
+    target_radius_range: Dict[str, List[float]] = field(default_factory=lambda: {
+        "fingertip": [0.05, 0.05],
+    })
+
+@dataclass
+class PointingTaskConfig:
+    reach_settings: ReachSettings = field(default_factory=lambda: ReachSettings())
+    obs_keys: List[str] = field(default_factory=lambda: [
+        "qpos",
+        "qvel",
+        "qacc",
+        "ee_pos",
+        "act",
+    ])
+    omni_keys: List[str] = field(default_factory=lambda: ["target_pos", "target_radius"])
+    weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
+        "reach": 1,
+        "bonus": 8,
+    })
+    max_duration: float = 4.
+    max_trials: int = 1
+    reset_type: str = "range_uniform"
+
+@dataclass
+class PointingEnvConfig(BaseEnvConfig):
+    env_name: str = "MyoUserPointing"
+    model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_reaching_myouser.xml"
+    task_config: PointingTaskConfig = field(default_factory=lambda: PointingTaskConfig())
 
 def default_config() -> config_dict.ConfigDict:
     #TODO: update/make use of env_config parameters!
@@ -140,7 +177,7 @@ class MyoUserPointing(MyoUserBase):
         self.obs_keys = self._config.task_config.obs_keys
         self.omni_keys = self._config.task_config.omni_keys
         #TODO: call _prepare_vision() before _setup()?
-        if not self._config.vision_mode:
+        if not self._config.vision.enabled:
             print(f"No vision, so adding {self.omni_keys} to obs_keys")
             for key in self.omni_keys:
                 if key not in self.obs_keys:
@@ -167,7 +204,7 @@ class MyoUserPointing(MyoUserBase):
 
         # Dwelling based selection -- fingertip needs to be inside target for some time
         self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
-        if self._config.vision_mode:
+        if self._config.vision.enabled:
             print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
             self.dwell_threshold *= 2   
 
