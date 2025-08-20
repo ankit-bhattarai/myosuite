@@ -58,6 +58,7 @@ class PointingTaskConfig:
     max_duration: float = 4.
     max_trials: int = 1
     reset_type: str = "range_uniform"
+    using_vision_domain_randomisation: bool = "${run.domain_randomization}"
 
 @dataclass
 class PointingEnvConfig(BaseEnvConfig):
@@ -411,7 +412,11 @@ class MyoUserPointing(MyoUserBase):
                 'task_completed': jp.array(False),
                 }
         info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
-        info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
+        if self._config.task_config.using_vision_domain_randomisation:
+            info['target_radius'] = self.mjx_model.geom_size[self.target_geom_id, 0]
+        else:
+            info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
+
         # if self.vision or self.eval_mode:
         #     self.update_task_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
         
@@ -419,7 +424,7 @@ class MyoUserPointing(MyoUserBase):
         # TODO: move the following lines into MyoUserBase.reset?
         if self.vision:
             # TODO: do we need to update target information for rendering?
-            # data = self.add_target_pos_to_data(data, info["target_pos"])
+            data = self.add_target_pos_to_data(data, info["target_pos"])
             info.update(self.generate_pixels(data, render_token=render_token))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
@@ -580,3 +585,69 @@ class MyoUserPointing(MyoUserBase):
 
         mj_model.body_pos[self.target_body_id, :] = target_pos
         mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
+
+def modify_radius_geom_randomisation_fn(mjx_model, radius_range, geom_id, possible_rgbas, rng):
+    assert len(radius_range) == 2, "radius_range must be a tuple of two elements"
+  
+    @jax.vmap
+    def rand(rng):
+        rng, radius_rng, color_rng = jax.random.split(rng, 3)
+
+        # A matid of -1 means use default material,
+        # matid of -2 means use color override
+
+        geom_matid = mjx_model.geom_matid
+        geom_matid = geom_matid.at[geom_id].set(-2)
+
+        new_color = jax.random.choice(color_rng, possible_rgbas)
+    
+        geom_size = mjx_model.geom_size
+        geom_size = geom_size.at[geom_id].set(jax.random.uniform(radius_rng, minval=radius_range[0], maxval=radius_range[1]))
+        geom_rgba = mjx_model.geom_rgba
+        geom_rgba = geom_rgba.at[geom_id].set(new_color)
+
+        return (
+            geom_rgba,
+            geom_matid,
+            geom_size,
+            mjx_model.light_pos,
+            mjx_model.light_dir,
+            mjx_model.light_type,
+            mjx_model.light_castshadow,
+            mjx_model.light_cutoff,
+        )
+
+    (
+        geom_rgba,
+        geom_matid,
+        geom_size,
+        light_pos,
+        light_dir,
+        light_type,
+        light_castshadow,
+        light_cutoff,
+    ) = rand(rng)
+
+    in_axes = jax.tree_util.tree_map(lambda x: None, mjx_model)
+    in_axes = in_axes.tree_replace({
+        'geom_rgba': 0,
+        'geom_matid': 0,
+        'geom_size': 0,
+        'light_pos': 0,
+        'light_dir': 0,
+        'light_type': 0,
+        'light_castshadow': 0,
+        'light_cutoff': 0,
+    })
+
+    mjx_model = mjx_model.tree_replace({
+        'geom_rgba': geom_rgba,
+        'geom_matid': geom_matid,
+        'geom_size': geom_size,
+        'light_pos': light_pos,
+        'light_dir': light_dir,
+        'light_type': light_type,
+        'light_castshadow': light_castshadow,
+        'light_cutoff': light_cutoff,
+    })
+    return mjx_model, in_axes
