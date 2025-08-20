@@ -16,6 +16,14 @@ from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
 
 OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "-" + str(x))
 
+def select_network(vision_enabled):
+    if vision_enabled == "enabled":
+        return "vision"
+    else:
+        return "no_vision"
+
+OmegaConf.register_new_resolver("select_network", select_network)
+
 @dataclass
 class WANDBEnabledConfig:
     enabled: bool = True
@@ -28,6 +36,32 @@ class WANDBEnabledConfig:
 @dataclass
 class WANDBDisabledConfig:
     enabled: bool = False
+    
+@dataclass
+class NetworkConfig:
+    policy_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [256, 256]
+    )
+    value_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [256, 256]
+    )
+
+@dataclass
+class VisionNetworkConfig(NetworkConfig):
+    policy_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [32, 32, 32, 32]
+    )
+    value_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [256, 256, 256, 256, 256]
+    )
+    encoder_out_size: int = 4
+    cheat_vision_aux_output: bool = False
+    has_vision_aux_output: bool = True
+    vision_aux_output_mlp: bool = True
+    vision_aux_output_mlp_output_size: int = 4
+    vision_encoder_normalize_output: bool = True
+    stop_vision_gradient: bool = False
+
 
 @dataclass
 class RLConfig:
@@ -50,10 +84,7 @@ class RLConfig:
     num_envs: int = 1024
     batch_size: int = 128
     max_grad_norm: float = 1.0
-    network_factory: Dict[str, Any] = field(default_factory=lambda: {
-        "policy_hidden_layer_sizes": (256, 256),
-        "value_hidden_layer_sizes": (256, 256),
-    })
+    network_factory: NetworkConfig = field(default_factory=lambda: NetworkConfig())
     load_checkpoint_path: Union[str, None] = None
 
 class VisionModes(str, Enum):
@@ -82,6 +113,8 @@ defaults = [
     {'env': 'pointing'},
     {'rl': 'rl_config'},
     {'run': 'run'},
+    {'rl/network_factory': '${select_network:${vision}}'},
+
 ]
 
 @dataclass
@@ -115,6 +148,8 @@ cs.store(group="env", name="pointing", node=PointingEnvConfig)
 cs.store(group="env", name="steering", node=SteeringEnvConfig)
 cs.store(group="rl", name="rl_config", node=RLConfig)
 cs.store(group="run", name="run", node=RunConfig)
+cs.store(group="rl/network_factory", name="vision", node=VisionNetworkConfig)
+cs.store(group="rl/network_factory", name="no_vision", node=NetworkConfig)
 
 
 def load_config_interactive(overrides=[]):
