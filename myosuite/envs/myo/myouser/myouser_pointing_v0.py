@@ -534,7 +534,10 @@ class MyoUserPointing(MyoUserBase):
         ## TODO: can we move the following lines after self.get_ctrl and mjx_env.step are called?
         rng, rng1, rng2 = jax.random.split(rng, 3)
         state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
-        state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
+        
+        
+        # Never change the target radius during the task!
+        # state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
         # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
         # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
 
@@ -552,7 +555,7 @@ class MyoUserPointing(MyoUserBase):
         # obs = self.get_obs_vec(data, state.info)
         if self.vision:
             # TODO: do we need to update target information for rendering?
-            # data = self.add_target_pos_to_data(data, state.info["target_pos"])
+            data = self.add_target_pos_to_data(data, state.info["target_pos"])
             pixels_dict = self.generate_pixels(data, state.info['render_token'])
             state.info.update(pixels_dict)
         obs_dict = self.get_obs_dict(data, state.info)
