@@ -1,8 +1,11 @@
 import os
+from xml.parsers.expat import model
 import jax
 from ml_collections import ConfigDict
 import json
-
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
+import jax.numpy as jnp
 
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
@@ -14,6 +17,8 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     You can either call this method by directly passing the checkpoint, env, jitted policy, etc. (useful if checkpoint was already loaded in advance, e.g., in a Jupyter notebook file), 
     or let this method load the env and policy from scratch by passing only checkpoint_path and env_name (takes ~1min).
     """
+
+    print("start evaluate")
 
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
@@ -34,6 +39,8 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     eval_key, reset_keys = jax.random.split(eval_key)
     rollout = []
     # modify_scene_fns = []
+    IDs = []
+    MTs = []
 
     if ep_length is None:
         ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
@@ -41,23 +48,49 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     for _ in range(n_episodes):
         state = jit_reset(reset_keys)
         rollout.append(state)
-        # modify_scene_fns.append(functools.partial(update_target_visuals, target_pos=state.info["target_pos"].flatten(), target_size=state.info["target_radius"].flatten()))
+        
+        completed_phase_0 = False
+        MT = 0
         for i in range(ep_length):
             eval_key, key = jax.random.split(eval_key)
-            ctrl, _ = jit_inference_fn(state.obs, key)  #VARIANT 1
-            # ctrl = deterministic_policy(state.obs)  #VARIANT 2
-            # ctrl = jax.random.uniform(act_rng, shape=eval_env._na)  #BASELINE: random control
+            ctrl, _ = jit_inference_fn(state.obs, key) 
             state = jit_step(state, ctrl)
-            # touch_detected = any([({eval_env.mj_model.geom(con_geom[0]).name, eval_env.mj_model.geom(con_geom[1]).name} == {"fingertip_contact", "screen"}) and (con_dist < 0) for con_geom, con_dist in zip(state.data._impl.contact.geom, state.data._impl.contact.dist)])
-            # if touch_detected:
-            #   print(f"Step {i}, touch detected. {state.data._impl.contact.dist}")    
-            # print(f"Step {i}, ee_pos: {state.obs[:, 15:18]}")
-            # print(f"Target {i}, target_pos: {state.obs[:, -4:-1]}")
-            # print(f"Step {i}, steps_since_last_hit: {state.info['steps_since_last_hit']}")
+
+            metrics = state.metrics
+
+            if metrics["completed_phase_0"] == True and not completed_phase_0:                    
+                completed_phase_0 = True
+                timestep_start_steering = i
+
+            if completed_phase_0 and metrics["completed_phase_1"] == True:
+                timestep_end_steering = i
+                MT = (timestep_end_steering - timestep_start_steering)*0.002 * 25
+
             rollout.append(state)
-            # modify_scene_fns.append(functools.partial(update_target_visuals, target_pos=state.info["target_pos"].flatten(), target_size=state.info["target_radius"].flatten()))
+            
             if state.done.all():
                 break
         eval_key, reset_keys = jax.random.split(eval_key)
+
+        #after one episode:
+        L = abs(state.info["end_line"][1] - state.info["start_line"][1])
+        W = abs(state.info["top_line"][2] - state.info["bottom_line"][2])
+        ID = L/W
+        IDs.append(ID)
+        MTs.append(MT)
+        print(ID, MT)
+        #state.metrics.append({"ID": ID, "MT": MT})
+        completed_phase_0 = False
+        
+    model = LinearRegression()
+    model.fit(IDs, MTs)
+
+    X = jnp.array(IDs).reshape(-1, 1)
+    y = jnp.array(MTs)
+
+    y_pred = model.predict(X)
+    r2 = r2_score(y, y_pred)
+
+    state.metrics.append({"R2": r2})
 
     return rollout
