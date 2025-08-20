@@ -5,17 +5,20 @@ Authors  :: Vikash Kumar (vikashplus@gmail.com), Vittorio Caggiano (caggiano@gma
 
 
 from mujoco_playground import registry
-
+from mujoco_playground._src.manipulation import _randomizer
 ## Register MyoUser environments and their variants
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import MyoUserPointing
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import default_config as MyoUserPointing_config
+from myosuite.envs.myo.myouser.myouser_pointing_v0 import modify_radius_geom_randomisation_fn
 from myosuite.envs.myo.myouser.myouser_steering_v0 import MyoUserSteering
 from myosuite.envs.myo.myouser.myouser_steering_v0 import default_config as MyoUserSteering_config
+
 
 # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
 registry.manipulation.register_environment("MyoUserPointing", MyoUserPointing, MyoUserPointing_config)
 registry.manipulation.register_environment("MyoUserSteering", MyoUserSteering, MyoUserSteering_config)
 
+_randomizer["MyoUserPointing"] = modify_radius_geom_randomisation_fn
 
 
 ## TODO: register variants
@@ -24,7 +27,7 @@ registry.manipulation.register_environment("MyoUserSteering", MyoUserSteering, M
 from myosuite.utils import gym; register=gym.register
 from myosuite.envs.env_variants import register_env_variant
 
-from .base import MyoUserBase
+# from .base import MyoUserBase
 
 import os, sys
 import numpy as np
