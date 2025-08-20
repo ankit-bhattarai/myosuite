@@ -106,6 +106,7 @@ def default_config() -> config_dict.ConfigDict:
                 phase_1_touch=7,
                 phase_1_tunnel=5,  #-2,
                 neural_effort=0.005,  #1e-4,
+                jac_effort=1,
                 
                 # ## old reward fct. (florian's branch):
                 # reach=1,
@@ -329,6 +330,7 @@ class MyoUserSteering(MyoUserBase):
             # ('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
             ('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
+            ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
@@ -336,6 +338,14 @@ class MyoUserSteering(MyoUserBase):
         rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
 
         return rwd_dict
+    
+    def get_jac_effort_costs(self, obs_dict):
+        r_effort = 0.00198*jp.linalg.norm(obs_dict['last_ctrl'])**2 
+        r_jacc = 6.67e-6*jp.linalg.norm(obs_dict['qacc'][self._independent_dofs])**2 
+
+        effort_cost = self._weight*(r_effort + r_jacc)
+        
+        return effort_cost
 
     @staticmethod
     def get_tunnel_limits(rng, low, high, min_size):
