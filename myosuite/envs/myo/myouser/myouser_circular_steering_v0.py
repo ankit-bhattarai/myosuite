@@ -22,19 +22,46 @@ from ml_collections import config_dict
 import mujoco
 from mujoco import mjx
 from mujoco_playground import State
+from dataclasses import dataclass, field
+from typing import List, Dict
 
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
-from myosuite.envs.myo.myouser.base import MyoUserBase
+from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
 
+@dataclass
+class CircularSteeringTaskConfig:
+    distance_reach_metric_coefficient: float = 10.
+    screen_distance_x: float = 0.5
+    screen_friction: float = 0.1
+    obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'start_line', 'end_line', 'top_line_radius', 'bottom_line_radius', 'completed_phase_0', 'target', 'middle_line_crossed'])
+    weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
+        "reach": 1,
+        "bonus_1": 10,
+        "phase_1_touch": 1,
+        "phase_1_tunnel": 3,
+        "neural_effort": 0,
+    })
+    max_duration: float = 5.
+    max_trials: int = 1
+    reset_type: str = "range_uniform"
+    min_width: float = 0.2
+    min_inner_radius: float = 0.05
+    max_inner_radius: float = 0.3
+    inner_radius: float = 0.1
+    outer_radius: float = 0.2
+
+@dataclass
+class CircularSteeringEnvConfig(BaseEnvConfig):
+    env_name: str = "MyoUserCircularSteering"
+    model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_circular_steering_myouser.xml",
+    task_config: CircularSteeringTaskConfig = field(default_factory=lambda: CircularSteeringTaskConfig())
 
 def default_config() -> config_dict.ConfigDict:
     #TODO: update/make use of env_config parameters!
     env_config = config_dict.create(
-        # model_path="myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml",
         model_path="myosuite/envs/myo/assets/arm/mobl_arms_index_circular_steering_myouser.xml",
-        # model_path="myosuite/envs/myo/assets/arm/mobl_arms_index_myoarm_reaching_myouser.xml",
-        # model_path="myosuite/envs/myo/assets/arm/myoarm_reaching_myouser.xml",  #rf"../assets/arm/myoarm_relocate.xml"
         #TODO: use 'wrapper' xml file in assets rather than raw simhive file
         ctrl_dt=0.002 * 25,  # Each control step is 25 physics steps
         sim_dt=0.002,
@@ -67,21 +94,16 @@ def default_config() -> config_dict.ConfigDict:
             screen_distance_x=0.5,  #0.59
             screen_friction=0.1,
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
-            omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line_radius', 'bottom_line_radius', 'completed_phase_0', 'target', 'middle_line_crossed'],
+            omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
             weighted_reward_keys=config_dict.create(
                 reach=1,
                 # bonus_0=0,
                 bonus_1=10,
-                phase_1_touch=6,
+                phase_1_touch=7,
                 phase_1_tunnel=5,  #-2,
-                #neural_effort=0,  #1e-4,
-                
-                # ## old reward fct. (florian's branch):
-                # reach=1,
-                # bonus_0_old=5,
-                # bonus_1_old=12,
+                neural_effort=0.005,  #1e-4,
             ),
-            max_duration=5., # timelimit per trial, in seconds
+            max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
             reset_type="range_uniform",
         ),
@@ -92,7 +114,7 @@ def default_config() -> config_dict.ConfigDict:
     rl_config = config_dict.create(
         num_timesteps=15_000_000,  #50_000_000,
         log_training_metrics=True,
-        num_evals=1,  #16,
+        num_evals=0,  #16,
         reward_scaling=0.1,
         # episode_length=env_config.episode_length,
         episode_length=int(env_config.task_config.max_duration / env_config.ctrl_dt),  #TODO: fix, as this dependency is not automatically updated...
@@ -119,7 +141,6 @@ def default_config() -> config_dict.ConfigDict:
     )
     env_config["ppo_config"] = rl_config
     return env_config
-
 
 class MyoUserCircularSteering(MyoUserBase): 
     def modify_mj_model(self, mj_model):
