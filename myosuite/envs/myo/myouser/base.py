@@ -357,7 +357,17 @@ class MyoUserBase(mjx_env.MjxEnv):
         assert (
             self.vision_mode in ALLOWED_VISION_MODES
         ), f"Invalid vision mode: {self.vision_mode} (allowed modes: {ALLOWED_VISION_MODES})"
-
+        enabled_cameras = self._config.vision.enabled_cameras
+        assert len(enabled_cameras) == 1, "Only one camera is supported for now"
+        if self._mjx_model.ncam > 1:
+            print(f"Ensuring that all cameras have the same fovy as the chosen camera: {enabled_cameras[0]}")
+            cam_fovy = self._mjx_model.cam_fovy
+            print(f"Initial cam_fovy: {cam_fovy}")
+            relevant_cam_fovy = cam_fovy[enabled_cameras[0]]
+            print(f"Camera: {enabled_cameras[0]}, relevant_cam_fovy: {relevant_cam_fovy}")
+            cam_fovy = cam_fovy * 0 + relevant_cam_fovy
+            self._mjx_model = self._mjx_model.replace(cam_fovy=cam_fovy)
+            print(f"Final cam_fovy: {self._mjx_model.cam_fovy}")
         self.batch_renderer = BatchRenderer(
             m=self._mjx_model,
             gpu_id=self._config.vision.gpu_id,
