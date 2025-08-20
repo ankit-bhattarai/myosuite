@@ -549,8 +549,8 @@ class MyoUserBase(mjx_env.MjxEnv):
             jp.array(self.mjx_model.eq_obj2id), \
             jp.array(self.mjx_model.eq_data[:, 4::-1])
         
-        reset_qpos_new = jp.select(jp.array([jp.any((eq_dep == i) & _joint_constraints & _active_eq_constraints) for i in range(self.mjx_model.njnt)]), 
-                                   jp.array([jp.polyval(poly_coefs[jp.argwhere(eq_dep == i, size=1).flatten(), :].flatten(), reset_qpos[eq_indep[jp.argwhere(eq_dep == i, size=1).flatten()]]) for i in range(self.mjx_model.njnt)]),
+        reset_qpos_new = jp.where(jp.array([jp.any((eq_dep == i) & _joint_constraints & _active_eq_constraints) for i in range(self.mjx_model.njnt)]), 
+                                   jp.array([jp.polyval(poly_coefs[jp.argwhere(eq_dep == i, size=1).flatten(), :].flatten(), reset_qpos[eq_indep[jp.argwhere(eq_dep == i, size=1).flatten()]]) for i in range(self.mjx_model.njnt)]).flatten(),
                                    reset_qpos)
         
         return reset_qpos_new

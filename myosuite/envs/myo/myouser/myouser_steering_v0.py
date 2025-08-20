@@ -482,13 +482,29 @@ class MyoUserSteering(MyoUserBase):
 
     def update_task_visuals(self, mj_model, state):
         screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])  #need to re-introduce site pos offset from xml file that was ignored in get_custom_tunnel() to ensure that task visuals properly appear in front of the screen 
+        screen_y = screen_pos[1]
+        screen_z = screen_pos[2]
         top_line = state.info["top_line"]
         bottom_line = state.info["bottom_line"]
         start_line = state.info["start_line"]
         end_line = state.info["end_line"]
+        bottom_z = bottom_line[2] - screen_z
+        top_z = top_line[2] - screen_z
+        left_y = start_line[1] - screen_y
+        right_y = end_line[1] - screen_y
+        width_midway = (left_y + right_y) / 2
+        height_midway = (top_z + bottom_z) / 2
+        height = top_z - bottom_z
+        width = left_y - right_y
+        
+        mj_model.site('bottom_line').pos[1:] = jp.array([width_midway, bottom_z])
+        mj_model.site('bottom_line').size[1] = width / 2
 
-        # As we need to modify model pos for rendering (data xpos will be overwritten), we need to provide coordinates relative to parent body, which can be done by subtracting 'screen' site xpos (requires this site to be placed inside 'screen' body with pos='0 0 0'!)
-        mj_model.site_pos[self.top_line_id, :] = top_line - screen_pos
-        mj_model.site_pos[self.bottom_line_id, :] = bottom_line - screen_pos
-        mj_model.site_pos[self.start_line_id, :] = start_line - screen_pos
-        mj_model.site_pos[self.end_line_id, :] = end_line - screen_pos
+        mj_model.site('top_line').pos[1:] = jp.array([width_midway, top_z])
+        mj_model.site('top_line').size[1] = width / 2
+
+        mj_model.site('start_line').pos[1:] = jp.array([left_y, height_midway])
+        mj_model.site('start_line').size[2] = height / 2
+
+        mj_model.site('end_line').pos[1:] = jp.array([right_y, height_midway])
+        mj_model.site('end_line').size[2] = height / 2

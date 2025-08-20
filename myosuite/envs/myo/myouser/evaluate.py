@@ -1,8 +1,8 @@
 import os
 import jax
-from myosuite.train.utils.train import train_or_load_checkpoint
 from ml_collections import ConfigDict
 import json
+
 
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
@@ -17,12 +17,12 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
 
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
-        ## TODO: directly pass episode_length rather than env_cfg, if checkpoint_path is None
         assert jit_inference_fn is not None, "If no checkpoint path is provided, policy must be passed directly as 'jit_inference_fn'"
         assert jit_reset is not None, "If no checkpoint path is provided, jitted reset function must be passed directly as 'jit_reset'"
         assert jit_step is not None, "If no checkpoint path is provided, jitted step function must be passed directly as 'jit_step'"
     else:
         assert env_name is not None, "If checkpoint path is provided, env name must also be passed as 'env_name'"
+        from myosuite.train.utils.train import train_or_load_checkpoint
         with open(os.path.join(checkpoint_path, "config.json"), "r") as f:
             config = ConfigDict(json.load(f))
         eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
@@ -36,7 +36,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     # modify_scene_fns = []
 
     if ep_length is None:
-        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)  #TODO
+        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
 
     for _ in range(n_episodes):
         state = jit_reset(reset_keys)
