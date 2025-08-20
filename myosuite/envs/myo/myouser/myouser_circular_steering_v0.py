@@ -55,7 +55,7 @@ class CircularSteeringTaskConfig:
 @dataclass
 class CircularSteeringEnvConfig(BaseEnvConfig):
     env_name: str = "MyoUserCircularSteering"
-    model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_circular_steering_myouser.xml",
+    model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_circular_steering_myouser.xml"
     task_config: CircularSteeringTaskConfig = field(default_factory=lambda: CircularSteeringTaskConfig())
 
 def default_config() -> config_dict.ConfigDict:
@@ -158,7 +158,7 @@ class MyoUserCircularSteering(MyoUserBase):
         self.obs_keys = self._config.task_config.obs_keys
         self.omni_keys = self._config.task_config.omni_keys
         #TODO: call _prepare_vision() before _setup()?
-        if not self._config.vision_mode:
+        if not self._config.vision.enabled:
             print(f"No vision, so adding {self.omni_keys} to obs_keys")
             for key in self.omni_keys:
                 if key not in self.obs_keys:
