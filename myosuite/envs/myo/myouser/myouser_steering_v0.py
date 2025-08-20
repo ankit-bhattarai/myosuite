@@ -42,6 +42,7 @@ class SteeringTaskConfig:
         "phase_1_touch": 1,
         "phase_1_tunnel": 3,
         "neural_effort": 0,
+        "jac_effort": 0,
     })
     max_duration: float = 4.
     max_trials: int = 1
@@ -343,7 +344,7 @@ class MyoUserSteering(MyoUserBase):
         r_effort = 0.00198*jp.linalg.norm(obs_dict['last_ctrl'])**2 
         r_jacc = 6.67e-6*jp.linalg.norm(obs_dict['qacc'][self._independent_dofs])**2 
 
-        effort_cost = self._weight*(r_effort + r_jacc)
+        effort_cost = r_effort + r_jacc
         
         return effort_cost
 
