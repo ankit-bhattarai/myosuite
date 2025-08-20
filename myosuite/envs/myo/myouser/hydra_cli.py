@@ -90,6 +90,7 @@ class RLConfig:
 class VisionModes(str, Enum):
     rgbd = 'rgbd'
     depth = 'depth'
+    depth_w_aux_task = 'depth_w_aux_task'
 
 @dataclass
 class VisionEnabledConfig:
