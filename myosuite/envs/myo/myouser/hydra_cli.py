@@ -128,6 +128,7 @@ class RunConfig:
     domain_randomization: bool = False
     suffix: Union[str, None] = None
     local_plotting: bool = False
+    log_wandb_videos: bool = False
 
 @dataclass
 class Config:

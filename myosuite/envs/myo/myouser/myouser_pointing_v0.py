@@ -413,7 +413,13 @@ class MyoUserPointing(MyoUserBase):
                 }
         info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
         if self._config.task_config.using_vision_domain_randomisation:
-            info['target_radius'] = self.mjx_model.geom_size[self.target_geom_id, 0]
+            print("using vision domain randomisation")
+            if target_radius is None:
+                info['target_radius'] = self.mjx_model.geom_size[self.target_geom_id, 0].reshape(-1)
+                print('Loading target radius from mjx_model')
+            else:
+                info['target_radius'] = target_radius
+                print('Loading target radius from kwargs')
         else:
             info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
 
@@ -445,7 +451,12 @@ class MyoUserPointing(MyoUserBase):
     
     def auto_reset(self, rng, info_before_reset, **kwargs):
         render_token = info_before_reset["render_token"] if self.vision else None
-        return self.reset(rng, render_token=render_token, **kwargs)
+        if self._config.task_config.using_vision_domain_randomisation:
+            target_radius = info_before_reset["target_radius"]
+        else:
+            target_radius = None
+            
+        return self.reset(rng, render_token=render_token, target_radius=target_radius, **kwargs)
     
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
 
@@ -586,9 +597,21 @@ class MyoUserPointing(MyoUserBase):
         mj_model.body_pos[self.target_body_id, :] = target_pos
         mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
 
-def modify_radius_geom_randomisation_fn(mjx_model, radius_range, geom_id, possible_rgbas, rng):
+def get_possible_rgbas():
+    return jp.array([
+    jax.numpy.array([1, 0, 0, 1]),
+    jax.numpy.array([0, 1, 0, 1]),
+    jax.numpy.array([0, 0, 1, 1]),
+    jax.numpy.array([1, 1, 0, 1]),
+    jax.numpy.array([1, 0, 1, 1]),
+    jax.numpy.array([0, 1, 1, 1]),
+    jax.numpy.array([1, 1, 1, 1]),
+])
+
+def modify_radius_geom_randomisation_fn(mjx_model, radius_range=[0.05, 0.15], geom_id=38, possible_rgbas=None, seed=42, num_worlds=2048):
     assert len(radius_range) == 2, "radius_range must be a tuple of two elements"
   
+    rng = jax.random.split(jax.random.PRNGKey(seed), num_worlds)
     @jax.vmap
     def rand(rng):
         rng, radius_rng, color_rng = jax.random.split(rng, 3)
@@ -597,14 +620,16 @@ def modify_radius_geom_randomisation_fn(mjx_model, radius_range, geom_id, possib
         # matid of -2 means use color override
 
         geom_matid = mjx_model.geom_matid
-        geom_matid = geom_matid.at[geom_id].set(-2)
+        geom_rgba = mjx_model.geom_rgba
 
-        new_color = jax.random.choice(color_rng, possible_rgbas)
-    
+
+        if possible_rgbas is not None:
+            new_color = jax.random.choice(color_rng, possible_rgbas)
+            geom_matid = geom_matid.at[geom_id].set(-2)
+            geom_rgba = geom_rgba.at[geom_id].set(new_color)
+
         geom_size = mjx_model.geom_size
         geom_size = geom_size.at[geom_id].set(jax.random.uniform(radius_rng, minval=radius_range[0], maxval=radius_range[1]))
-        geom_rgba = mjx_model.geom_rgba
-        geom_rgba = geom_rgba.at[geom_id].set(new_color)
 
         return (
             geom_rgba,
