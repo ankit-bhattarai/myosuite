@@ -129,6 +129,8 @@ class RunConfig:
     suffix: Union[str, None] = None
     local_plotting: bool = False
     log_wandb_videos: bool = False
+    eval_episodes: int = 10
+    eval_seed: int = 123
 
 @dataclass
 class Config:
