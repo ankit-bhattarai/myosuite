@@ -402,7 +402,9 @@ class MyoUserBase(mjx_env.MjxEnv):
         if self.reset_type == "zero":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
         elif self.reset_type == "epsilon_uniform":
-            reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng)
+            reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
+            data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act)
+            reset_qpos, reset_qvel, reset_act = self._reset_epsilon_uniform(rng, data)
         elif self.reset_type == "range_uniform":
             reset_qpos, reset_qvel, reset_act = self._reset_zero(rng)
             data = mjx_env.init(self.mjx_model, qpos=reset_qpos, qvel=reset_qvel, act=reset_act)
