@@ -34,6 +34,8 @@ import jax.numpy as jp
 import matplotlib.pyplot as plt
 import mediapy as media
 
+from myosuite.envs.myo.myouser.myouser_steering_v0 import calculate_metrics
+
 from tensorboardX import SummaryWriter
 import wandb
 
@@ -159,12 +161,21 @@ def main(cfg: Config):
   jit_reset = jax.jit(env.reset)
   jit_step = jax.jit(env.step)
 
+  if env_cfg.env_name=="MyoUserSteering":
+    n_episodes = 50
+  else:
+    n_episodes = 1
+
   # Prepare for evaluation
   rollout = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
                             seed=123,  #seed=_SEED.value,  #TODO: add eval_seed to hydra/config
-                            n_episodes=10)  #TODO: n_episodes as hydra config param?
+                            n_episodes=n_episodes)  #TODO: n_episodes as hydra config param?
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
+  print(f"env: {env_cfg.env_name}")
+  if env_cfg.env_name=="MyoUserSteering":
+    metrics = calculate_metrics(rollout, ['R^2'])
+    wandb.log(metrics)
 
   # Render and save the rollout
   render_every = 2

@@ -402,4 +402,3 @@ def train_or_load_checkpoint(env_name,
     eval_env.enable_eval_mode()
 
     return eval_env, make_inference_fn, params
-

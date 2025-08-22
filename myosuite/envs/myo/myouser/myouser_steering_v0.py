@@ -43,6 +43,7 @@ class SteeringTaskConfig:
         "phase_1_tunnel": 3,
         "neural_effort": 0,
         "jac_effort": 0,
+        "power_for_softcons": 15,
     })
     max_duration: float = 4.
     max_trials: int = 1
@@ -106,8 +107,8 @@ def default_config() -> config_dict.ConfigDict:
                 bonus_1=10,
                 phase_1_touch=7,
                 phase_1_tunnel=5,  #-2,
-                neural_effort=0.005,  #1e-4,
-                jac_effort=1,
+                neural_effort=0.0,  #1e-4,
+                jac_effort=0,
                 
                 # ## old reward fct. (florian's branch):
                 # reach=1,
@@ -270,7 +271,7 @@ class MyoUserSteering(MyoUserBase):
         completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
 
         relative_position = jp.linalg.norm(ee_pos[2] - bottom_line_z)
-        softcons_for_bounds = jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1) ** 15
+        softcons_for_bounds = jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1)
         
         # Reset phase 0 when phase 1 is done (and episode ends)
         ## TODO: delay this update to the step function, to ensure consistency between different observations (e.g. when defining the reward function)?
@@ -329,14 +330,24 @@ class MyoUserSteering(MyoUserBase):
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
             # ('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
-            ('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
+            ('phase_1_tunnel',   0),#1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
 
-        rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
+        power_softcons = self.weighted_reward_keys['power_for_softcons']
+        phase_1_tunnel_weight = self.weighted_reward_keys['phase_1_tunnel']
+
+        exclude = {"power_for_softcons", "phase_1_tunnel"}
+
+        rwd_dict['dense'] = jp.sum(
+            jp.array([wt * rwd_dict[key] 
+                    for key, wt in self.weighted_reward_keys.items() 
+                    if key not in exclude]),
+            axis=0
+        ) + phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-1.)))
 
         return rwd_dict
     
@@ -519,3 +530,63 @@ class MyoUserSteering(MyoUserBase):
 
         mj_model.site('end_line').pos[1:] = jp.array([right_y, height_midway])
         mj_model.site('end_line').size[2] = height / 2
+
+
+def calculate_metrics(rollout, eval_metrics_keys):
+
+    eval_metrics = {}
+
+    if "R^2" in eval_metrics_keys:
+        a,b,r2 = calculate_r2(rollout)
+        eval_metrics["R^2"] = r2
+        eval_metrics["a"] = a
+        eval_metrics["b"] = b
+
+    return eval_metrics
+
+def calculate_r2(rollout):
+
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import r2_score
+
+    MTs = []
+    IDs = []
+
+    completed_phase_0 = False
+    timestep_start_steering = None
+
+    for step, state in enumerate(rollout):
+        metrics = getattr(state, "metrics")
+        info = getattr(state, "info")
+
+        L = abs(info["end_line"][1] - info["start_line"][1])
+        W = abs(info["top_line"][2] - info["bottom_line"][2])
+        current_ID = L / W
+
+        if metrics["completed_phase_0"] == True and not completed_phase_0:                    
+            completed_phase_0 = True
+            timestep_start_steering = step
+
+        if completed_phase_0 and metrics["completed_phase_1"]:
+            timestep_end_steering = step
+            MT = (timestep_end_steering - timestep_start_steering) * 0.002 * 25
+            MTs.append(MT)
+            IDs.append(current_ID)
+            completed_phase_0 = False
+
+
+    n = min(len(IDs), len(MTs))
+    IDs = np.array(IDs[:n]).reshape(-1, 1)
+    MTs = np.array(MTs[:n])
+
+    if len(IDs) == 0 or len(MTs) == 0:
+        return np.nan, np.nan, np.nan
+
+    # Fit linear regression and compute R^2
+    model = LinearRegression()
+    model.fit(IDs, MTs)
+    a = model.intercept_
+    b = model.coef_[0]
+    y_pred = model.predict(IDs)
+
+    return a,b,r2_score(MTs, y_pred)

@@ -10,7 +10,7 @@ import jax.numpy as jnp
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
                     seed=123, n_episodes=1,
-                    ep_length=None):
+                    ep_length=None, keys=None):
     """
     Generate an evaluation trajectory from a stored checkpoint policy.
 
@@ -35,12 +35,15 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
         jit_reset = jax.jit(eval_env.reset)
         jit_step = jax.jit(eval_env.step)
 
+
     eval_key = jax.random.PRNGKey(seed)
     eval_key, reset_keys = jax.random.split(eval_key)
     rollout = []
     # modify_scene_fns = []
-    IDs = []
-    MTs = []
+
+    if keys is not None:
+        reset_keys = keys
+        eval_key = keys
 
     if ep_length is None:
         ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
