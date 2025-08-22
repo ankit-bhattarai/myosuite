@@ -4,22 +4,27 @@ from ml_collections import ConfigDict
 import json
 import jax.numpy as jp
 
-def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None):
+def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):
     eval_key = jax.random.PRNGKey(seed)
     eval_key, reset_keys = jax.random.split(eval_key)
+    state = jit_reset(jax.random.split(reset_keys, n_episodes), **reset_info_kwargs)
+    unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
+    dones = jp.zeros(n_episodes)
+    rollouts = {i: [] for i in range(n_episodes)}
+    for i in range(ep_length):
+        eval_key, key = jax.random.split(eval_key)
+        ctrl, _ = jit_inference_fn(state.obs, jax.random.split(key, n_episodes))
+        state = jit_step(state, ctrl)
+        for i in range(n_episodes):
+            if not dones[i]:
+                stated_unvampped = unvmap(state, i)
+                rollouts[i].append(stated_unvampped)
+        dones = jp.logical_or(dones, state.done)
+        if dones.all():
+            break
     rollout = []
-    for _ in range(n_episodes):
-        state = jit_reset(reset_keys)
-        rollout.append(state)
-        for i in range(ep_length):
-            eval_key, key = jax.random.split(eval_key)
-            ctrl, _ = jit_inference_fn(state.obs, key)
-            state = jit_step(state, ctrl)
-            rollout.append(state)
-            if state.done.all():
-                break
-        eval_key, reset_keys = jax.random.split(eval_key)
-
+    for i in range(n_episodes):
+        rollout.extend(rollouts[i])
     return rollout, "rollout"
 
 def evaluate_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None):
