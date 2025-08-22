@@ -55,6 +55,7 @@ class PointingTaskConfig:
         "reach": 1,
         "bonus": 8,
     })
+    reach_metric: float = 10.0
     max_duration: float = 4.
     max_trials: int = 1
     reset_type: str = "range_uniform"
@@ -369,9 +370,10 @@ class MyoUserPointing(MyoUserBase):
         # act_mag = jp.linalg.norm(obs_dict['act'], axis=-1)/self._na if self._na != 0 else 0
         # far_th = self.far_th*len(self.tip_sids) if jp.squeeze(obs_dict['time'])>2*self.dt else jp.inf
         # near_th = len(self.tip_sids)*.0125
+        rm = self._config.task_config.reach_metric
         rwd_dict = collections.OrderedDict((
             # Optional Keys
-            ('reach',   1.*(jp.exp(-reach_dist_to_target_bound*10.) - 1.)/10.),  #-1.*reach_dist)
+            ('reach',   1.*(jp.exp(-reach_dist_to_target_bound*rm) - 1.)/rm),  #-1.*reach_dist)
             ('bonus',   1.*(obs_dict['target_success'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             # ('act_reg', -1.*act_mag),
