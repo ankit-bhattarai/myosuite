@@ -57,6 +57,7 @@ class PointingTaskConfig:
     })
     reach_metric: float = 10.0
     max_duration: float = 4.
+    dwell_duration: float = 0.25
     max_trials: int = 1
     reset_type: str = "range_uniform"
     using_vision_domain_randomisation: bool = "${run.domain_randomization}"
@@ -205,7 +206,7 @@ class MyoUserPointing(MyoUserBase):
         self.target_geom_id = self.mj_model.geom('target_sphere').id
 
         # Dwelling based selection -- fingertip needs to be inside target for some time
-        self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
+        self.dwell_threshold = self._config.task_config.dwell_duration/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
         if self._config.vision.enabled:
             print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
             self.dwell_threshold *= 2   
