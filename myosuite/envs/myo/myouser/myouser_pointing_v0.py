@@ -55,9 +55,12 @@ class PointingTaskConfig:
         "reach": 1,
         "bonus": 8,
     })
+    reach_metric: float = 10.0
     max_duration: float = 4.
+    dwell_duration: float = 0.25
     max_trials: int = 1
     reset_type: str = "range_uniform"
+    using_vision_domain_randomisation: bool = "${run.domain_randomization}"
 
 @dataclass
 class PointingEnvConfig(BaseEnvConfig):
@@ -203,7 +206,7 @@ class MyoUserPointing(MyoUserBase):
         self.target_geom_id = self.mj_model.geom('target_sphere').id
 
         # Dwelling based selection -- fingertip needs to be inside target for some time
-        self.dwell_threshold = 0.25/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
+        self.dwell_threshold = self._config.task_config.dwell_duration/self.dt  #corresponds to 250ms; for visual-based pointing use 0.5/self.dt; note that self.dt=self._mjx_model.opt.timestep*self.n_substeps
         if self._config.vision.enabled:
             print(f'Using vision, so doubling dwell threshold to {self.dwell_threshold*2}')
             self.dwell_threshold *= 2   
@@ -368,9 +371,10 @@ class MyoUserPointing(MyoUserBase):
         # act_mag = jp.linalg.norm(obs_dict['act'], axis=-1)/self._na if self._na != 0 else 0
         # far_th = self.far_th*len(self.tip_sids) if jp.squeeze(obs_dict['time'])>2*self.dt else jp.inf
         # near_th = len(self.tip_sids)*.0125
+        rm = self._config.task_config.reach_metric
         rwd_dict = collections.OrderedDict((
             # Optional Keys
-            ('reach',   1.*(jp.exp(-reach_dist_to_target_bound*10.) - 1.)/10.),  #-1.*reach_dist)
+            ('reach',   1.*(jp.exp(-reach_dist_to_target_bound*rm) - 1.)/rm),  #-1.*reach_dist)
             ('bonus',   1.*(obs_dict['target_success'])),  #1.*(reach_dist<2*near_th) + 1.*(reach_dist<near_th)),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             # ('act_reg', -1.*act_mag),
@@ -385,7 +389,7 @@ class MyoUserPointing(MyoUserBase):
 
         return rwd_dict
 
-    def reset(self, rng, target_pos=None, target_radius=None, render_token=None):
+    def reset(self, rng, target_pos=None, target_radius=None, render_token=None, add_to_info=None):
         # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
@@ -410,8 +414,20 @@ class MyoUserPointing(MyoUserBase):
                 'trial_idx': trial_idx,
                 'task_completed': jp.array(False),
                 }
+        if add_to_info is not None:
+            info.update(add_to_info)
         info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
-        info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
+        if self._config.task_config.using_vision_domain_randomisation:
+            print("using vision domain randomisation")
+            if target_radius is None:
+                info['target_radius'] = self.mjx_model.geom_size[self.target_geom_id, 0].reshape(-1)
+                print('Loading target radius from mjx_model')
+            else:
+                info['target_radius'] = target_radius
+                print('Loading target radius from kwargs')
+        else:
+            info['target_radius'] = self.generate_target_size(rng, target_radius=target_radius)
+
         # if self.vision or self.eval_mode:
         #     self.update_task_visuals(target_pos=info['target_pos'], target_radius=info['target_radius'])
         
@@ -419,7 +435,7 @@ class MyoUserPointing(MyoUserBase):
         # TODO: move the following lines into MyoUserBase.reset?
         if self.vision:
             # TODO: do we need to update target information for rendering?
-            # data = self.add_target_pos_to_data(data, info["target_pos"])
+            data = self.add_target_pos_to_data(data, info["target_pos"])
             info.update(self.generate_pixels(data, render_token=render_token))
         obs, info = self.get_obs_vec(data, info)  #update info from observation made
         # obs_dict = self.get_obs_dict(data, info)
@@ -440,7 +456,12 @@ class MyoUserPointing(MyoUserBase):
     
     def auto_reset(self, rng, info_before_reset, **kwargs):
         render_token = info_before_reset["render_token"] if self.vision else None
-        return self.reset(rng, render_token=render_token, **kwargs)
+        if self._config.task_config.using_vision_domain_randomisation:
+            target_radius = info_before_reset["target_radius"]
+        else:
+            target_radius = None
+            
+        return self.reset(rng, render_token=render_token, target_radius=target_radius, **kwargs)
     
         # jax.debug.print(f"""RESET WITH CURRICULUM {obs_dict_before_reset["trial_idx"]}, {obs_dict_before_reset["target_radius"]}""")
 
@@ -517,8 +538,13 @@ class MyoUserPointing(MyoUserBase):
         # Generate new target
         ## TODO: can we move the following lines after self.get_ctrl and mjx_env.step are called?
         rng, rng1, rng2 = jax.random.split(rng, 3)
-        state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
-        state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
+        
+        # This is always handled by the autoreset wrappers!
+        # state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
+        
+        
+        # Never change the target radius during the task!
+        # state.info['target_radius'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_size(rng2)], state.info['target_radius'])
         # state.info['target_radius'] = jp.select([(obs_dict['target_success'] | obs_dict['target_fail'])], [jp.array([-151.121])], obs_dict['target_radius']) + jax.random.uniform(rng2)
         # jax.debug.print(f"STEP-Info: {state.info['target_radius']}")
 
@@ -536,7 +562,7 @@ class MyoUserPointing(MyoUserBase):
         # obs = self.get_obs_vec(data, state.info)
         if self.vision:
             # TODO: do we need to update target information for rendering?
-            # data = self.add_target_pos_to_data(data, state.info["target_pos"])
+            data = self.add_target_pos_to_data(data, state.info["target_pos"])
             pixels_dict = self.generate_pixels(data, state.info['render_token'])
             state.info.update(pixels_dict)
         obs_dict = self.get_obs_dict(data, state.info)
@@ -580,3 +606,83 @@ class MyoUserPointing(MyoUserBase):
 
         mj_model.body_pos[self.target_body_id, :] = target_pos
         mj_model.geom_size[self.target_geom_id, 0] = target_radius.item()
+
+def get_possible_rgbas():
+    return jp.array([
+    jax.numpy.array([1, 0, 0, 1]),
+    jax.numpy.array([0, 1, 0, 1]),
+    jax.numpy.array([0, 0, 1, 1]),
+    jax.numpy.array([1, 1, 0, 1]),
+    jax.numpy.array([1, 0, 1, 1]),
+    jax.numpy.array([0, 1, 1, 1]),
+    jax.numpy.array([1, 1, 1, 1]),
+])
+
+def modify_radius_geom_randomisation_fn(mjx_model, radius_range=[0.05, 0.15], geom_id=38, possible_rgbas=None, seed=42, num_worlds=2048):
+    assert len(radius_range) == 2, "radius_range must be a tuple of two elements"
+  
+    rng = jax.random.split(jax.random.PRNGKey(seed), num_worlds)
+    @jax.vmap
+    def rand(rng):
+        rng, radius_rng, color_rng = jax.random.split(rng, 3)
+
+        # A matid of -1 means use default material,
+        # matid of -2 means use color override
+
+        geom_matid = mjx_model.geom_matid
+        geom_rgba = mjx_model.geom_rgba
+
+
+        if possible_rgbas is not None:
+            new_color = jax.random.choice(color_rng, possible_rgbas)
+            geom_matid = geom_matid.at[geom_id].set(-2)
+            geom_rgba = geom_rgba.at[geom_id].set(new_color)
+
+        geom_size = mjx_model.geom_size
+        geom_size = geom_size.at[geom_id].set(jax.random.uniform(radius_rng, minval=radius_range[0], maxval=radius_range[1]))
+
+        return (
+            geom_rgba,
+            geom_matid,
+            geom_size,
+            mjx_model.light_pos,
+            mjx_model.light_dir,
+            mjx_model.light_type,
+            mjx_model.light_castshadow,
+            mjx_model.light_cutoff,
+        )
+
+    (
+        geom_rgba,
+        geom_matid,
+        geom_size,
+        light_pos,
+        light_dir,
+        light_type,
+        light_castshadow,
+        light_cutoff,
+    ) = rand(rng)
+
+    in_axes = jax.tree_util.tree_map(lambda x: None, mjx_model)
+    in_axes = in_axes.tree_replace({
+        'geom_rgba': 0,
+        'geom_matid': 0,
+        'geom_size': 0,
+        'light_pos': 0,
+        'light_dir': 0,
+        'light_type': 0,
+        'light_castshadow': 0,
+        'light_cutoff': 0,
+    })
+
+    mjx_model = mjx_model.tree_replace({
+        'geom_rgba': geom_rgba,
+        'geom_matid': geom_matid,
+        'geom_size': geom_size,
+        'light_pos': light_pos,
+        'light_dir': light_dir,
+        'light_type': light_type,
+        'light_castshadow': light_castshadow,
+        'light_cutoff': light_cutoff,
+    })
+    return mjx_model, in_axes

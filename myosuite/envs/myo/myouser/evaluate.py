@@ -2,6 +2,60 @@ import os
 import jax
 from ml_collections import ConfigDict
 import json
+import jax.numpy as jp
+
+def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None):
+    eval_key = jax.random.PRNGKey(seed)
+    eval_key, reset_keys = jax.random.split(eval_key)
+    rollout = []
+    for _ in range(n_episodes):
+        state = jit_reset(reset_keys)
+        rollout.append(state)
+        for i in range(ep_length):
+            eval_key, key = jax.random.split(eval_key)
+            ctrl, _ = jit_inference_fn(state.obs, key)
+            state = jit_step(state, ctrl)
+            rollout.append(state)
+            if state.done.all():
+                break
+        eval_key, reset_keys = jax.random.split(eval_key)
+
+    return rollout, "rollout"
+
+def evaluate_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None):
+    eval_key = jax.random.PRNGKey(seed)
+    eval_key, reset_keys = jax.random.split(eval_key)
+    num_worlds = eval_env._config.vision.num_worlds
+    state = jit_reset(jax.random.split(reset_keys, num_worlds))
+    pixel_key = [key for key in state.obs.keys() if 'pixels' in key]
+    assert len(pixel_key) == 1, "Only one pixel key is supported"
+    pixel_key = pixel_key[0]
+    unvmap_upto = lambda x, i : jax.tree.map(lambda x: x[:i], x)
+    unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
+    extract_states = unvmap_upto(state, n_episodes)
+    dones = jp.zeros(n_episodes)
+    videos = {i: [] for i in range(n_episodes)}
+    rollouts = {i: [] for i in range(n_episodes)}
+    for i in range(ep_length):
+        eval_key, key = jax.random.split(eval_key)
+        ctrl, _ = jit_inference_fn(state.obs, jax.random.split(key, num_worlds))
+        state = jit_step(state, ctrl)
+        extract_states = unvmap_upto(state, n_episodes)
+        for i in range(n_episodes):
+            if not dones[i]:
+                videos[i].append(extract_states.obs[pixel_key][i])
+                stated_unvampped = unvmap(state, i)
+                rollouts[i].append(stated_unvampped)
+        dones = jp.logical_or(dones, extract_states.done)
+        if dones.all():
+            break
+    videos_all = []
+    rollout = []
+    for i in range(n_episodes):
+        videos_all.extend(videos[i])
+        rollout.extend(rollouts[i])
+    return (rollout, videos_all), "videos"
+
 
 
 def evaluate_policy(checkpoint_path=None, env_name=None,
@@ -30,34 +84,10 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
         jit_reset = jax.jit(eval_env.reset)
         jit_step = jax.jit(eval_env.step)
 
-    eval_key = jax.random.PRNGKey(seed)
-    eval_key, reset_keys = jax.random.split(eval_key)
-    rollout = []
-    # modify_scene_fns = []
-
     if ep_length is None:
         ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
 
-    for _ in range(n_episodes):
-        state = jit_reset(reset_keys)
-        rollout.append(state)
-        # modify_scene_fns.append(functools.partial(update_target_visuals, target_pos=state.info["target_pos"].flatten(), target_size=state.info["target_radius"].flatten()))
-        for i in range(ep_length):
-            eval_key, key = jax.random.split(eval_key)
-            ctrl, _ = jit_inference_fn(state.obs, key)  #VARIANT 1
-            # ctrl = deterministic_policy(state.obs)  #VARIANT 2
-            # ctrl = jax.random.uniform(act_rng, shape=eval_env._na)  #BASELINE: random control
-            state = jit_step(state, ctrl)
-            # touch_detected = any([({eval_env.mj_model.geom(con_geom[0]).name, eval_env.mj_model.geom(con_geom[1]).name} == {"fingertip_contact", "screen"}) and (con_dist < 0) for con_geom, con_dist in zip(state.data._impl.contact.geom, state.data._impl.contact.dist)])
-            # if touch_detected:
-            #   print(f"Step {i}, touch detected. {state.data._impl.contact.dist}")    
-            # print(f"Step {i}, ee_pos: {state.obs[:, 15:18]}")
-            # print(f"Target {i}, target_pos: {state.obs[:, -4:-1]}")
-            # print(f"Step {i}, steps_since_last_hit: {state.info['steps_since_last_hit']}")
-            rollout.append(state)
-            # modify_scene_fns.append(functools.partial(update_target_visuals, target_pos=state.info["target_pos"].flatten(), target_size=state.info["target_radius"].flatten()))
-            if state.done.all():
-                break
-        eval_key, reset_keys = jax.random.split(eval_key)
-
-    return rollout
+    if eval_env.vision:
+        return evaluate_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed, n_episodes, ep_length)
+    else:
+        return evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed, n_episodes, ep_length)

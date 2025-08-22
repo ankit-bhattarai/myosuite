@@ -10,11 +10,20 @@ from hydra.utils import instantiate, call
 from hydra.core.global_hydra import GlobalHydra
 from hydra import initialize, compose
 from ml_collections import ConfigDict
-from myosuite.envs.myo.myouser.base import BaseEnvConfig, RLConfig
+from myosuite.envs.myo.myouser.base import BaseEnvConfig
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import PointingEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
+from myosuite.envs.myo.myouser.myouser_tracking_v0 import TrackingEnvConfig
 
 OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "-" + str(x))
+
+def select_network(vision_enabled):
+    if vision_enabled == "enabled":
+        return "vision"
+    else:
+        return "no_vision"
+
+OmegaConf.register_new_resolver("select_network", select_network)
 
 @dataclass
 class WANDBEnabledConfig:
@@ -28,10 +37,61 @@ class WANDBEnabledConfig:
 @dataclass
 class WANDBDisabledConfig:
     enabled: bool = False
+    
+@dataclass
+class NetworkConfig:
+    policy_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [256, 256]
+    )
+    value_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [256, 256]
+    )
+
+@dataclass
+class VisionNetworkConfig(NetworkConfig):
+    policy_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [32, 32, 32, 32]
+    )
+    value_hidden_layer_sizes: List[int] = field(
+        default_factory=lambda: [256, 256, 256, 256, 256]
+    )
+    encoder_out_size: int = 4
+    cheat_vision_aux_output: bool = False
+    has_vision_aux_output: bool = True
+    vision_aux_output_mlp: bool = True
+    vision_aux_output_mlp_output_size: int = 4
+    vision_encoder_normalize_output: bool = True
+    stop_vision_gradient: bool = False
+
+
+@dataclass
+class RLConfig:
+    num_timesteps: int = 15_000_000
+    log_training_metrics: bool = True
+    training_metrics_steps: int = 100000
+    num_evals: int = 0
+    reward_scaling: float = 0.1
+    episode_length: int = "${int_divide:${env.task_config.max_duration},${env.ctrl_dt}}" #TODO: check and fix this dependency!
+    clipping_epsilon: float = 0.3
+    normalize_observations: bool = True
+    action_repeat: int = 1
+    unroll_length: int = 10
+    num_minibatches: int = 8
+    num_updates_per_batch: int = 8
+    num_resets_per_eval: int = 1
+    discounting: float = 0.97
+    learning_rate: float = 3e-4
+    entropy_cost: float = 0.001
+    num_envs: int = 1024
+    batch_size: int = 128
+    max_grad_norm: float = 1.0
+    network_factory: NetworkConfig = field(default_factory=lambda: NetworkConfig())
+    load_checkpoint_path: Union[str, None] = None
 
 class VisionModes(str, Enum):
     rgbd = 'rgbd'
     depth = 'depth'
+    depth_w_aux_task = 'depth_w_aux_task'
 
 @dataclass
 class VisionEnabledConfig:
@@ -55,6 +115,8 @@ defaults = [
     {'env': 'pointing'},
     {'rl': 'rl_config'},
     {'run': 'run'},
+    {'rl/network_factory': '${select_network:${vision}}'},
+
 ]
 
 @dataclass
@@ -67,6 +129,9 @@ class RunConfig:
     domain_randomization: bool = False
     suffix: Union[str, None] = None
     local_plotting: bool = False
+    log_wandb_videos: bool = False
+    eval_episodes: int = 10
+    eval_seed: int = 123
 
 @dataclass
 class Config:
@@ -86,8 +151,11 @@ cs.store(group="vision", name="disabled", node=VisionDisabledConfig)
 cs.store(group="env", name="base_env_config", node=BaseEnvConfig)
 cs.store(group="env", name="pointing", node=PointingEnvConfig)
 cs.store(group="env", name="steering", node=SteeringEnvConfig)
+cs.store(group="env", name="tracking", node=TrackingEnvConfig)
 cs.store(group="rl", name="rl_config", node=RLConfig)
 cs.store(group="run", name="run", node=RunConfig)
+cs.store(group="rl/network_factory", name="vision", node=VisionNetworkConfig)
+cs.store(group="rl/network_factory", name="no_vision", node=NetworkConfig)
 
 
 def load_config_interactive(overrides=[]):

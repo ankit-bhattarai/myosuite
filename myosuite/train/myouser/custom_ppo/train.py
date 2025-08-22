@@ -636,13 +636,16 @@ def train(
     params = checkpoint.load(restore_checkpoint_path)
     # print(params[1]["params"]["policy_network"]["layers"].keys())
     # print(params[1]["params"]["value_network"]["layers"].keys())
-    params[1]["params"]["policy_network"]["layers"] = {int(k): v for k, v in params[1]["params"]["policy_network"]["layers"].items()}
-    params[1]["params"]["value_network"]["layers"] = {int(k): v for k, v in params[1]["params"]["value_network"]["layers"].items()}
-    # policy_params = params[1]["params"]["policy_network"]
-    # value_params = params[1]["params"]["value_network"] if restore_value_fn else init_params.value
+    normalizer_params = params[0]
+    network_params = params[1]
+    network_params["params"]["policy_network"]["layers"] = {int(k): v for k, v in network_params["params"]["policy_network"]["layers"].items()}
+    network_params["params"]["value_network"]["layers"] = {int(k): v for k, v in network_params["params"]["value_network"]["layers"].items()}
+    if 'vision_aux_output' in network_params['params']:
+        network_params['params']['vision_aux_output']["layers"] = {int(k): v for k, v in network_params['params']['vision_aux_output']['layers'].items()}
+
     training_state = training_state.replace(
-        normalizer_params=params[0],
-        params=params[1],  #dict(training_state.params["params"], **{"policy_network": policy_params, "value_network": value_params}),
+        normalizer_params=normalizer_params,
+        params=network_params,  #dict(training_state.params["params"], **{"policy_network": policy_params, "value_network": value_params}),
     )
 
   if restore_params is not None:
