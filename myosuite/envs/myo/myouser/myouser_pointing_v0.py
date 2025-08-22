@@ -533,7 +533,9 @@ class MyoUserPointing(MyoUserBase):
         # Generate new target
         ## TODO: can we move the following lines after self.get_ctrl and mjx_env.step are called?
         rng, rng1, rng2 = jax.random.split(rng, 3)
-        state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
+        
+        # This is always handled by the autoreset wrappers!
+        # state.info['target_pos'] = jp.select([(state.info['target_success'] | state.info['target_fail'])], [self.generate_target_pos(rng1)], state.info['target_pos'])
         
         
         # Never change the target radius during the task!
