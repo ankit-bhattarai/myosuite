@@ -39,6 +39,7 @@ class TrackingTaskConfig(PointingTaskConfig):
     min_frequency: float = 0.0
     max_frequency: float = 0.5
     max_episode_steps: int = 40
+    omni_keys: List[str] = field(default_factory=lambda: ["target_pos", "prev_target_pos", "prev_prev_target_pos", "target_radius"]) 
 
 @dataclass
 class TrackingEnvConfig(BaseEnvConfig):
@@ -54,7 +55,7 @@ class MyoUserTracking(MyoUserPointing):
 
     @staticmethod
     def generate_sine_wave(rng, limits, num_components, min_amplitude, max_amplitude, min_frequency, max_frequency, max_episode_steps, dt):
-        t = jp.arange(max_episode_steps+1) * dt
+        t = jp.arange(max_episode_steps) * dt
         rng_amp, rng_freq, rng_phase = jax.random.split(rng, 3)
 
         amplitudes = jax.random.uniform(rng_amp, shape=(num_components,), 
@@ -91,30 +92,44 @@ class MyoUserTracking(MyoUserPointing):
         z_low, z_high = span[0][2], span[1][2]
         dt = self.dt
         x_rng, y_rng, z_rng = jax.random.split(rng, 3)
+        size_trajectory = int(max_episode_steps)+3
         if self.task_config.planar_x:
             assert x_low == x_high, "x_low and x_high must be the same for planar_x"
-            xs = x_low * jp.ones(int(max_episode_steps+1))
+            xs = x_low * jp.ones(size_trajectory)
         else:    
             xs = self.generate_sine_wave(x_rng, [x_low, x_high], num_components, min_amplitude, max_amplitude, min_frequency, max_frequency, max_episode_steps, dt)
         
-        ys = self.generate_sine_wave(y_rng, [y_low, y_high], num_components, min_amplitude, max_amplitude, min_frequency, max_frequency, max_episode_steps, dt)
-        zs = self.generate_sine_wave(z_rng, [z_low, z_high], num_components, min_amplitude, max_amplitude, min_frequency, max_frequency, max_episode_steps, dt)
+        xs = self.target_coordinates_origin[0] + xs
+        ys = self.generate_sine_wave(y_rng, [y_low, y_high], num_components, min_amplitude, max_amplitude, min_frequency, max_frequency, size_trajectory, dt)
+        ys = self.target_coordinates_origin[1] + ys
+        zs = self.generate_sine_wave(z_rng, [z_low, z_high], num_components, min_amplitude, max_amplitude, min_frequency, max_frequency, size_trajectory, dt)
+        zs = self.target_coordinates_origin[2] + zs
         return jp.stack([xs, ys, zs], axis=1)
         
     def reset(self, rng, target_pos=None, target_radius=None, render_token=None):
         trajectory_rng, rng = jax.random.split(rng, 2)
-        trajectoy = self.generate_trajectory(trajectory_rng)
-        first_pos = trajectoy[0]
-        state = super().reset(rng, target_pos=first_pos)
-        state.info['trajectory'] = trajectoy
-        state.info['step_index'] = 0
+        trajectory = self.generate_trajectory(trajectory_rng)
+        add_to_info = {
+            'prev_prev_target_pos': trajectory[0],
+            'prev_target_pos': trajectory[1],
+            'trajectory': trajectory,
+            'step_index': 0,
+        }
+        state = super().reset(rng, target_pos=trajectory[2], add_to_info=add_to_info)
         return state
     
     def step(self, state: State, action: jp.ndarray) -> State:
         trajectory = state.info['trajectory']
         step_index = state.info['step_index']
-        position = trajectory[step_index + 1]
-        state.info['target_pos'] = position
         state.info['step_index'] = step_index + 1
+        state.info['target_pos'] = trajectory[step_index + 3]
+        state.info['prev_target_pos'] = trajectory[step_index + 2]
+        state.info['prev_prev_target_pos'] = trajectory[step_index + 1]
         return super().step(state, action)
+
+    def get_obs_dict(self, data, info):
+        obs_dict = super().get_obs_dict(data, info)
+        obs_dict['prev_target_pos'] = info['prev_target_pos']
+        obs_dict['prev_prev_target_pos'] = info['prev_prev_target_pos']
+        return obs_dict
     
