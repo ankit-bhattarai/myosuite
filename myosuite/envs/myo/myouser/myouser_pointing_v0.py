@@ -388,7 +388,7 @@ class MyoUserPointing(MyoUserBase):
 
         return rwd_dict
 
-    def reset(self, rng, target_pos=None, target_radius=None, render_token=None):
+    def reset(self, rng, target_pos=None, target_radius=None, render_token=None, add_to_info=None):
         # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
@@ -413,6 +413,8 @@ class MyoUserPointing(MyoUserBase):
                 'trial_idx': trial_idx,
                 'task_completed': jp.array(False),
                 }
+        if add_to_info is not None:
+            info.update(add_to_info)
         info['target_pos'] = self.generate_target_pos(rng, target_pos=target_pos)
         if self._config.task_config.using_vision_domain_randomisation:
             print("using vision domain randomisation")
