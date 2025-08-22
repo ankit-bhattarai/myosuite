@@ -302,6 +302,13 @@ def train_or_load_checkpoint(env_name,
             action_repeat=ppo_params.action_repeat,
             randomization_fn=training_params.get("randomization_fn"),
         )
+    else:
+        env = wrap_myosuite_training(
+            env,
+            episode_length=ppo_params.episode_length,
+            action_repeat=ppo_params.action_repeat,
+            randomization_fn=training_params.get("randomization_fn"),
+        )
 
     num_eval_envs = (
         ppo_params.num_envs
@@ -324,15 +331,16 @@ def train_or_load_checkpoint(env_name,
         restore_checkpoint_path=restore_checkpoint_path,
         # save_checkpoint_path=ckpt_path,
         # wrap_env_fn=None if vision else wrapper.wrap_for_brax_training,
-        wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_myosuite_training,
+        # wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_myosuite_training,
+        wrap_env_fn=(lambda x, **kwargs: x),
         num_eval_envs=num_eval_envs,
     )
 
     # Load evaluation environment
-    eval_env = (
-        None if vision else registry.load(env_name, config=env_cfg)
-    )
-
+    # eval_env = (
+    #     None if vision else registry.load(env_name, config=env_cfg)
+    # )
+    eval_env = env
     if rscope_envs:
         # Interactive visualisation of policy checkpoints
         from rscope import brax as rscope_utils
