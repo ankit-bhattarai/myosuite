@@ -12,11 +12,13 @@ from myosuite.envs.myo.myouser.myouser_pointing_v0 import default_config as MyoU
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import modify_radius_geom_randomisation_fn
 from myosuite.envs.myo.myouser.myouser_steering_v0 import MyoUserSteering
 from myosuite.envs.myo.myouser.myouser_steering_v0 import default_config as MyoUserSteering_config
+from myosuite.envs.myo.myouser.myouser_tracking_v0 import MyoUserTracking
 
 
 # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
 registry.manipulation.register_environment("MyoUserPointing", MyoUserPointing, MyoUserPointing_config)
 registry.manipulation.register_environment("MyoUserSteering", MyoUserSteering, MyoUserSteering_config)
+registry.manipulation.register_environment("MyoUserTracking", MyoUserTracking, {})
 
 _randomizer["MyoUserPointing"] = modify_radius_geom_randomisation_fn
 
