@@ -38,14 +38,14 @@ class CircularSteeringTaskConfig:
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'start_line', 'end_line', 'top_line_radius', 'bottom_line_radius', 'completed_phase_0', 'target', 'middle_line_crossed'])
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 1,
-        "bonus_1": 10,
-        "phase_1_touch": 1,
-        "phase_1_tunnel": 3,
+        "bonus_1": 0,
+        "phase_1_touch": 0,
+        "phase_1_tunnel": 0,
         "neural_effort": 0,
     })
     max_duration: float = 5.
     max_trials: int = 1
-    reset_type: str = "range_uniform"
+    reset_type: str = "epsilon_uniform"
     min_width: float = 0.2
     min_inner_radius: float = 0.05
     max_inner_radius: float = 0.3
@@ -241,6 +241,7 @@ class MyoUserCircularSteering(MyoUserBase):
         path_width = jp.linalg.norm(top_line_radius - bottom_line_radius)
         path_length = 2 * jp.pi * bottom_line_radius
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
+        #jax.debug.print("dist_to_start_line: {} and ee_pos {} and start_line {}", dist_to_start_line, ee_pos, start_line)
         dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
         ee_pos_vec = ee_pos[1:3] - obs_dict['screen_pos'][1:3]
@@ -290,9 +291,11 @@ class MyoUserCircularSteering(MyoUserBase):
 
         ## Compute distances
         phase_0_distance = dist_to_start_line + path_length
+        #jax.debug.print("phase_0_distance: {} and path_length {} ", phase_0_distance, path_length)
         phase_1_distance = path_length_remaining
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
-        
+        #jax.debug.print("completed_phase_0: {} and dist {} ", completed_phase_0, dist)
+
         obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
         obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
         obs_dict["dist"] = dist
@@ -326,12 +329,12 @@ class MyoUserCircularSteering(MyoUserBase):
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
             ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]),  #-1.*reach_dist)
-             ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
-             ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
+            # ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
+            # ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
             ('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
-            # ('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
+            #('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
             ('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             # # Must keys
