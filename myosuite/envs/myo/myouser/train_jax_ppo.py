@@ -163,6 +163,8 @@ def main(cfg: Config):
 
   if env_cfg.env_name=="MyoUserSteering":
     n_episodes = 50
+  elif env_cfg.env_name=="MyoUserSteeringLaw":
+    n_episodes = 84
   else:
     n_episodes = 1
 
@@ -173,9 +175,11 @@ def main(cfg: Config):
                             n_episodes=n_episodes)  #TODO: n_episodes as hydra config param?
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
   print(f"env: {env_cfg.env_name}")
+  print(f"len(rollout): {len(rollout)}")
   if env_cfg.env_name=="MyoUserSteering":
     metrics = calculate_metrics(rollout, ['R^2'])
-    wandb.log(metrics)
+    #wandb.log(metrics)
+  print(metrics)
 
   # Render and save the rollout
   render_every = 2
@@ -187,7 +191,7 @@ def main(cfg: Config):
       h5f.create_dataset('ctrl', data=[s.data.ctrl for s in traj])
       h5f.close()
   with open(logdir / 'traj.pickle', 'wb') as handle:
-      pickle.dump(traj, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      pickle.dump(rollout, handle, protocol=pickle.HIGHEST_PROTOCOL)
   
   # scene_option = mujoco.MjvOption()
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False

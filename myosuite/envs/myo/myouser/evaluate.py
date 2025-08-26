@@ -3,9 +3,51 @@ from xml.parsers.expat import model
 import jax
 from ml_collections import ConfigDict
 import json
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
 import jax.numpy as jnp
+import random
+
+def random_positions_deprecated(L, W):
+    pos_min, pos_max = -0.2, 0.3
+    left = random.uniform(pos_min, pos_max - L)
+    right = left + L
+    bottom = random.uniform(pos_min, pos_max - W)
+    top = bottom + W
+    return left, right, bottom, top
+
+def random_positions(L, W, right):
+    pos_min, pos_max = -0.2, 0.3
+    left = right - L
+    bottom = random.uniform(pos_min, pos_max - W)
+    top = bottom + W
+    return left, bottom, top
+
+def get_custom_tunnels(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+    tunnel_positions_total  = []
+    IDs = [1, 2, 3, 4, 5, 6, 7]
+    L_min, L_max = 0.05, 0.5
+    W_min, W_max = 0.1, 0.6
+    right = 0.3
+    for ID in IDs:
+        combos = 0
+        while combos < 1:
+            W = random.uniform(W_min, W_max)
+            L = ID * W
+            if L_min <= L <= L_max:
+                tunnel_positions = {}
+                left, bottom, top = random_positions(L, W, right)
+                width_midway = (left + right) / 2
+                height_midway = (top + bottom) / 2
+                tunnel_positions['bottom_line'] = screen_pos + jnp.array([0., width_midway, bottom])
+                tunnel_positions['top_line'] = screen_pos + jnp.array([0., width_midway, top])
+                tunnel_positions['start_line'] = screen_pos + jnp.array([0., right, height_midway])
+                tunnel_positions['end_line'] = screen_pos + jnp.array([0., left, height_midway])
+                tunnel_positions['screen_pos'] = screen_pos
+                print(tunnel_positions['start_line'])
+                combos += 1
+
+                for i in range(5):
+                    tunnel_positions_total.append(tunnel_positions)
+    return tunnel_positions_total
 
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
@@ -17,8 +59,8 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     You can either call this method by directly passing the checkpoint, env, jitted policy, etc. (useful if checkpoint was already loaded in advance, e.g., in a Jupyter notebook file), 
     or let this method load the env and policy from scratch by passing only checkpoint_path and env_name (takes ~1min).
     """
-
-    print("start evaluate")
+    rng = jax.random.PRNGKey(42)
+    tunnel_positions = get_custom_tunnels(rng, screen_pos=jnp.array([0.532445, -0.27, 0.993]))
 
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
@@ -48,8 +90,10 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     if ep_length is None:
         ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
 
-    for _ in range(n_episodes):
-        state = jit_reset(reset_keys)
+    for i in range(len(tunnel_positions)):
+        jax.debug.print("evaluate episode {}", i)
+        state = jit_reset(reset_keys, tunnel_positions=tunnel_positions[i])
+        #print(state.info)
         rollout.append(state)
         
         completed_phase_0 = False
@@ -74,26 +118,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
             if state.done.all():
                 break
         eval_key, reset_keys = jax.random.split(eval_key)
-
-        #after one episode:
-        L = abs(state.info["end_line"][1] - state.info["start_line"][1])
-        W = abs(state.info["top_line"][2] - state.info["bottom_line"][2])
-        ID = L/W
-        IDs.append(ID)
-        MTs.append(MT)
-        print(ID, MT)
         #state.metrics.append({"ID": ID, "MT": MT})
         completed_phase_0 = False
-        
-    model = LinearRegression()
-    model.fit(IDs, MTs)
-
-    X = jnp.array(IDs).reshape(-1, 1)
-    y = jnp.array(MTs)
-
-    y_pred = model.predict(X)
-    r2 = r2_score(y, y_pred)
-
-    state.metrics.append({"R2": r2})
-
+    
     return rollout
