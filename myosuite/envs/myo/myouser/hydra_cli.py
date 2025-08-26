@@ -72,6 +72,7 @@ class RLConfig:
     log_training_metrics: bool = True
     training_metrics_steps: int = 100000
     num_evals: int = 0
+    num_checkpoints: int = 1
     reward_scaling: float = 0.1
     episode_length: int = "${int_divide:${env.task_config.max_duration},${env.ctrl_dt}}" #TODO: check and fix this dependency!
     clipping_epsilon: float = 0.3
@@ -131,7 +132,7 @@ class RunConfig:
     domain_randomization: bool = False
     suffix: Union[str, None] = None
     local_plotting: bool = False
-    log_wandb_videos: bool = False
+    log_wandb_videos: bool = True
     eval_episodes: int = 10
     eval_seed: int = 123
 

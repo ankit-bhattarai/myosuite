@@ -34,8 +34,6 @@ import jax.numpy as jp
 import matplotlib.pyplot as plt
 import mediapy as media
 
-from myosuite.envs.myo.myouser.myouser_steering_v0 import calculate_metrics
-
 from tensorboardX import SummaryWriter
 import wandb
 
@@ -173,7 +171,7 @@ def main(cfg: Config):
   rollout, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
                             seed=config.run.eval_seed,
-                            n_episodes=config.run.eval_episodes) 
+                            n_episodes=n_episodes)  #config.run.eval_episodes) 
   render_every = 2
   fps = 1.0 / env.dt / render_every
   print(f"FPS for rendering: {fps}")
@@ -191,7 +189,7 @@ def main(cfg: Config):
   print(f"env: {env_cfg.env_name}")
   print(f"len(rollout): {len(rollout)}")
   if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
-    metrics = calculate_metrics(rollout, ['R^2'])
+    metrics = env.calculate_metrics(rollout, ['R^2'])
     #wandb.log(metrics)
     print(metrics)
 

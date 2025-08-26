@@ -40,6 +40,7 @@ dependencies = [
     "rscope",
     "wandb[media]",
     "hydra-core",
+    "scikit-learn",
 ]
 [project.optional-dependencies]
 examples = ["mink[examples]; python_version > '3.9'"]

@@ -761,3 +761,13 @@ class MyoUserBase(mjx_env.MjxEnv):
 
         renderer.close()
         return out
+    
+
+    ########################################
+    # Other functions to be 
+    # implemented by the child class:
+    ########################################
+
+    def calculate_metrics(self, rollout, eval_metrics_keys={}):
+        """Calculate task-specific evaluation metrics (only to be used for eval logging)."""
+        return {}

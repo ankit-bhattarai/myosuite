@@ -579,65 +579,66 @@ class MyoUserSteering(MyoUserBase):
         mj_model.site('end_line').size[2] = height / 2
 
 
-def calculate_metrics(rollout, eval_metrics_keys):
+    def calculate_metrics(self, rollout, eval_metrics_keys):
 
-    eval_metrics = {}
+        eval_metrics = {}
 
-    if "R^2" in eval_metrics_keys:
-        a,b,r2 = calculate_r2(rollout)
-        eval_metrics["R^2"] = r2
-        eval_metrics["a"] = a
-        eval_metrics["b"] = b
+        # TODO: set eval_metrics_keys as config param?
+        if True:  #"R^2" in eval_metrics_keys:
+            a,b,r2 = self.calculate_r2(rollout)
+            eval_metrics["eval/R^2"] = r2
+            eval_metrics["eval/a"] = a
+            eval_metrics["eval/b"] = b
 
-    return eval_metrics
+        return eval_metrics
 
-def calculate_r2(rollout):
+    def calculate_r2(self, rollout):
 
-    from sklearn.linear_model import LinearRegression
-    from sklearn.metrics import r2_score
+        from sklearn.linear_model import LinearRegression
+        from sklearn.metrics import r2_score
 
-    MTs = []
-    IDs = []
+        MTs = []
+        IDs = []
 
-    completed_phase_0 = False
-    timestep_start_steering = None
+        completed_phase_0 = False
+        timestep_start_steering = None
 
-    for step, state in enumerate(rollout):
-        metrics = getattr(state, "metrics")
-        info = getattr(state, "info")
+        for step, state in enumerate(rollout):
+            metrics = getattr(state, "metrics")
+            info = getattr(state, "info")
 
-        L = abs(info["end_line"][1] - info["start_line"][1])
-        W = abs(info["top_line"][2] - info["bottom_line"][2])
-        current_ID = L / W
+            L = abs(info["end_line"][1] - info["start_line"][1])
+            W = abs(info["top_line"][2] - info["bottom_line"][2])
+            current_ID = L / W
 
-        if metrics["completed_phase_0"] == True and not completed_phase_0:                    
-            completed_phase_0 = True
-            timestep_start_steering = step
+            if metrics["completed_phase_0"] == True and not completed_phase_0:                    
+                completed_phase_0 = True
+                timestep_start_steering = step
 
-        if completed_phase_0 and metrics["completed_phase_1"]:
-            timestep_end_steering = step
-            MT = (timestep_end_steering - timestep_start_steering) * 0.002 * 25
-            MTs.append(MT)
-            IDs.append(current_ID)
-            completed_phase_0 = False
+            if completed_phase_0 and metrics["completed_phase_1"]:
+                timestep_end_steering = step
+                MT = (timestep_end_steering - timestep_start_steering) * 0.002 * 25
+                MTs.append(MT)
+                IDs.append(current_ID)
+                completed_phase_0 = False
 
 
-    n = min(len(IDs), len(MTs))
-    IDs = np.array(IDs[:n]).reshape(-1, 1)
-    MTs = np.array(MTs[:n])
+        n = min(len(IDs), len(MTs))
+        IDs = np.array(IDs[:n]).reshape(-1, 1)
+        MTs = np.array(MTs[:n])
 
-    if len(IDs) == 0 or len(MTs) == 0:
-        return np.nan, np.nan, np.nan
+        if len(IDs) == 0 or len(MTs) == 0:
+            return np.nan, np.nan, np.nan
 
-    # Fit linear regression and compute R^2
-    model = LinearRegression()
-    model.fit(IDs, MTs)
-    a = model.intercept_
-    b = model.coef_[0]
-    y_pred = model.predict(IDs)
-    print(f"IDs: {IDs}")
-    print(f"MTs: {MTs}")
+        # Fit linear regression and compute R^2
+        model = LinearRegression()
+        model.fit(IDs, MTs)
+        a = model.intercept_
+        b = model.coef_[0]
+        y_pred = model.predict(IDs)
+        print(f"IDs: {IDs}")
+        print(f"MTs: {MTs}")
 
-    print(f"R^2: {r2_score(MTs, y_pred)}, a,b: {a},{b}")
+        print(f"R^2: {r2_score(MTs, y_pred)}, a,b: {a},{b}")
 
-    return a,b,r2_score(MTs, y_pred)
+        return a,b,r2_score(MTs, y_pred)
