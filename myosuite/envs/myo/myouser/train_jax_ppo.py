@@ -168,28 +168,31 @@ def main(cfg: Config):
     n_episodes = 1
 
   # Prepare for evaluation
-  rollout, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
+  rollouts, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
                             seed=config.run.eval_seed,
                             n_episodes=n_episodes)  #config.run.eval_episodes) 
+  rollouts_combined = [r for rollout in rollouts for r in rollout]
   render_every = 2
   fps = 1.0 / env.dt / render_every
   print(f"FPS for rendering: {fps}")
   
   if log_type == "videos":  
-    (rollout, videos) = rollout
-    if videos[0].shape[-1] == 1:
-      videos = [v.squeeze() for v in videos]
+    (rollouts, videos) = rollouts
+    if videos[0][0].shape[-1] == 1:
+      videos = [frame.squeeze() for v in videos for frame in v]
+    else:
+      videos = [frame for v in videos for frame in v]
     media.write_video(logdir / "madrona_rollout.mp4", videos, fps=fps)
     print("Rollout video saved as 'madrona_rollout.mp4'.")
     if config.wandb.enabled and not config.run.play_only:
       wandb.log({'final_policy/madrona_view': wandb.Video(str(logdir / "madrona_rollout.mp4"), format="mp4")})  #, fps=fps)})
 
-  print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
+  print(f"Return: {jp.array([r.reward for rollout in rollouts for r in rollout]).sum()}")
   print(f"env: {env_cfg.env_name}")
-  print(f"len(rollout): {len(rollout)}")
+  print(f"#episodes: {len(rollouts)}")
   if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
-    metrics = env.calculate_metrics(rollout, ['R^2'])
+    metrics = env.calculate_metrics(rollouts_combined, ['R^2'])
     #wandb.log(metrics)
     print(metrics)
 
@@ -197,13 +200,13 @@ def main(cfg: Config):
   render_every = 2
   fps = 1.0 / env.dt / render_every
   print(f"FPS for rendering: {fps}")
-  traj = rollout[::render_every]
+  traj = rollouts_combined[::render_every]
   with h5py.File(logdir / 'traj.h5', 'w') as h5f:
       h5f.create_dataset('qpos', data=[s.data.qpos for s in traj])
       h5f.create_dataset('ctrl', data=[s.data.ctrl for s in traj])
       h5f.close()
   with open(logdir / 'traj.pickle', 'wb') as handle:
-      pickle.dump(rollout, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      pickle.dump(rollouts, handle, protocol=pickle.HIGHEST_PROTOCOL)
   
   # scene_option = mujoco.MjvOption()
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False

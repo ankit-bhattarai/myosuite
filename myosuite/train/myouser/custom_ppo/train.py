@@ -369,8 +369,7 @@ def train(
           * max(num_resets_per_eval, 1)
       )
   ).astype(int)
-  print(f"num_training_interruptions: {num_training_interruptions}")
-  print(f"num_evals_after_init:  {num_evals_after_init}")
+  print(f"num_training_interruptions: {num_training_interruptions - 1}")
 
   key = jax.random.PRNGKey(seed)
   global_key, local_key = jax.random.split(key)
@@ -711,8 +710,8 @@ def train(
   # )
 
   # Run initial eval
-  # metrics = {}
-  # if process_id == 0 and num_evals > 1:
+  metrics = {}
+  if process_id == 0 and num_evals > 1:
   #   metrics = evaluator.run_evaluation(
   #       _unpmap((
   #           training_state.normalizer_params,
@@ -722,10 +721,10 @@ def train(
   #   )
   #   logging.info(metrics)
   #   progress_fn(0, metrics)
-  metrics = policy_params_fn(0, make_policy, _unpmap((
-            training_state.normalizer_params,
-            training_state.params,
-        )))
+    metrics = policy_params_fn(0, make_policy, _unpmap((
+              training_state.normalizer_params,
+              training_state.params,
+          )))
 
 
   training_metrics = {}
@@ -759,10 +758,8 @@ def train(
     ))
 
     if (it+1) % (num_training_interruptions/num_evals_after_init) == 0:
-      print(f"IT {it}, step {current_step}: RUN EVAL")
       metrics = policy_params_fn(current_step, make_policy, params)
     if (num_checkpoints > 0) and ((it+1) % (num_training_interruptions/max(num_checkpoints, 1)) == 0):
-      print(f"IT {it}, step {current_step}: STORE CHECKPOINT")
       policy_params_fn_checkpoints(current_step, make_policy, params)
       if save_checkpoint_path is not None:
         checkpoint.save(

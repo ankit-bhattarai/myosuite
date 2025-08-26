@@ -369,6 +369,20 @@ class MyoUserBase(mjx_env.MjxEnv):
     def reset(self, rng, **kwargs):
         """Reset function. Should call at least self._reset_bm_model."""
 
+    @abc.abstractmethod
+    def auto_reset(self, rng, info_before_reset, **kwargs):
+        """Reset function wrapper called by AutoResetWrapper.
+        Can pass information from previous info to reset function."""
+    
+    def eval_reset(self, rng, eval_id, **kwargs):
+        """Reset function wrapper called by evaluate_policy."""
+        return self.reset(rng, **kwargs)
+    
+    def prepare_eval_rollout(self, rng, **kwargs):
+        """Function that can be used to define random parameters to be used across multiple evaluation rollouts/resets.
+        May return the number of evaluation episodes that should be rolled out (before this method should be called again)."""
+        return None
+
     def _reset_bm_model(self, rng):
         # TODO: do not store anything in self in this function, as its values should mostly be discarded after it is called (no permanent env changes!)
 

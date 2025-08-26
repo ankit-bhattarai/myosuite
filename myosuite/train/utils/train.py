@@ -2,6 +2,7 @@ import os
 import functools
 import json
 from etils import epath
+from absl import logging
 import jax
 import jax.numpy as jp
 import numpy as np
@@ -10,15 +11,13 @@ from mujoco_playground import registry
 import wandb
 import mediapy as media
 
-from brax import envs
-
 # from brax.training.agents.ppo import networks as ppo_networks
 # from brax.training.agents.ppo import networks_vision as ppo_networks_vision
 # from brax.training.agents.ppo import train as ppo
 
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
-from myosuite.train.utils.wrapper import wrap_myosuite_training
+from myosuite.train.utils.wrapper import wrap_myosuite_training, EvalVmapWrapper
 from myosuite.envs.myo.myouser.evaluate import evaluate_policy
 from myosuite.envs.myo.myouser.utils import render_traj
 
@@ -131,14 +130,23 @@ class ProgressEvalVideoLogger:
     ckpt_path = logdir / "checkpoints"
     ckpt_path.mkdir(parents=True, exist_ok=True)
     self.checkpoint_path = ckpt_path
-    self.eval_env = envs.training.EvalWrapper(eval_env)
-    self.seed = seed
-    self.eval_key = jax.random.PRNGKey(seed)
-    self.deterministic = deterministic
-    self.n_episodes = n_episodes
 
+    self.seed = seed
+    eval_key = jax.random.PRNGKey(seed)
+    self.eval_key, reset_prepare_keys = jax.random.split(eval_key)
+    self.deterministic = deterministic
+
+    # Obtain number of episodes to evaluate from environment itself (if defined)
+    _n_episodes = eval_env.prepare_eval_rollout(reset_prepare_keys)
+    if _n_episodes is not None:
+        ## Override n_episodes with enforces value from eval_env
+        logging.info(f"Environment requires exactly {_n_episodes} evaluation episodes.")
+        n_episodes = _n_episodes
+
+    self.n_episodes = n_episodes
+    self.eval_env = EvalVmapWrapper(eval_env, batch_size=self.n_episodes)
     if ep_length is None:
-        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
+        ep_length = int(self.eval_env._config.task_config.max_duration / self.eval_env._config.ctrl_dt)
     self.episode_length = ep_length
 
     # Keys to be logged
@@ -149,8 +157,8 @@ class ProgressEvalVideoLogger:
     self.cameras = cameras
     self.n_cameras = len(cameras)
 
-    self.jit_reset = jax.jit(eval_env.reset)
-    self.jit_step = jax.jit(eval_env.step)
+    self.jit_reset = jax.jit(self.eval_env.eval_reset)
+    self.jit_step = jax.jit(self.eval_env.step)
 
   def progress_eval_run(self, current_step, make_policy, params,
                         training_metrics={}):
@@ -158,8 +166,10 @@ class ProgressEvalVideoLogger:
     # Rollout trajectory
     # make_policy(params, deterministic=True)
     jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
-    rollout = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step)
-
+    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, n_episodes=self.n_episodes)[0]
+    if self.eval_env.vision:
+       rollouts = rollouts[0]
+    
     # Calculate metrics
     # final_eval_state = rollout[-1]
     # eval_metrics = final_eval_state.info['eval_metrics']
@@ -174,14 +184,16 @@ class ProgressEvalVideoLogger:
     #   })
     # metrics['eval/avg_episode_length'] = np.mean(eval_metrics.episode_steps)
     # metrics['eval/std_episode_length'] = np.std(eval_metrics.episode_steps)
-    rollout_metrics_keys = rollout[0].metrics.keys()
-    # TODO: only sum up metrics within each episode, then take mean of all episodes!
-    rollout_metrics = {f'eval/{k}': jp.sum(jp.array([r.metrics[k] for r in rollout])) for k in rollout_metrics_keys}
+    rollout_metrics_keys = rollouts[0][0].metrics.keys()
+    # TODO: move this code to separate function?
+    rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
+    rollouts_combined = [r for rollout in rollouts for r in rollout]
 
-    task_metrics = self.eval_env.calculate_metrics(rollout, self.eval_metrics_keys)
+    #TODO: simplify calculate_metrics by passing nested list 'rollouts' instead of flattened list 'rollouts_combined'
+    task_metrics = self.eval_env.calculate_metrics(rollouts_combined, self.eval_metrics_keys)
 
     # Create video that can be uploaded to Weights & Biases
-    video_metrics = self.progress_eval_video(rollout, current_step)
+    video_metrics = self.progress_eval_video(rollouts_combined, current_step)
 
     metrics = {**rollout_metrics, **task_metrics, **video_metrics, **training_metrics}    
     wandb.log(metrics, step=current_step)

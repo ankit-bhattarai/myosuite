@@ -422,6 +422,47 @@ class MyoUserSteering(MyoUserBase):
         tunnel_positions['end_line'] = relevant_positions['screen_pos'] + jp.array([0., right_line, height_midway])
         tunnel_positions['screen_pos'] = relevant_positions['screen_pos']
         return tunnel_positions
+    
+    def random_positions_steeringlaw(self, rng: jax.Array, L, W, right):
+        pos_min, pos_max = -0.2, 0.3
+        left = right - L
+        rng, rng2 = jax.random.split(rng, 2)
+        bottom = jax.random.uniform(rng, minval=pos_min, maxval=pos_max-W)
+        top = bottom + W
+        return left, bottom, top
+
+    def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+        tunnel_positions_total  = []
+        IDs = [1, 2, 3, 4, 5]
+        L_min, L_max = 0.05, 0.5
+        W_min, W_max = 0.07, 0.6
+        right = 0.3
+        for ID in IDs:
+            combos = 0
+            while combos < 1:
+                rng, rng2 = jax.random.split(rng, 2)
+                W = jax.random.uniform(rng, minval=W_min, maxval=W_max)
+                L = ID * W
+                if L_min <= L <= L_max:
+                    tunnel_positions = []  #{}
+                    left, bottom, top = self.random_positions_steeringlaw(rng2, L, W, right)
+                    width_midway = (left + right) / 2
+                    height_midway = (top + bottom) / 2
+                    # tunnel_positions['bottom_line'] = screen_pos + jp.array([0., width_midway, bottom])
+                    # tunnel_positions['top_line'] = screen_pos + jp.array([0., width_midway, top])
+                    # tunnel_positions['start_line'] = screen_pos + jp.array([0., right, height_midway])
+                    # tunnel_positions['end_line'] = screen_pos + jp.array([0., left, height_midway])
+                    # tunnel_positions['screen_pos'] = screen_pos
+                    tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
+                    tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
+                    tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
+                    tunnel_positions.append(screen_pos + jp.array([0., left, height_midway]))
+                    tunnel_positions.append(screen_pos)
+                    combos += 1
+
+                    for i in range(3):
+                        tunnel_positions_total.append(tunnel_positions)
+        return tunnel_positions_total
 
     def reset(self, rng, render_token=None, tunnel_positions=None):
         # jax.debug.print(f"RESET INIT")
@@ -480,6 +521,28 @@ class MyoUserSteering(MyoUserBase):
     def auto_reset(self, rng, info_before_reset, **kwargs):
         render_token = info_before_reset["render_token"] if self.vision else None
         return self.reset(rng, render_token=render_token, **kwargs)
+    
+    def eval_reset(self, rng, eval_id, **kwargs):
+        """Reset function wrapper called by evaluate_policy."""
+        _tunnel_position_jp = self.SL_tunnel_positions.at[eval_id].get()
+        tunnel_positions = {}
+        tunnel_positions['bottom_line'] = _tunnel_position_jp[0]
+        tunnel_positions['top_line'] = _tunnel_position_jp[1]
+        tunnel_positions['start_line'] = _tunnel_position_jp[2]
+        tunnel_positions['end_line'] = _tunnel_position_jp[3]
+        tunnel_positions['screen_pos'] = _tunnel_position_jp[4]
+
+        return self.reset(rng, tunnel_positions=tunnel_positions, **kwargs)
+    
+    def prepare_eval_rollout(self, rng, **kwargs):
+        """Function that can be used to define random parameters to be used across multiple evaluation rollouts/resets.
+        May return the number of evaluation episodes that should be rolled out (before this method should be called again)."""
+        
+        ## Setup evaluation episodes for Steering Law validation
+        rng, rng2 = jax.random.split(rng, 2)
+        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+
+        return len(self.SL_tunnel_positions)
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
