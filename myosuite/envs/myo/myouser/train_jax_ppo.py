@@ -157,7 +157,7 @@ def main(cfg: Config):
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
   jit_inference_fn = jax.jit(inference_fn)
-  jit_reset = jax.jit(env.reset)
+  jit_reset = jax.jit(env.eval_reset)
   jit_step = jax.jit(env.step)
 
   if env_cfg.env_name=="MyoUserSteering":
