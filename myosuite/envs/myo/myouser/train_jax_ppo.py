@@ -34,6 +34,8 @@ import jax.numpy as jp
 import matplotlib.pyplot as plt
 import mediapy as media
 
+from myosuite.envs.myo.myouser.myouser_steering_v0 import calculate_metrics
+
 from tensorboardX import SummaryWriter
 import wandb
 
@@ -160,6 +162,13 @@ def main(cfg: Config):
   jit_reset = jax.jit(env.reset)
   jit_step = jax.jit(env.step)
 
+  if env_cfg.env_name=="MyoUserSteering":
+    n_episodes = 50
+  elif env_cfg.env_name=="MyoUserSteeringLaw":
+    n_episodes = 84
+  else:
+    n_episodes = 1
+
   # Prepare for evaluation
   rollout, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
@@ -179,6 +188,12 @@ def main(cfg: Config):
       wandb.log({'final_policy/madrona_view': wandb.Video(str(logdir / "madrona_rollout.mp4"), format="mp4")})  #, fps=fps)})
 
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
+  print(f"env: {env_cfg.env_name}")
+  print(f"len(rollout): {len(rollout)}")
+  if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
+    metrics = calculate_metrics(rollout, ['R^2'])
+    #wandb.log(metrics)
+    print(metrics)
 
   # Render and save the rollout
   render_every = 2
@@ -190,7 +205,7 @@ def main(cfg: Config):
       h5f.create_dataset('ctrl', data=[s.data.ctrl for s in traj])
       h5f.close()
   with open(logdir / 'traj.pickle', 'wb') as handle:
-      pickle.dump(traj, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      pickle.dump(rollout, handle, protocol=pickle.HIGHEST_PROTOCOL)
   
   # scene_option = mujoco.MjvOption()
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False

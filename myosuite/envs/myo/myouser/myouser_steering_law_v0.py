@@ -28,6 +28,11 @@ from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
 from dataclasses import dataclass, field
 from typing import List, Dict
+import random
+
+@dataclass
+class NumberResets:
+    number_of_resets: int = 0
 
 @dataclass
 class SteeringTaskConfig:
@@ -43,7 +48,7 @@ class SteeringTaskConfig:
         "phase_1_tunnel": 3,
         "neural_effort": 0,
         "jac_effort": 0,
-        #"power_for_softcons": 15,
+        "bonus_inside_path": 0.1
     })
     max_duration: float = 4.
     max_trials: int = 1
@@ -53,11 +58,11 @@ class SteeringTaskConfig:
     bottom: float = -0.3
     top: float = 0.3
     left: float = 0.3
-    right: float = -0.2
+    right: float = -0.3
 
 @dataclass
-class SteeringEnvConfig(BaseEnvConfig):
-    env_name: str = "MyoUserSteering"
+class SteeringLawEnvConfig(BaseEnvConfig):
+    env_name: str = "MyoUserSteeringLaw"
     model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_steering_myouser.xml"
     task_config: SteeringTaskConfig = field(default_factory=lambda: SteeringTaskConfig())
 
@@ -105,12 +110,12 @@ def default_config() -> config_dict.ConfigDict:
                 reach=1,
                 # bonus_0=0,
                 bonus_1=10,
-                phase_1_touch=10,
-                phase_1_tunnel=10,  #-2,
+                phase_1_touch=7,
+                phase_1_tunnel=5,  #-2,
                 neural_effort=0.0,  #1e-4,
-                jac_effort=0.05,
-                truncated=-10,
-                
+                jac_effort=0,
+                bonus_inside_path=0.1,
+
                 # ## old reward fct. (florian's branch):
                 # reach=1,
                 # bonus_0_old=5,
@@ -156,7 +161,7 @@ def default_config() -> config_dict.ConfigDict:
     return env_config
 
 
-class MyoUserSteering(MyoUserBase): 
+class MyoUserSteeringLaw(MyoUserBase): 
     def modify_mj_model(self, mj_model):
         default_screen_distance_x = 0.50  #distance from humphant body; corresponds to default screen pos[0] value in xml file
 
@@ -192,9 +197,6 @@ class MyoUserSteering(MyoUserBase):
         self.start_line_id = self._mj_model.site("start_line").id
         self.end_line_id = self._mj_model.site("end_line").id
         self.fingertip_id = self._mj_model.site("fingertip").id
-
-        #self._shoulder_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "shoulder_rot")
-        #self._elbow_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "elbow_flexion")
         # self.screen_touch_id = self._mj_model.sensor("screen_touch").id
 
         #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
@@ -208,14 +210,14 @@ class MyoUserSteering(MyoUserBase):
         self.top = self._config.task_config.top
         self.left = self._config.task_config.left
         self.right = self._config.task_config.right
-        
+
     # def _prepare_after_init(self, data):
     #     super()._prepare_after_init(data)
         # # Define target origin, relative to which target positions will be generated
         # self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
 
     def get_obs_dict(self, data, info):
-        rng = info['rng']
+        
 
         obs_dict = {}
         obs_dict['time'] = jp.array(data.time)
@@ -262,27 +264,31 @@ class MyoUserSteering(MyoUserBase):
         dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
         # Update phase immediately based on current position
-        touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
+        touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
         within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
         within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.01)
         phase_0_completed_now = touching_screen_phase_0 * within_z_limits * within_y_dist
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed_now
         
         crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1])
-        phase_1_x_dist = jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0])
+        phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
         touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
         phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1 * within_z_limits
         completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
 
         relative_position = jp.linalg.norm(ee_pos[2] - bottom_line_z)
         softcons_for_bounds = jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1)
+
+        within_y_limits = 1.0 * (ee_pos[1] <= start_line[1]) * (ee_pos[1] >= end_line[1])
+        inside_path = completed_phase_0 * within_z_limits * touching_screen_phase_1 * within_y_limits
         
         # Reset phase 0 when phase 1 is done (and episode ends)
         ## TODO: delay this update to the step function, to ensure consistency between different observations (e.g. when defining the reward function)?
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
 
+        obs_dict["inside_path"] = inside_path
         obs_dict["con_0_touching_screen"] = touching_screen_phase_0
-        obs_dict["con_0_1_within_z_limits"] = (1.-within_z_limits) * completed_phase_0
+        obs_dict["con_0_1_within_z_limits"] = within_z_limits
         obs_dict["con_0_within_y_dist"] = within_y_dist
         obs_dict["completed_phase_0"] = completed_phase_0
         obs_dict['completed_phase_0_arr'] = jp.array([completed_phase_0])
@@ -317,17 +323,10 @@ class MyoUserSteering(MyoUserBase):
         info['completed_phase_1'] = obs_dict['completed_phase_1']
 
         return info
-    
+     
     def get_reward_dict(self, obs_dict):#, info):
 
         ctrl_magnitude = jp.linalg.norm(obs_dict['last_ctrl'], axis=-1)
-
-        # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
-        # start line when in phase 0   
-        # 
-        #ejk_effort, previous_qacc = self.get_ejk_effort_costs(obs_dict, info) 
-        #info['previous_qacc'] = previous_qacc
-
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
@@ -342,20 +341,16 @@ class MyoUserSteering(MyoUserBase):
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
-            ('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
+            ('bonus_inside_path', 1.*obs_dict['inside_path']),
+            # ('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
 
-        #power_softcons = self.weighted_reward_keys['power_for_softcons']
-        #phase_1_tunnel_weight = self.weighted_reward_keys['phase_1_tunnel']
-
-        #exclude = {"power_for_softcons", "phase_1_tunnel"}
-
         rwd_dict['dense'] = jp.sum(
-            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0) #+ phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-1.)))
+            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
 
-        return rwd_dict#, info
+        return rwd_dict
     
     def get_jac_effort_costs(self, obs_dict):
         r_effort = 0.00198*jp.linalg.norm(obs_dict['last_ctrl'])**2 
@@ -470,9 +465,10 @@ class MyoUserSteering(MyoUserBase):
             #'neural_effort_reward': 0.0,
             'distance_reward': 0.0,
             'bonus_reward': 0.0,
-            'touch_reward': 0.0,
-            'tunnel_reward': 0.0,
+            #'touch_reward': 0.0,
+            #'tunnel_reward': 0.0,
             'not_touching': 0.0,
+            'inside_path_reward': 0.0
         }
         
         return State(data, obs, reward, done, metrics, info)
@@ -510,8 +506,8 @@ class MyoUserSteering(MyoUserBase):
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
         
-        #done = rwd_dict['done']
-        done = jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32)
+        done = rwd_dict['done']
+        #done = jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32)
 
         state.metrics.update(
             completed_phase_0 = obs_dict["completed_phase_0"],
@@ -530,8 +526,9 @@ class MyoUserSteering(MyoUserBase):
             #neural_effort_reward = rwd_dict["neural_effort"]*self.weighted_reward_keys['neural_effort'],
             distance_reward = rwd_dict['reach']*self.weighted_reward_keys['reach'],
             bonus_reward = rwd_dict['bonus_1']*self.weighted_reward_keys['bonus_1'],
-            touch_reward = rwd_dict['phase_1_touch']*self.weighted_reward_keys['phase_1_touch'],
-            tunnel_reward = rwd_dict['phase_1_tunnel']*self.weighted_reward_keys['phase_1_tunnel'],
+            #touch_reward = rwd_dict['phase_1_touch']*self.weighted_reward_keys['phase_1_touch'],
+            #tunnel_reward = rwd_dict['phase_1_tunnel']*self.weighted_reward_keys['phase_1_tunnel'],
+            inside_path_reward = rwd_dict['bonus_inside_path']*self.weighted_reward_keys['bonus_inside_path']
         )
 
         # return self.forward(**kwargs)
