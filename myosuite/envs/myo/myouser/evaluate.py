@@ -44,7 +44,7 @@ def get_custom_tunnels(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.A
                 tunnel_positions['screen_pos'] = screen_pos
                 combos += 1
 
-                for i in range(5):
+                for i in range(3):
                     tunnel_positions_total.append(tunnel_positions)
     return tunnel_positions_total
 
@@ -89,9 +89,9 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     if ep_length is None:
         ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
 
-    for i in range(len(tunnel_positions)):
-        jax.debug.print("evaluate episode {}", i)
-        state = jit_reset(reset_keys, tunnel_positions=tunnel_positions[i])
+    for episode in range(len(tunnel_positions)):
+        jax.debug.print("evaluate episode {}", episode)
+        state = jit_reset(reset_keys, tunnel_positions=tunnel_positions[episode])
         #print(state.info)
         rollout.append(state)
         

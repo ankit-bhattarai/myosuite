@@ -14,6 +14,7 @@ from myosuite.envs.myo.myouser.base import BaseEnvConfig, RLConfig
 from myosuite.envs.myo.myouser.myouser_pointing_v0 import PointingEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import CircularSteeringEnvConfig
+from myosuite.envs.myo.myouser.myouser_steering_law_v0 import SteeringLawEnvConfig
 
 OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "-" + str(x))
 
@@ -88,6 +89,7 @@ cs.store(group="env", name="base_env_config", node=BaseEnvConfig)
 cs.store(group="env", name="pointing", node=PointingEnvConfig)
 cs.store(group="env", name="steering", node=SteeringEnvConfig)
 cs.store(group="env", name="circular_steering", node=CircularSteeringEnvConfig)
+cs.store(group="env", name="steering_law", node=SteeringLawEnvConfig)
 cs.store(group="rl", name="rl_config", node=RLConfig)
 cs.store(group="run", name="run", node=RunConfig)
 

@@ -176,10 +176,10 @@ def main(cfg: Config):
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
   print(f"env: {env_cfg.env_name}")
   print(f"len(rollout): {len(rollout)}")
-  if env_cfg.env_name=="MyoUserSteering":
+  if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
     metrics = calculate_metrics(rollout, ['R^2'])
     #wandb.log(metrics)
-  print(metrics)
+    print(metrics)
 
   # Render and save the rollout
   render_every = 2
