@@ -99,9 +99,9 @@ def default_config() -> config_dict.ConfigDict:
                 reach=1,
                 # bonus_0=0,
                 bonus_1=10,
-                phase_1_touch=7,
-                phase_1_tunnel=5,  #-2,
-                neural_effort=0.005,  #1e-4,
+                phase_1_touch=0,
+                phase_1_tunnel=0,  #-2,
+                neural_effort=0,  #1e-4,
             ),
             max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
@@ -128,7 +128,7 @@ def default_config() -> config_dict.ConfigDict:
         discounting=0.97,
         learning_rate=3e-4,
         entropy_cost=0.001,
-        num_envs=1024,  #8192,
+        num_envs=1,  #8192,
         batch_size=128,  #512,
         max_grad_norm=1.0,
         network_factory=config_dict.create(
@@ -239,16 +239,36 @@ class MyoUserCircularSteering(MyoUserBase):
         bottom_line_radius = obs_dict['bottom_line_radius'][0]
         top_line_radius = obs_dict['top_line_radius'][0]
         path_width = jp.linalg.norm(top_line_radius - bottom_line_radius)
-        path_length = 2 * jp.pi * bottom_line_radius
+        path_length = 2 * jp.pi * (bottom_line_radius + top_line_radius) / 2
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
         #jax.debug.print("dist_to_start_line: {} and ee_pos {} and start_line {}", dist_to_start_line, ee_pos, start_line)
         dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
-        ee_pos_vec = ee_pos[1:3] - obs_dict['screen_pos'][1:3]
-        theta_now = jp.arctan2(ee_pos_vec[1], ee_pos_vec[0])
-        theta_rel = (theta_now - jp.pi / 2) % (2 * jp.pi)
-        remaining_angle = (2 * jp.pi - theta_rel)
-        path_length_remaining = jp.linalg.norm((bottom_line_radius + top_line_radius) / 2 * remaining_angle)
+
+        # Compute remaining path length
+        # ee_pos_vec = ee_pos[1:3] - obs_dict['screen_pos'][1:3]
+        # ee_pos_vec = jp.where(
+        #     middle_line_crossed == 0,
+        #     ee_pos_vec.at[0].set(jp.maximum(ee_pos_vec[0], 0.1)),
+        #     ee_pos_vec
+        # )
+        # theta_now = jp.atan2(ee_pos_vec[0], ee_pos_vec[1])
+        # theta_rel = (theta_now - jp.pi / 2) % (2 * jp.pi)
+        # remaining_angle = (2 * jp.pi - theta_rel)
+        # radius = (bottom_line_radius + top_line_radius) / 2
+        # path_length_before_middle_line_crossed = radius * remaining_angle 
+        # path_length_after_middle_line_crossed = radius * (2 * jp.pi - remaining_angle)
+        # path_length_remaining = middle_line_crossed*path_length_after_middle_line_crossed + (1-middle_line_crossed)*path_length_before_middle_line_crossed
+
+        ee_pos_vec = jp.where(
+            middle_line_crossed == 0,
+            ee_pos.at[0].set(jp.maximum(ee_pos[0], 0.01)),
+            ee_pos
+        )
+        theta_now = jp.atan2(ee_pos_vec[0], ee_pos_vec[1])
+        remaining_angle = (2*jp.pi - theta_now) % (2 * jp.pi)
+        radius = (bottom_line_radius + top_line_radius) / 2
+        path_length_remaining = radius * remaining_angle
 
         # Update phase immediately based on current position
         touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
@@ -257,7 +277,9 @@ class MyoUserCircularSteering(MyoUserBase):
         within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.01)
         phase_0_completed_now = touching_screen_phase_0 * within_path_limits * within_y_dist
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed_now
-        
+
+        #jax.debug.print("completed_phase_0: {}, path_length: {}, path_length_remaining: {}", completed_phase_0, path_length, path_length_remaining)
+
         start_line = obs_dict['start_line']        # Shape: (1024, 3)
         yz = jp.stack([start_line[1], -start_line[2]], axis=-1)  # (1024, 2)
         dist_to_middle_line = jp.linalg.norm(yz - ee_pos[1:3], axis=-1)  # (1024,)
@@ -300,6 +322,7 @@ class MyoUserCircularSteering(MyoUserBase):
         obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
         obs_dict["dist"] = dist
         obs_dict["phase_1_x_dist"] = phase_1_x_dist
+        obs_dict["path_length_remaining"] = path_length_remaining
 
         ## Additional observations
         obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
@@ -390,7 +413,7 @@ class MyoUserCircularSteering(MyoUserBase):
 
         return tunnel_values
 
-    def reset(self, rng, render_token=None, target_pos=None, target_radius=None):
+    def reset(self, rng, render_token=None, tunnel_positions=None):
         # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
@@ -431,6 +454,8 @@ class MyoUserCircularSteering(MyoUserBase):
             'con_1_touching_screen': 0.0,
             'con_1_crossed_line_y': 0.0,
             'softcons_for_bounds': 0.0,
+            'path_length_remaining': 0.0,
+            'path_length': 0.0,
         }
 
         return State(data, obs, reward, done, metrics, info)
@@ -480,6 +505,8 @@ class MyoUserCircularSteering(MyoUserBase):
             con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
             middle_line_crossed = obs_dict["middle_line_crossed"],
+            path_length_remaining = obs_dict["path_length_remaining"],
+            path_length = (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi,  #2*pi*radius
         )
 
         return state.replace(

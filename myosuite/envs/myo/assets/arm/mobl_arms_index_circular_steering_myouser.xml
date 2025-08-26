@@ -9,7 +9,7 @@
         </body>
 
         <light name="scene_light" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0" pos="0.5 0.5 3.0"/>
-        <body name="screen" pos="0.6 -0.27 0.993">
+        <body name="screen" pos="0.5 -0.27 0.993">
           <geom name="screen" size="0.01 0.5 0.4" type="box" rgba="1 1 1 1" contype="1" conaffinity="1" margin="0.001"/>
           <site name="screen" type="box" size="0.01 0.5 0.4"/>
           <site name="top_line" type="cylinder" size="0.3 0.001" pos="-0.01 0 0" euler="0 1.57 0" rgba="0 0 0 1"/>
