@@ -129,10 +129,11 @@ def main(cfg: Config):
   ## TRAINING/LOADING CHECKPOINT
   # Train or load the model
   env, make_inference_fn, params = train_or_load_checkpoint(env_cfg.env_name, config,
+                    eval_mode=env_cfg.eval_mode,
                     logdir=logdir,
                     checkpoint_path=config.rl.load_checkpoint_path,
                     progress_fn=progress_fn,
-                    log_wandb_videos=config.wandb.enabled and not config.run.play_only,
+                    log_wandb_videos=config.wandb.enabled and not config.run.play_only and config.run.log_wandb_videos,
                     vision=config.vision.enabled,
                     domain_randomization=config.run.domain_randomization,
                     rscope_envs=config.run.rscope_envs,
@@ -169,10 +170,23 @@ def main(cfg: Config):
     n_episodes = 1
 
   # Prepare for evaluation
-  rollout = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
+  rollout, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
-                            seed=123,  #seed=_SEED.value,  #TODO: add eval_seed to hydra/config
-                            n_episodes=n_episodes)  #TODO: n_episodes as hydra config param?
+                            seed=config.run.eval_seed,
+                            n_episodes=config.run.eval_episodes) 
+  render_every = 2
+  fps = 1.0 / env.dt / render_every
+  print(f"FPS for rendering: {fps}")
+  
+  if log_type == "videos":  
+    (rollout, videos) = rollout
+    if videos[0].shape[-1] == 1:
+      videos = [v.squeeze() for v in videos]
+    media.write_video(logdir / "madrona_rollout.mp4", videos, fps=fps)
+    print("Rollout video saved as 'madrona_rollout.mp4'.")
+    if config.wandb.enabled and not config.run.play_only:
+      wandb.log({'final_policy/madrona_view': wandb.Video(str(logdir / "madrona_rollout.mp4"), format="mp4")})  #, fps=fps)})
+
   print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
   print(f"env: {env_cfg.env_name}")
   print(f"len(rollout): {len(rollout)}")
