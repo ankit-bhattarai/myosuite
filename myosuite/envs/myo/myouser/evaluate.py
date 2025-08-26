@@ -23,9 +23,9 @@ def random_positions(L, W, right):
 
 def get_custom_tunnels(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
     tunnel_positions_total  = []
-    IDs = [1, 2, 3, 4, 5, 6, 7]
+    IDs = [1, 2, 3, 4, 5]
     L_min, L_max = 0.05, 0.5
-    W_min, W_max = 0.1, 0.6
+    W_min, W_max = 0.07, 0.6
     right = 0.3
     for ID in IDs:
         combos = 0
@@ -42,7 +42,6 @@ def get_custom_tunnels(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.A
                 tunnel_positions['start_line'] = screen_pos + jnp.array([0., right, height_midway])
                 tunnel_positions['end_line'] = screen_pos + jnp.array([0., left, height_midway])
                 tunnel_positions['screen_pos'] = screen_pos
-                print(tunnel_positions['start_line'])
                 combos += 1
 
                 for i in range(5):
