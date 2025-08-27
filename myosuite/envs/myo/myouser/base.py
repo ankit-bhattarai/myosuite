@@ -544,13 +544,26 @@ class MyoUserBase(mjx_env.MjxEnv):
         _joint_constraints = self.mjx_model.eq_type == 2
         _active_eq_constraints = data.eq_active == 1
 
-        eq_dep, eq_indep, poly_coefs = jp.array(self.mjx_model.eq_obj1id), \
-            jp.array(self.mjx_model.eq_obj2id), \
-            jp.array(self.mjx_model.eq_data[:, 4::-1])
-        
-        reset_qpos_new = jp.where(jp.array([jp.any((eq_dep == i) & _joint_constraints & _active_eq_constraints) for i in range(self.mjx_model.njnt)]), 
-                                   jp.array([jp.polyval(poly_coefs[jp.argwhere(eq_dep == i, size=1).flatten(), :].flatten(), reset_qpos[eq_indep[jp.argwhere(eq_dep == i, size=1).flatten()]]) for i in range(self.mjx_model.njnt)]).flatten(),
-                                   reset_qpos)
+        if False:  #default MuJoCo joint equality constraint
+            eq_dep, eq_indep, poly_coefs = jp.array(self.mjx_model.eq_obj1id), \
+                jp.array(self.mjx_model.eq_obj2id), \
+                jp.array(self.mjx_model.eq_data[:, 4::-1])
+            
+            reset_qpos_new = jp.where(jp.array([jp.any((eq_dep == i) & _joint_constraints & _active_eq_constraints) for i in range(self.mjx_model.njnt)]), 
+                                    jp.array([jp.polyval(poly_coefs[jp.argwhere(eq_dep == i, size=1).flatten(), :].flatten(), reset_qpos[eq_indep[jp.argwhere(eq_dep == i, size=1).flatten()]]) for i in range(self.mjx_model.njnt)]).flatten(),
+                                    reset_qpos)
+        else:  #patch that allows for two joint dependencies, but restricts constraints to polynomials of order three 
+            # NEW: the equality constraint now ensures joint(joint2).qpos=polycoef[0] + polycoef[1]*joint(joint1).qpos + polycoef[2]*(joint(joint1).qpos**2) + polycoef[3]*(joint(polycoef[4]).qpos)*joint(joint1).qpos
+            # BEFORE (MuJoCo default): 
+            eq_dep, eq_indep, poly_coefs = jp.array(self.mjx_model.eq_obj1id), \
+                jp.array(self.mjx_model.eq_obj2id), \
+                jp.array(self.mjx_model.eq_data[:, 2::-1])
+            eq_indep2 = jp.array(self.mjx_model.eq_data[:, 4], dtype=jp.int32)
+            linear_coef_indep2 = jp.array(self.mjx_model.eq_data[:, 3] * (eq_indep2 > 0))
+
+            reset_qpos_new = jp.where(jp.array([jp.any((eq_dep == i) & _joint_constraints & _active_eq_constraints) for i in range(self.mjx_model.njnt)]), 
+                                    jp.array([jp.polyval(poly_coefs[jp.argwhere(eq_dep == i, size=1).flatten(), :].flatten(), reset_qpos[eq_indep[jp.argwhere(eq_dep == i, size=1).flatten()]]) + jp.dot(linear_coef_indep2[jp.argwhere(eq_dep == i, size=1).flatten()].flatten(), reset_qpos[eq_indep2[jp.argwhere(eq_dep == i, size=1).flatten()]]) for i in range(self.mjx_model.njnt)]).flatten(),
+                                    reset_qpos)
         
         return reset_qpos_new
     
