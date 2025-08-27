@@ -6,7 +6,7 @@ import json
 import jax.numpy as jnp
 import random
 
-def random_positions_deprecated(L, W):
+def random_positions_for_all_positions(L, W):
     pos_min, pos_max = -0.2, 0.3
     left = random.uniform(pos_min, pos_max - L)
     right = left + L
@@ -14,38 +14,76 @@ def random_positions_deprecated(L, W):
     top = bottom + W
     return left, right, bottom, top
 
-def random_positions(L, W, right):
+def random_positions_right_fixed(L, W, right):
     pos_min, pos_max = -0.2, 0.3
     left = right - L
     bottom = random.uniform(pos_min, pos_max - W)
     top = bottom + W
     return left, bottom, top
 
-def get_custom_tunnels(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+def random_width(L, W, right):
+    pos_min, pos_max = -0.2, 0.3
+    left = right - L
+    bottom = random.uniform(pos_min, pos_max - W)
+    top = bottom + W
+    return left, bottom, top
+
+def get_custom_tunnels_different_lengths(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
     tunnel_positions_total  = []
-    IDs = [1, 2, 3, 4, 5]
+    IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     L_min, L_max = 0.05, 0.5
     W_min, W_max = 0.07, 0.6
     right = 0.3
+    top = 0.025
+    bottom = -0.025
+    W = top - bottom
     for ID in IDs:
         combos = 0
         while combos < 1:
-            W = random.uniform(W_min, W_max)
             L = ID * W
-            if L_min <= L <= L_max:
-                tunnel_positions = {}
-                left, bottom, top = random_positions(L, W, right)
-                width_midway = (left + right) / 2
-                height_midway = (top + bottom) / 2
-                tunnel_positions['bottom_line'] = screen_pos + jnp.array([0., width_midway, bottom])
-                tunnel_positions['top_line'] = screen_pos + jnp.array([0., width_midway, top])
-                tunnel_positions['start_line'] = screen_pos + jnp.array([0., right, height_midway])
-                tunnel_positions['end_line'] = screen_pos + jnp.array([0., left, height_midway])
-                tunnel_positions['screen_pos'] = screen_pos
-                combos += 1
+            tunnel_positions = {}
+            left = right - L
+            width_midway = (left + right) / 2
+            height_midway = (top + bottom) / 2
+            tunnel_positions['bottom_line'] = screen_pos + jnp.array([0., width_midway, bottom])
+            tunnel_positions['top_line'] = screen_pos + jnp.array([0., width_midway, top])
+            tunnel_positions['start_line'] = screen_pos + jnp.array([0., right, height_midway])
+            tunnel_positions['end_line'] = screen_pos + jnp.array([0., left, height_midway])
+            tunnel_positions['screen_pos'] = screen_pos
+            combos += 1
 
-                for i in range(3):
-                    tunnel_positions_total.append(tunnel_positions)
+            for i in range(10):
+                tunnel_positions_total.append(tunnel_positions)
+    return tunnel_positions_total
+
+def get_custom_tunnels_different_widths(rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+    tunnel_positions_total  = []
+    IDs = [3, 4, 5, 6, 7, 8]
+    L_min, L_max = 0.05, 0.5
+    W_min, W_max = 0.07, 0.6
+    right = 0.2
+    left = -0.2
+    top = 0.1
+    L = right - left
+
+    for ID in IDs:
+        combos = 0
+        while combos < 1:
+            W = L/ID
+            bottom = top - W
+            tunnel_positions = {}
+            left = right - L
+            width_midway = (left + right) / 2
+            height_midway = (top + bottom) / 2
+            tunnel_positions['bottom_line'] = screen_pos + jnp.array([0., width_midway, bottom])
+            tunnel_positions['top_line'] = screen_pos + jnp.array([0., width_midway, top])
+            tunnel_positions['start_line'] = screen_pos + jnp.array([0., right, height_midway])
+            tunnel_positions['end_line'] = screen_pos + jnp.array([0., left, height_midway])
+            tunnel_positions['screen_pos'] = screen_pos
+            combos += 1
+
+            for i in range(10):
+                tunnel_positions_total.append(tunnel_positions)
     return tunnel_positions_total
 
 def evaluate_policy(checkpoint_path=None, env_name=None,
@@ -59,7 +97,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     or let this method load the env and policy from scratch by passing only checkpoint_path and env_name (takes ~1min).
     """
     rng = jax.random.PRNGKey(42)
-    tunnel_positions = get_custom_tunnels(rng, screen_pos=jnp.array([0.532445, -0.27, 0.993]))
+    tunnel_positions = get_custom_tunnels_different_widths(rng, screen_pos=jnp.array([0.532445, -0.27, 0.993]))
 
     if checkpoint_path is None:
         assert eval_env is not None, "If no checkpoint path is provided, env must be passed directly as 'eval_env'"
