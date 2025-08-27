@@ -18,6 +18,7 @@
 """Wrappers for MuJoCo Playground environments."""
 
 import functools
+from absl import logging
 from typing import Any, Callable, Optional, Tuple
 
 from brax.envs.wrappers import training as brax_training
@@ -283,6 +284,7 @@ class EvalVmapWrapper(Wrapper):
   def __init__(self, env: Env, batch_size: Optional[int] = None):
     super().__init__(env)
     self.batch_size = batch_size
+    self.eval_wrapped = True
 
   def eval_reset(self, rng: jax.Array, eval_id: jax.Array) -> State:
     if self.batch_size is not None:
@@ -291,3 +293,17 @@ class EvalVmapWrapper(Wrapper):
 
   def step(self, state: State, action: jax.Array) -> State:
     return jax.vmap(self.env.step)(state, action)
+  
+
+def _maybe_wrap_env_for_evaluation(eval_env, rng, n_episodes):
+    _n_episodes = eval_env.prepare_eval_rollout(rng)
+    if _n_episodes is not None:
+        ## Override n_episodes with enforces value from eval_env
+        logging.info(f"Environment requires exactly {_n_episodes} evaluation episodes.")
+        n_episodes = _n_episodes
+    
+    if not hasattr(eval_env, "eval_wrapped"):
+        eval_env = EvalVmapWrapper(eval_env, batch_size=n_episodes)
+        assert hasattr(eval_env, "eval_wrapped")
+    
+    return eval_env, n_episodes

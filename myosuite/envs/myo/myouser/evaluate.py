@@ -4,6 +4,9 @@ from ml_collections import ConfigDict
 import json
 import jax.numpy as jp
 
+from myosuite.train.utils.wrapper import _maybe_wrap_env_for_evaluation
+
+
 def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):
     eval_key = jax.random.PRNGKey(seed)
     eval_key, reset_keys = jax.random.split(eval_key)
@@ -68,7 +71,7 @@ def evaluate_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n
     return (rollout, videos_all), "videos"
 
 
-
+#TODO: pass rng instead of seed, to avoid correlation between rng used for _maybe_wrap_env_for_evaluation and for further evaluation reset/step calls (re-generated using same seed)
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
                     seed=123, n_episodes=1,
@@ -91,6 +94,8 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
         with open(os.path.join(checkpoint_path, "config.json"), "r") as f:
             config = ConfigDict(json.load(f))
         eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
+        reset_prepare_keys = jax.random.PRNGKey(seed)
+        eval_env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, rng=reset_prepare_keys, n_episodes=n_episodes)
         jit_inference_fn = jax.jit(make_inference_fn(params, deterministic=True))
         jit_reset = jax.jit(eval_env.eval_reset)
         jit_step = jax.jit(eval_env.step)
