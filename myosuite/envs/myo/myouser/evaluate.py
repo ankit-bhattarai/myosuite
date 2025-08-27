@@ -94,8 +94,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
         with open(os.path.join(checkpoint_path, "config.json"), "r") as f:
             config = ConfigDict(json.load(f))
         eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
-        reset_prepare_keys = jax.random.PRNGKey(seed)
-        eval_env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, rng=reset_prepare_keys, n_episodes=n_episodes)
+        eval_env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed, n_episodes=n_episodes)
         jit_inference_fn = jax.jit(make_inference_fn(params, deterministic=True))
         jit_reset = jax.jit(eval_env.eval_reset)
         jit_step = jax.jit(eval_env.step)

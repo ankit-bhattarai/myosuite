@@ -134,11 +134,10 @@ class ProgressEvalVideoLogger:
     self.seed = seed
     # eval_key = jax.random.PRNGKey(seed)
     # self.eval_key, reset_prepare_keys = jax.random.split(eval_key)
-    reset_prepare_keys = jax.random.PRNGKey(seed)
     self.deterministic = deterministic
 
     # Prepare evaluation episodes
-    self.eval_env, self.n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, rng=reset_prepare_keys, n_episodes=n_episodes)
+    self.eval_env, self.n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed, n_episodes=n_episodes)
 
     if ep_length is None:
         ep_length = int(self.eval_env._config.task_config.max_duration / self.eval_env._config.ctrl_dt)

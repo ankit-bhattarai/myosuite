@@ -168,8 +168,7 @@ def main(cfg: Config):
   else:
     n_episodes = 1
     
-  reset_prepare_keys = jax.random.PRNGKey(config.run.eval_seed)
-  env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=env, rng=reset_prepare_keys, n_episodes=n_episodes)
+  env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=env, seed=config.run.eval_seed, n_episodes=n_episodes)
 
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
