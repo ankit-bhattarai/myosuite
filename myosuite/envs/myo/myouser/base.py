@@ -50,33 +50,6 @@ class BaseEnvConfig:
     muscle_config: MuscleConfig = field(default_factory=lambda: MuscleConfig())
     eval_mode: bool = False
     
-@dataclass
-class RLConfig:
-    num_timesteps: int = 15_000_000
-    log_training_metrics: bool = True
-    training_metrics_steps: int = 100000
-    num_evals: int = 0
-    reward_scaling: float = 0.1
-    episode_length: int = "${int_divide:${env.task_config.max_duration},${env.ctrl_dt}}" #TODO: check and fix this dependency!
-    clipping_epsilon: float = 0.3
-    normalize_observations: bool = True
-    action_repeat: int = 1
-    unroll_length: int = 10
-    num_minibatches: int = 8
-    num_updates_per_batch: int = 8
-    num_resets_per_eval: int = 1
-    discounting: float = 0.97
-    learning_rate: float = 3e-4
-    entropy_cost: float = 0.001
-    num_envs: int = 1024
-    batch_size: int = 128
-    max_grad_norm: float = 1.0
-    network_factory: Dict[str, Any] = field(default_factory=lambda: {
-        "policy_hidden_layer_sizes": (256, 256),
-        "value_hidden_layer_sizes": (256, 256),
-    })
-    load_checkpoint_path: Union[str, None] = None
-    
 def get_default_config():
     return config_dict.create(
         model_path="myosuite/simhive/uitb_sim/mobl_arms_index_eepos_pointing.xml",
@@ -357,7 +330,17 @@ class MyoUserBase(mjx_env.MjxEnv):
         assert (
             self.vision_mode in ALLOWED_VISION_MODES
         ), f"Invalid vision mode: {self.vision_mode} (allowed modes: {ALLOWED_VISION_MODES})"
-
+        enabled_cameras = self._config.vision.enabled_cameras
+        assert len(enabled_cameras) == 1, "Only one camera is supported for now"
+        if self._mjx_model.ncam > 1:
+            print(f"Ensuring that all cameras have the same fovy as the chosen camera: {enabled_cameras[0]}")
+            cam_fovy = self._mjx_model.cam_fovy
+            print(f"Initial cam_fovy: {cam_fovy}")
+            relevant_cam_fovy = cam_fovy[enabled_cameras[0]]
+            print(f"Camera: {enabled_cameras[0]}, relevant_cam_fovy: {relevant_cam_fovy}")
+            cam_fovy = cam_fovy * 0 + relevant_cam_fovy
+            self._mjx_model = self._mjx_model.replace(cam_fovy=cam_fovy)
+            print(f"Final cam_fovy: {self._mjx_model.cam_fovy}")
         self.batch_renderer = BatchRenderer(
             m=self._mjx_model,
             gpu_id=self._config.vision.gpu_id,
@@ -385,6 +368,20 @@ class MyoUserBase(mjx_env.MjxEnv):
     @abc.abstractmethod
     def reset(self, rng, **kwargs):
         """Reset function. Should call at least self._reset_bm_model."""
+
+    @abc.abstractmethod
+    def auto_reset(self, rng, info_before_reset, **kwargs):
+        """Reset function wrapper called by AutoResetWrapper.
+        Can pass information from previous info to reset function."""
+    
+    def eval_reset(self, rng, eval_id, **kwargs):
+        """Reset function wrapper called by evaluate_policy."""
+        return self.reset(rng, **kwargs)
+    
+    def prepare_eval_rollout(self, rng, **kwargs):
+        """Function that can be used to define random parameters to be used across multiple evaluation rollouts/resets.
+        May return the number of evaluation episodes that should be rolled out (before this method should be called again)."""
+        return None
 
     def _reset_bm_model(self, rng):
         # TODO: do not store anything in self in this function, as its values should mostly be discarded after it is called (no permanent env changes!)
@@ -778,3 +775,13 @@ class MyoUserBase(mjx_env.MjxEnv):
 
         renderer.close()
         return out
+    
+
+    ########################################
+    # Other functions to be 
+    # implemented by the child class:
+    ########################################
+
+    def calculate_metrics(self, rollout, eval_metrics_keys={}):
+        """Calculate task-specific evaluation metrics (only to be used for eval logging)."""
+        return {}

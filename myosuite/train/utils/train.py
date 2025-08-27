@@ -2,8 +2,10 @@ import os
 import functools
 import json
 from etils import epath
+from absl import logging
 import jax
 import jax.numpy as jp
+import numpy as np
 
 from mujoco_playground import registry
 import wandb
@@ -15,7 +17,7 @@ import mediapy as media
 
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
-from myosuite.train.utils.wrapper import wrap_myosuite_training
+from myosuite.train.utils.wrapper import wrap_myosuite_training, EvalVmapWrapper
 from myosuite.envs.myo.myouser.evaluate import evaluate_policy
 from myosuite.envs.myo.myouser.utils import render_traj
 
@@ -119,6 +121,7 @@ class ProgressEvalVideoLogger:
                deterministic=True,
                n_episodes=10,
                ep_length=None,
+               eval_metrics_keys={},
                height=480,
                width=640,
                cameras=[None],
@@ -127,34 +130,83 @@ class ProgressEvalVideoLogger:
     ckpt_path = logdir / "checkpoints"
     ckpt_path.mkdir(parents=True, exist_ok=True)
     self.checkpoint_path = ckpt_path
-    self.eval_env = eval_env
-    self.seed = seed
-    self.eval_key = jax.random.PRNGKey(seed)
-    self.deterministic = deterministic
-    self.n_episodes = n_episodes
 
+    self.seed = seed
+    eval_key = jax.random.PRNGKey(seed)
+    self.eval_key, reset_prepare_keys = jax.random.split(eval_key)
+    self.deterministic = deterministic
+
+    # Obtain number of episodes to evaluate from environment itself (if defined)
+    _n_episodes = eval_env.prepare_eval_rollout(reset_prepare_keys)
+    if _n_episodes is not None:
+        ## Override n_episodes with enforces value from eval_env
+        logging.info(f"Environment requires exactly {_n_episodes} evaluation episodes.")
+        n_episodes = _n_episodes
+
+    self.n_episodes = n_episodes
+    self.eval_env = EvalVmapWrapper(eval_env, batch_size=self.n_episodes)
     if ep_length is None:
-        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
+        ep_length = int(self.eval_env._config.task_config.max_duration / self.eval_env._config.ctrl_dt)
     self.episode_length = ep_length
+
+    # Keys to be logged
+    self.eval_metrics_keys = eval_metrics_keys
 
     self.height = height
     self.width = width
     self.cameras = cameras
     self.n_cameras = len(cameras)
 
-    self.jit_reset = jax.jit(eval_env.reset)
-    self.jit_step = jax.jit(eval_env.step)
+    self.jit_reset = jax.jit(self.eval_env.eval_reset)
+    self.jit_step = jax.jit(self.eval_env.step)
 
-  def progress_eval_video(self, current_step, make_policy, params):
-    # Log to Weights & Biases
-
+  def progress_eval_run(self, current_step, make_policy, params,
+                        training_metrics={}):
+    
     # Rollout trajectory
     # make_policy(params, deterministic=True)
     jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
-    rollout = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step)
+    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, n_episodes=self.n_episodes)[0]
+    if self.eval_env.vision:
+       rollouts = rollouts[0]
+    
+    # Calculate metrics
+    # final_eval_state = rollout[-1]
+    # eval_metrics = final_eval_state.info['eval_metrics']
+    # metrics = {}
+    # for fn in [np.mean]:  #, np.std]:
+    #   suffix = '_std' if fn == np.std else ''
+    #   metrics.update({
+    #       f'eval/episode_{name}{suffix}': (
+    #           fn(value)
+    #       )
+    #       for name, value in eval_metrics.episode_metrics.items()
+    #   })
+    # metrics['eval/avg_episode_length'] = np.mean(eval_metrics.episode_steps)
+    # metrics['eval/std_episode_length'] = np.std(eval_metrics.episode_steps)
+    rollout_metrics_keys = rollouts[0][0].metrics.keys()
+    # TODO: move this code to separate function?
+    rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
+    rollouts_combined = [r for rollout in rollouts for r in rollout]
+
+    #TODO: simplify calculate_metrics by passing nested list 'rollouts' instead of flattened list 'rollouts_combined'
+    task_metrics = self.eval_env.calculate_metrics(rollouts_combined, self.eval_metrics_keys)
+
+    # Create video that can be uploaded to Weights & Biases
+    video_metrics = self.progress_eval_video(rollouts_combined, current_step)
+
+    metrics = {**rollout_metrics, **task_metrics, **video_metrics, **training_metrics}    
+    wandb.log(metrics, step=current_step)
+    print({**rollout_metrics, **task_metrics})
+
+    return metrics
+
+  def progress_eval_video(self, rollout, current_step):
+    # Create video that can be uploaded to Weights & Biases
 
     fps = 1.0 / self.eval_env.dt
 
+    video_metrics = {}
     for camera in self.cameras:
         if camera is None:
             camera_suffix = ""
@@ -165,8 +217,9 @@ class ProgressEvalVideoLogger:
             notebook_context=False,
         )
         media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", frames, fps=fps)
-        wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+        video_metrics[f'eval_vis/camera{camera_suffix}'] = wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")
 
+    return video_metrics
     # # render front view
     # frames = render_traj(
     #     rollout, self.eval_env, height=480, width=640, camera="fixed-eye",
@@ -302,6 +355,13 @@ def train_or_load_checkpoint(env_name,
             action_repeat=ppo_params.action_repeat,
             randomization_fn=training_params.get("randomization_fn"),
         )
+    else:
+        env = wrap_myosuite_training(
+            env,
+            episode_length=ppo_params.episode_length,
+            action_repeat=ppo_params.action_repeat,
+            randomization_fn=training_params.get("randomization_fn"),
+        )
 
     num_eval_envs = (
         ppo_params.num_envs
@@ -324,15 +384,16 @@ def train_or_load_checkpoint(env_name,
         restore_checkpoint_path=restore_checkpoint_path,
         # save_checkpoint_path=ckpt_path,
         # wrap_env_fn=None if vision else wrapper.wrap_for_brax_training,
-        wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_myosuite_training,
+        # wrap_env_fn=(lambda x, **kwargs: x) if vision else wrap_myosuite_training,
+        wrap_env_fn=(lambda x, **kwargs: x),
         num_eval_envs=num_eval_envs,
     )
 
     # Load evaluation environment
     eval_env = (
         None if vision else registry.load(env_name, config=env_cfg)
-    )
-
+    )    
+    # eval_env = env
     if rscope_envs:
         # Interactive visualisation of policy checkpoints
         from rscope import brax as rscope_utils
@@ -367,8 +428,7 @@ def train_or_load_checkpoint(env_name,
         )
 
         def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
-            policy_params_fn_checkpoints(current_step, make_policy, params)
-            # progress_fn_eval_video(current_step, make_policy, params)
+            # progress_fn_eval(current_step, make_policy, params)
             rscope_handle.set_make_policy(make_policy)
             rscope_handle.dump_rollout(params)
     else:
@@ -379,13 +439,9 @@ def train_or_load_checkpoint(env_name,
                                                                 #ep_length=80,
                                                                 cameras=["fixed-eye", None]
                                                                 )
-            progress_fn_eval_video = progress_eval_video_logger.progress_eval_video
+            policy_params_fn = progress_eval_video_logger.progress_eval_run
         else:
-            progress_fn_eval_video = lambda *args: None
-
-        def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
-            policy_params_fn_checkpoints(current_step, make_policy, params)
-            progress_fn_eval_video(current_step, make_policy, params)
+            policy_params_fn = lambda *args: None
     
     if not eval_mode:
         print("Starting to JIT compile...")
@@ -395,6 +451,7 @@ def train_or_load_checkpoint(env_name,
         environment=env,
         progress_fn=progress_fn,
         policy_params_fn=policy_params_fn,  #lambda *args: None,
+        policy_params_fn_checkpoints=policy_params_fn_checkpoints,
         eval_env=None if vision else eval_env,
     )
     if vision:

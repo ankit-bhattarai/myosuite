@@ -34,8 +34,6 @@ import jax.numpy as jp
 import matplotlib.pyplot as plt
 import mediapy as media
 
-from myosuite.envs.myo.myouser.myouser_steering_v0 import calculate_metrics
-
 from tensorboardX import SummaryWriter
 import wandb
 
@@ -129,10 +127,11 @@ def main(cfg: Config):
   ## TRAINING/LOADING CHECKPOINT
   # Train or load the model
   env, make_inference_fn, params = train_or_load_checkpoint(env_cfg.env_name, config,
+                    eval_mode=env_cfg.eval_mode,
                     logdir=logdir,
                     checkpoint_path=config.rl.load_checkpoint_path,
                     progress_fn=progress_fn,
-                    log_wandb_videos=config.wandb.enabled and not config.run.play_only,
+                    log_wandb_videos=config.wandb.enabled and not config.run.play_only and config.run.log_wandb_videos,
                     vision=config.vision.enabled,
                     domain_randomization=config.run.domain_randomization,
                     rscope_envs=config.run.rscope_envs,
@@ -158,7 +157,7 @@ def main(cfg: Config):
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
   jit_inference_fn = jax.jit(inference_fn)
-  jit_reset = jax.jit(env.reset)
+  jit_reset = jax.jit(env.eval_reset)
   jit_step = jax.jit(env.step)
 
   if env_cfg.env_name=="MyoUserSteering":
@@ -169,15 +168,31 @@ def main(cfg: Config):
     n_episodes = 1
 
   # Prepare for evaluation
-  rollout = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
+  rollouts, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
-                            seed=123,  #seed=_SEED.value,  #TODO: add eval_seed to hydra/config
-                            n_episodes=n_episodes)  #TODO: n_episodes as hydra config param?
-  print(f"Return: {jp.array([r.reward for r in rollout]).sum()}")
+                            seed=config.run.eval_seed,
+                            n_episodes=n_episodes)  #config.run.eval_episodes) 
+  rollouts_combined = [r for rollout in rollouts for r in rollout]
+  render_every = 2
+  fps = 1.0 / env.dt / render_every
+  print(f"FPS for rendering: {fps}")
+  
+  if log_type == "videos":  
+    (rollouts, videos) = rollouts
+    if videos[0][0].shape[-1] == 1:
+      videos = [frame.squeeze() for v in videos for frame in v]
+    else:
+      videos = [frame for v in videos for frame in v]
+    media.write_video(logdir / "madrona_rollout.mp4", videos, fps=fps)
+    print("Rollout video saved as 'madrona_rollout.mp4'.")
+    if config.wandb.enabled and not config.run.play_only:
+      wandb.log({'final_policy/madrona_view': wandb.Video(str(logdir / "madrona_rollout.mp4"), format="mp4")})  #, fps=fps)})
+
+  print(f"Return: {jp.array([r.reward for rollout in rollouts for r in rollout]).sum()}")
   print(f"env: {env_cfg.env_name}")
-  print(f"len(rollout): {len(rollout)}")
+  print(f"#episodes: {len(rollouts)}")
   if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
-    metrics = calculate_metrics(rollout, ['R^2'])
+    metrics = env.calculate_metrics(rollouts_combined, ['R^2'])
     #wandb.log(metrics)
     print(metrics)
 
@@ -185,13 +200,13 @@ def main(cfg: Config):
   render_every = 2
   fps = 1.0 / env.dt / render_every
   print(f"FPS for rendering: {fps}")
-  traj = rollout[::render_every]
+  traj = rollouts_combined[::render_every]
   with h5py.File(logdir / 'traj.h5', 'w') as h5f:
       h5f.create_dataset('qpos', data=[s.data.qpos for s in traj])
       h5f.create_dataset('ctrl', data=[s.data.ctrl for s in traj])
       h5f.close()
   with open(logdir / 'traj.pickle', 'wb') as handle:
-      pickle.dump(rollout, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      pickle.dump(rollouts, handle, protocol=pickle.HIGHEST_PROTOCOL)
   
   # scene_option = mujoco.MjvOption()
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False

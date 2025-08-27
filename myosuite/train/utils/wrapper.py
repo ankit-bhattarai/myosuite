@@ -277,3 +277,17 @@ class AutoResetWrapper(Wrapper):
             info=info,
         )
 
+class EvalVmapWrapper(Wrapper):
+  """Vectorizes Brax env for evaluation runs, using eval_reset instead of reset as entrypoint."""
+
+  def __init__(self, env: Env, batch_size: Optional[int] = None):
+    super().__init__(env)
+    self.batch_size = batch_size
+
+  def eval_reset(self, rng: jax.Array, eval_id: jax.Array) -> State:
+    if self.batch_size is not None:
+      rng = jax.random.split(rng, self.batch_size)
+    return jax.vmap(self.env.eval_reset)(rng, eval_id)
+
+  def step(self, state: State, action: jax.Array) -> State:
+    return jax.vmap(self.env.step)(state, action)
