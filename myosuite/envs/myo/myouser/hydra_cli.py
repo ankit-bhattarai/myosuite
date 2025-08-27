@@ -43,10 +43,10 @@ class WANDBDisabledConfig:
 @dataclass
 class NetworkConfig:
     policy_hidden_layer_sizes: List[int] = field(
-        default_factory=lambda: [256, 256]
+        default_factory=lambda: [128, 128, 128, 128]
     )
     value_hidden_layer_sizes: List[int] = field(
-        default_factory=lambda: [256, 256]
+        default_factory=lambda: [256, 256, 256, 256, 256]
     )
 
 @dataclass
