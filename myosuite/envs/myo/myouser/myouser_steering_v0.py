@@ -34,6 +34,7 @@ class SteeringTaskConfig:
     distance_reach_metric_coefficient: float = 10.
     screen_distance_x: float = 0.5
     screen_friction: float = 0.1
+    ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'])
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
@@ -162,8 +163,17 @@ class MyoUserSteering(MyoUserBase):
 
         mj_model.body('screen').pos[0] += self._config.task_config.screen_distance_x - default_screen_distance_x
         mj_model.geom('screen').friction = self._config.task_config.screen_friction
-        mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
+        if any([mj_model.geom(i).name=='fingertip_contact' for i in range(mj_model.ngeom)]):
+            mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
         return mj_model
+        
+    def preprocess_spec(self, spec:mujoco.MjSpec):
+        for geom in spec.geoms:
+            if (geom.type == mujoco.mjtGeom.mjGEOM_CYLINDER) or (geom.type == mujoco.mjtGeom.mjGEOM_ELLIPSOID):
+                geom.conaffinity = 0
+                geom.contype = 0
+                print(f"Disabled contacts for cylinder geom named \"{geom.name}\"")
+        return spec    
    
     def _setup(self):
         """Task specific setup"""
@@ -191,7 +201,9 @@ class MyoUserSteering(MyoUserBase):
         self.bottom_line_id = self._mj_model.site("bottom_line").id
         self.start_line_id = self._mj_model.site("start_line").id
         self.end_line_id = self._mj_model.site("end_line").id
-        self.fingertip_id = self._mj_model.site("fingertip").id
+
+        self.ee_name = self._config.task_config.ee_name
+        self.fingertip_id = self._mj_model.site(self.ee_name).id
 
         #self._shoulder_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "shoulder_rot")
         #self._elbow_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "elbow_flexion")
@@ -339,6 +351,7 @@ class MyoUserSteering(MyoUserBase):
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
             #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
             ('phase_1_tunnel',   -1.*(obs_dict['completed_phase_0']*obs_dict['con_0_1_within_z_limits'])),
+            #('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['con_0_1_within_z_limits']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
