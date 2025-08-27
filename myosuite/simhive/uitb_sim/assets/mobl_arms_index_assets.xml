@@ -15,7 +15,7 @@
     <tendon rgba="0.95 0.3 0.3 1"/>
     <general ctrllimited="true" ctrlrange="0 1" dyntype="muscle" dynprm="0.01 0.04 0 0 0 0 0 0 0 0" gaintype="muscle" biastype="muscle" gainprm="0.75 1.05 -1 2000 0.5 1.6 1.5 1.3 1.2" biasprm="0.75 1.05 -1 2000 0.5 1.6 1.5 1.3 1.2"/>
     <default class="arm_skin">
-        <geom type="capsule" contype="1" conaffinity="0" condim="3" rgba="0.8 0.7 .5 .1" margin="0.001" material="MatSkin"/>
+        <geom type="capsule" contype="0" conaffinity="0" condim="3" rgba="0.8 0.7 .5 .1" margin="0.001" material="MatSkin"/>
     </default>
     <default class="hand_skin">
         <geom type="capsule" contype="1" conaffinity="0" condim="3" rgba="0.8 0.7 .5 .1" margin="0.001" material="MatSkin"/>
