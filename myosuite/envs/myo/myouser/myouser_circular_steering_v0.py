@@ -42,6 +42,8 @@ class CircularSteeringTaskConfig:
         "phase_1_touch": 0,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
+        "power_for_softcons": 15.,
+        "jac_effort": 5.,
     })
     max_duration: float = 5.
     max_trials: int = 1
@@ -102,6 +104,8 @@ def default_config() -> config_dict.ConfigDict:
                 phase_1_touch=0,
                 phase_1_tunnel=0,  #-2,
                 neural_effort=0,  #1e-4,
+                jac_effort=5,
+                power_for_softcons=15
             ),
             max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
@@ -302,6 +306,7 @@ class MyoUserCircularSteering(MyoUserBase):
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
 
         obs_dict["con_0_touching_screen"] = touching_screen_phase_0
+        #obs_dict["con_0_1_within_z_limits"] = (1.-within_z_limits) * completed_phase_0
         obs_dict["con_0_1_within_path_limits"] = within_path_limits
         obs_dict["con_0_within_y_dist"] = within_y_dist
         obs_dict["completed_phase_0"] = completed_phase_0
@@ -342,30 +347,51 @@ class MyoUserCircularSteering(MyoUserBase):
 
         return info
     
-    def get_reward_dict(self, obs_dict):
+    def get_jac_effort_costs(self, obs_dict):
+        r_effort = 0.00198*jp.linalg.norm(obs_dict['last_ctrl'])**2 
+        r_jacc = 6.67e-6*jp.linalg.norm(obs_dict['qacc'][self._independent_dofs])**2 
+
+        effort_cost = r_effort + r_jacc
+        
+        return effort_cost
+    
+    def get_reward_dict(self, obs_dict):#, info):
 
         ctrl_magnitude = jp.linalg.norm(obs_dict['last_ctrl'], axis=-1)
 
         # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
-        # start line when in phase 0        
+        # start line when in phase 0   
+        # 
+        #ejk_effort, previous_qacc = self.get_ejk_effort_costs(obs_dict, info) 
+        #info['previous_qacc'] = previous_qacc
+
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
             ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]),  #-1.*reach_dist)
             # ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
             # ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
-            ('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
+            #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
-            ('phase_1_touch',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
-            #('phase_1_tunnel',   1.*(obs_dict['completed_phase_0']*(1.-obs_dict['con_0_1_within_z_limits']))),
-            ('phase_1_tunnel',   1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
+            ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
+            #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
+            #('phase_1_tunnel',   -1.*(obs_dict['completed_phase_0']*obs_dict['con_0_1_within_z_limits'])),
+            #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
+            ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
+            #('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
 
-        rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
- 
+        power_softcons = self.weighted_reward_keys['power_for_softcons']
+        phase_1_tunnel_weight = self.weighted_reward_keys['phase_1_tunnel']
+
+        exclude = {"power_for_softcons", "phase_1_tunnel"}
+
+        rwd_dict['dense'] = jp.sum(
+            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items() if key not in exclude]), axis=0) + phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-0.3)))
+
         return rwd_dict
 
     @staticmethod

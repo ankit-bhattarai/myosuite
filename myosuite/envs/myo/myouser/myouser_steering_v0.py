@@ -111,7 +111,7 @@ def default_config() -> config_dict.ConfigDict:
                 phase_1_tunnel=10,  #-2,
                 neural_effort=0.0,  #1e-4,
                 jac_effort=0.05,
-                truncated=0,#-10,
+                truncated=-10, #0
                 
                 # ## old reward fct. (florian's branch):
                 # reach=1,
@@ -340,7 +340,7 @@ class MyoUserSteering(MyoUserBase):
             # ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
             #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
-            ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.5))),
+            ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
             #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
             #('phase_1_tunnel',   -1.*(obs_dict['completed_phase_0']*obs_dict['con_0_1_within_z_limits'])),
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
@@ -357,9 +357,9 @@ class MyoUserSteering(MyoUserBase):
         exclude = {"power_for_softcons", "phase_1_tunnel"}
 
         rwd_dict['dense'] = jp.sum(
-            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items() if key not in exclude]), axis=0) + phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-1.)))
+            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items() if key not in exclude]), axis=0) + phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-0.3)))
 
-        return rwd_dict#, info
+        return rwd_dict
     
     def get_jac_effort_costs(self, obs_dict):
         r_effort = 0.00198*jp.linalg.norm(obs_dict['last_ctrl'])**2 
@@ -436,6 +436,38 @@ class MyoUserSteering(MyoUserBase):
         bottom = jax.random.uniform(rng, minval=pos_min, maxval=pos_max-W)
         top = bottom + W
         return left, bottom, top
+    
+    def get_custom_tunnels_different_lengths(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+        tunnel_positions_different_lengths  = []
+        IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        right = 0.3
+        top = 0.025
+        bottom = -0.025
+        W = top - bottom
+        for ID in IDs:
+            combos = 0
+            while combos < 1:
+                L = ID * W
+                tunnel_positions = []
+                left = right - L
+                width_midway = (left + right) / 2
+                height_midway = (top + bottom) / 2
+                tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
+                tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
+                tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
+                tunnel_positions.append(screen_pos + jp.array([0., left, height_midway]))
+                tunnel_positions.append(screen_pos)
+                combos += 1
+
+                for i in range(5):
+                    tunnel_positions_different_lengths.append(tunnel_positions)
+        return tunnel_positions_different_lengths
+    
+    # def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+    #     tunnel_positions_total  = []
+    #     tunnel_positions_total = self.get_custom_tunnels_different_lengths(rng, screen_pos)
+    #     #tunnel_positions_total.append(self.get_custom_tunnels_different_widths(rng, screen_pos))
+    #     return tunnel_positions_total
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
         tunnel_positions_total  = []
@@ -454,11 +486,6 @@ class MyoUserSteering(MyoUserBase):
                     left, bottom, top = self.random_positions_steeringlaw(rng2, L, W, right)
                     width_midway = (left + right) / 2
                     height_midway = (top + bottom) / 2
-                    # tunnel_positions['bottom_line'] = screen_pos + jp.array([0., width_midway, bottom])
-                    # tunnel_positions['top_line'] = screen_pos + jp.array([0., width_midway, top])
-                    # tunnel_positions['start_line'] = screen_pos + jp.array([0., right, height_midway])
-                    # tunnel_positions['end_line'] = screen_pos + jp.array([0., left, height_midway])
-                    # tunnel_positions['screen_pos'] = screen_pos
                     tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
                     tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
                     tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
@@ -466,7 +493,7 @@ class MyoUserSteering(MyoUserBase):
                     tunnel_positions.append(screen_pos)
                     combos += 1
 
-                    for i in range(3):
+                    for i in range(5):
                         tunnel_positions_total.append(tunnel_positions)
         return tunnel_positions_total
 
@@ -579,8 +606,8 @@ class MyoUserSteering(MyoUserBase):
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
         
-        done = rwd_dict['done']
-        #done = jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32)
+        #done = rwd_dict['done']
+        done = jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32)
 
         state.metrics.update(
             completed_phase_0 = obs_dict["completed_phase_0"],
