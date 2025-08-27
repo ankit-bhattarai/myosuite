@@ -111,6 +111,7 @@ def main(cfg: Config):
   # Set number of training steps to 0 if play_only
   if config.run.play_only:
     config.rl.num_timesteps = 0
+    ##TODO: use config.env.eval_mode rather than config.run.play_only (-> config.run.eval_mode?)
 
   # Initialize Weights & Biases if required
   if config.wandb.enabled and not config.run.play_only:
@@ -163,8 +164,8 @@ def main(cfg: Config):
   # Prepare evaluation episodes
   if env_cfg.env_name=="MyoUserSteering":
     n_episodes = 50  #unused, as overridden by env below!
-  elif env_cfg.env_name=="MyoUserSteeringLaw":
-    n_episodes = 84  #unused, as overridden by env below!
+  # elif env_cfg.env_name=="MyoUserSteeringLaw":
+  #   n_episodes = 84  #unused, as overridden by env below!
   else:
     n_episodes = 1
     
