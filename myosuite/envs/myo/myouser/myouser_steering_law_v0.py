@@ -501,7 +501,7 @@ class MyoUserSteeringLaw(MyoUserBase):
         obs = self.obsdict2obsvec(obs_dict)
         
         rwd_dict = self.get_reward_dict(obs_dict)
-        #rwd_dict, state.info = self.get_reward_dict(obs_dict, state.info)
+
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
@@ -516,9 +516,6 @@ class MyoUserSteeringLaw(MyoUserBase):
             distance_phase_0 = obs_dict["distance_phase_0"],
             distance_phase_1 = obs_dict["distance_phase_1"],
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
-            #con_0_touching_screen = obs_dict["con_0_touching_screen"],
-            #con_1_touching_screen = obs_dict["con_1_touching_screen"],
-            #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
             out_of_bounds = obs_dict["con_0_1_within_z_limits"],
             not_touching = 1. * (1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"],
