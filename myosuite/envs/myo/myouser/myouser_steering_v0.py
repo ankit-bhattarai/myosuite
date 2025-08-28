@@ -759,7 +759,7 @@ class MyoUserSteering(MyoUserBase):
         IDs = (Ds / Ws).reshape(-1, 1)
 
         if len(IDs) == 0 or len(MTs) == 0:
-            return np.nan, np.nan, np.nan
+            return np.nan, np.nan, np.nan, {}
 
         if average_r2:
             # Fit linear curve to mean per ID and compute R^2
