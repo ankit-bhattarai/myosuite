@@ -62,6 +62,8 @@ class SteeringTaskConfig:
     left: float = 0.3
     right: float = -0.2
     terminate_out_of_bounds: float = 1.0
+    min_dwell_phase_0: float = 0.
+    min_dwell_phase_1: float = 0.
 
 @dataclass
 class SteeringEnvConfig(BaseEnvConfig):
@@ -231,7 +233,11 @@ class MyoUserSteering(MyoUserBase):
         self.left = self._config.task_config.left
         self.right = self._config.task_config.right
         self.terminate_out_of_bounds = self._config.task_config.terminate_out_of_bounds
-        
+        self.min_dwell_phase_0 = self._config.task_config.min_dwell_phase_0
+        self.phase_0_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_0 / self._config.ctrl_dt).astype(int), 1)
+        self.min_dwell_phase_1 = self._config.task_config.min_dwell_phase_1
+        self.phase_1_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_1 / self._config.ctrl_dt).astype(int), 1)
+
     # def _prepare_after_init(self, data):
     #     super()._prepare_after_init(data)
         # # Define target origin, relative to which target positions will be generated
@@ -272,6 +278,8 @@ class MyoUserSteering(MyoUserBase):
         obs_dict['bottom_line'] = info['bottom_line']
         # obs_dict['touching_screen'] = data.sensordata[self.screen_touch_id] > 0.0
 
+        phase_0_completed_steps = info['phase_0_completed_steps']
+        phase_1_completed_steps = info['phase_1_completed_steps']
         completed_phase_0 = info['completed_phase_0']
         completed_phase_1 = info['completed_phase_1']
         ee_pos = obs_dict['fingertip']
@@ -291,13 +299,15 @@ class MyoUserSteering(MyoUserBase):
         within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
         within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.01)
         phase_0_completed_now = touching_screen_phase_0 * within_z_limits * within_y_dist
-        completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed_now
+        phase_0_completed_steps = (phase_0_completed_steps + 1) * phase_0_completed_now
+        completed_phase_0 = completed_phase_0 + (1 - completed_phase_0) * (phase_0_completed_steps >= self.phase_0_completed_min_steps)
         
         crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1])
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0])
         touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
         phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1 * within_z_limits
-        completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
+        phase_1_completed_steps = (phase_1_completed_steps + 1) * phase_1_completed_now
+        completed_phase_1 = completed_phase_1 + (1 - completed_phase_1) * (phase_1_completed_steps >= self.phase_1_completed_min_steps)   
 
         relative_position = jp.linalg.norm(ee_pos[2] - bottom_line_z)
         softcons_for_bounds = jp.clip(jp.abs(relative_position) / (path_width / 2), 0, 1)
@@ -329,8 +339,10 @@ class MyoUserSteering(MyoUserBase):
 
         ## Additional observations
         obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
-        obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
-        obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
+        # obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
+        # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
+        obs_dict["phase_0_completed_steps"] = phase_0_completed_steps
+        obs_dict["phase_1_completed_steps"] = phase_1_completed_steps
 
         return obs_dict
     
@@ -339,6 +351,8 @@ class MyoUserSteering(MyoUserBase):
         info['last_ctrl'] = obs_dict['last_ctrl']
         # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
+        info["phase_0_completed_steps"] = obs_dict["phase_0_completed_steps"]
+        info["phase_1_completed_steps"] = obs_dict["phase_1_completed_steps"]
         info['completed_phase_0'] = obs_dict['completed_phase_0']
         info['completed_phase_1'] = obs_dict['completed_phase_1']
 
@@ -555,6 +569,8 @@ class MyoUserSteering(MyoUserBase):
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
+                "phase_0_completed_steps": 0,
+                "phase_1_completed_steps": 0,
                 "completed_phase_0": 0.0,
                 "completed_phase_1": 0.0,
                 "previous_qacc": 0.0,
