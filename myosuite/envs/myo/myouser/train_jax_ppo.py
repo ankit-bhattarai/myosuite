@@ -203,7 +203,7 @@ def main(cfg: Config):
   print(f"env: {env_cfg.env_name}")
   print(f"#episodes: {len(rollouts)}")
   if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
-    metrics = env.calculate_metrics(rollouts_combined, ['R^2'])
+    metrics = env.calculate_metrics(rollouts, ['R^2'])
     #wandb.log(metrics)
     print(metrics)
 

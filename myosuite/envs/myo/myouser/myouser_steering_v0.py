@@ -477,6 +477,33 @@ class MyoUserSteering(MyoUserBase):
                         tunnel_positions_total.append(tunnel_positions)
         return tunnel_positions_total
 
+    def get_custom_tunnels_different_widths(self, rng: jax.Array, screen_pos: jax.Array,
+                                            n_trials_per_tunnel: float = 5) -> dict[str, jax.Array]:
+        tunnel_positions_different_widths  = []
+        IDs = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+        right = 0.3
+        left = -0.2
+        top = 0.1
+        L = right - left
+        for ID in IDs:
+            combos = 0
+            while combos < 1:
+                W = L/ID
+                bottom = top - W
+                tunnel_positions = []
+                left = right - L
+                width_midway = (left + right) / 2
+                height_midway = (top + bottom) / 2
+                tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
+                tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
+                tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
+                tunnel_positions.append(screen_pos + jp.array([0., left, height_midway]))
+                tunnel_positions.append(screen_pos)
+                combos += 1
+                for i in range(n_trials_per_tunnel):
+                    tunnel_positions_different_widths.append(tunnel_positions)
+        return tunnel_positions_different_widths
+
     def reset(self, rng, render_token=None, tunnel_positions=None):
         # jax.debug.print(f"RESET INIT")
 
@@ -553,7 +580,9 @@ class MyoUserSteering(MyoUserBase):
         
         ## Setup evaluation episodes for Steering Law validation
         rng, rng2 = jax.random.split(rng, 2)
-        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        # self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993]),
+                                                                                     n_trials_per_tunnel=20))
 
         return len(self.SL_tunnel_positions)
 
@@ -655,48 +684,55 @@ class MyoUserSteering(MyoUserBase):
         mj_model.site('end_line').size[2] = height / 2
 
 
-    def calculate_metrics(self, rollout, eval_metrics_keys):
+    def calculate_metrics(self, rollout, eval_metrics_keys={"R^2"}):
 
         eval_metrics = {}
 
         # TODO: set eval_metrics_keys as config param?
         if True:  #"R^2" in eval_metrics_keys:
-            a,b,r2 = self.calculate_r2(rollout)
+            a,b,r2,_ = self.calculate_r2(rollout)
             eval_metrics["eval/R^2"] = r2
             eval_metrics["eval/a"] = a
             eval_metrics["eval/b"] = b
 
         return eval_metrics
 
-    def calculate_r2(self, rollout):
+    def calculate_r2(self, rollouts):
 
         from sklearn.linear_model import LinearRegression
         from sklearn.metrics import r2_score
 
         MTs = []
         IDs = []
+        Ds = []
+        Ws = []
 
-        completed_phase_0 = False
-        timestep_start_steering = None
+        for rollout in rollouts:
+            completed_phase_0 = False
+            # timestep_start_steering = None
+            for step, state in enumerate(rollout):
+                metrics = getattr(state, "metrics")
+                info = getattr(state, "info")
 
-        for step, state in enumerate(rollout):
-            metrics = getattr(state, "metrics")
-            info = getattr(state, "info")
+                D = abs(info["end_line"][1] - info["start_line"][1])
+                W = abs(info["top_line"][2] - info["bottom_line"][2])
+                current_ID = D / W
 
-            L = abs(info["end_line"][1] - info["start_line"][1])
-            W = abs(info["top_line"][2] - info["bottom_line"][2])
-            current_ID = L / W
+                if metrics["completed_phase_0"] == True and not completed_phase_0:                    
+                    completed_phase_0 = True
+                    # timestep_start_steering = step
+                    steering_time_init = state.data.time.copy()
 
-            if metrics["completed_phase_0"] == True and not completed_phase_0:                    
-                completed_phase_0 = True
-                timestep_start_steering = step
-
-            if completed_phase_0 and metrics["completed_phase_1"]:
-                timestep_end_steering = step
-                MT = (timestep_end_steering - timestep_start_steering) * 0.002 * 25
-                MTs.append(MT)
-                IDs.append(current_ID)
-                completed_phase_0 = False
+                if completed_phase_0 and metrics["completed_phase_1"]:
+                    # timestep_end_steering = step
+                    # MT = (timestep_end_steering - timestep_start_steering) * 0.002 * 25
+                    steering_time_final = state.data.time.copy()
+                    MT = (steering_time_final - steering_time_init)
+                    MTs.append(MT)
+                    IDs.append(current_ID)
+                    Ds.append(D)
+                    Ws.append(W)
+                    completed_phase_0 = False
 
 
         n = min(len(IDs), len(MTs))
@@ -717,4 +753,7 @@ class MyoUserSteering(MyoUserBase):
 
         print(f"R^2: {r2_score(MTs, y_pred)}, a,b: {a},{b}")
 
-        return a,b,r2_score(MTs, y_pred)
+        sl_data = {"ID": IDs, "MT_ref": MTs, "MT_pred": y_pred,
+                "D": Ds, "W": Ws}
+
+        return a,b,r2_score(MTs, y_pred),sl_data

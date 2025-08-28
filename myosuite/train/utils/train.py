@@ -183,8 +183,7 @@ class ProgressEvalVideoLogger:
     rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
     rollouts_combined = [r for rollout in rollouts for r in rollout]
 
-    #TODO: simplify calculate_metrics by passing nested list 'rollouts' instead of flattened list 'rollouts_combined'
-    task_metrics = self.eval_env.calculate_metrics(rollouts_combined, self.eval_metrics_keys)
+    task_metrics = self.eval_env.calculate_metrics(rollouts, self.eval_metrics_keys)
 
     # Create video that can be uploaded to Weights & Biases
     video_metrics = self.progress_eval_video(rollouts_combined, current_step)
