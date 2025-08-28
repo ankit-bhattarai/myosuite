@@ -322,14 +322,10 @@ class MyoUserSteering(MyoUserBase):
         #    dist_to_start_line.shape, path_length.shape, phase_0_completed_now.shape
         #)
         phase_1_distance = dist_to_end_line
-        jax.debug.print(
-            "completed_phase_0: {}, phase_0_distance: {}, phase_1_distance: {}", 
-            completed_phase_0.shape, phase_0_distance.shape, phase_1_distance.shape
-        )
-        jax.debug.print(
-            "completed_phase_0: {}, phase_0_distance: {}, phase_1_distance: {}", 
-            completed_phase_0, phase_0_distance, phase_1_distance
-        )
+        #jax.debug.print(
+        #    "completed_phase_0: {}, phase_0_distance: {}, phase_1_distance: {}", 
+        #    completed_phase_0, phase_0_distance, phase_1_distance
+        #)
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         
         obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
@@ -628,7 +624,7 @@ class MyoUserSteering(MyoUserBase):
         
         ## Setup evaluation episodes for Steering Law validation
         rng, rng2 = jax.random.split(rng, 2)
-        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
 
         return len(self.SL_tunnel_positions)
 
