@@ -141,6 +141,7 @@ class MyoUserBase(mjx_env.MjxEnv):
         mj_model.opt.solver = mujoco.mjtSolver.mjSOL_NEWTON
         mj_model.opt.iterations = 100
         mj_model.opt.ls_iterations = 50
+        # mj_model.opt.jacobian = mujoco.mjtJacobian.mjJAC_DENSE
         mj_model.opt.disableflags = mj_model.opt.disableflags | mjx.DisableBit.EULERDAMP
         mj_model.opt.timestep = self._config.sim_dt
         mj_model = self.modify_mj_model(mj_model)
@@ -578,6 +579,7 @@ class MyoUserBase(mjx_env.MjxEnv):
             _selected_muscle_control = jp.clip(action[self._nm:], 0, 1)
         else:
             raise NotImplementedError(f"Control type {self.control_type} is not valid; valid types are 'relative' and 'default'")
+        print(f"BEFORE NOISE: {_selected_muscle_control}")
 
         if self.muscle_noise_params.sigdepnoise_type is not None:
             rng, rng1 = jax.random.split(rng, 2)
@@ -593,6 +595,7 @@ class MyoUserBase(mjx_env.MjxEnv):
                 _selected_muscle_control += self._sigdepnoise_acc
             else:
                 raise NotImplementedError(f"{self.muscle_noise_params.sigdepnoise_type}")
+            print(f"SIG NOISE: {_noise}")
         
         if self.muscle_noise_params.constantnoise_type is not None:
             rng, rng1 = jax.random.split(rng, 2)
@@ -606,6 +609,7 @@ class MyoUserBase(mjx_env.MjxEnv):
                 _selected_muscle_control += self._constantnoise_acc
             else:
                 raise NotImplementedError(f"{self.muscle_noise_params.constantnoise_type}")
+            print(f"CONST NOISE: {_noise}")
 
         # # Update smoothed online estimate of motor actuation
         # self._motor_act = (1 - self._motor_alpha) * self._motor_act \
@@ -613,7 +617,8 @@ class MyoUserBase(mjx_env.MjxEnv):
         motor_act = _selected_motor_control
         new_ctrl = new_ctrl.at[self._motor_actuators].set(self._mj_model.actuator_ctrlrange[self._motor_actuators, 0] + motor_act*(self._mj_model.actuator_ctrlrange[self._motor_actuators, 1] - self._mj_model.actuator_ctrlrange[self._motor_actuators, 0]))
         new_ctrl = new_ctrl.at[self._muscle_actuators].set(jp.clip(_selected_muscle_control, 0, 1))
-        
+        print(f"AFTER NOISE: {new_ctrl}")
+
         # implement abnormalities
         if self.muscle_condition == "fatigue":
             # import ipdb; ipdb.set_trace()

@@ -52,7 +52,7 @@ class SteeringTaskConfig:
     })
     max_duration: float = 4.
     max_trials: int = 1
-    reset_type: str = "range_uniform"
+    reset_type: str = "epsilon_uniform "
     min_width: float = 0.03
     max_width: float = 0.6
     min_height: float = 0.03

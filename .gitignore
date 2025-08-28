@@ -133,3 +133,4 @@ myosuite/agents/outputs
 logs/
 wandb/
 outputs/
+script.sh
