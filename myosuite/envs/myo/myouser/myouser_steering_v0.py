@@ -44,6 +44,8 @@ class SteeringTaskConfig:
         "neural_effort": 0,
         "jac_effort": 0,
         "power_for_softcons": 15,
+        "truncated": -10,
+        "truncated_progress": -20
     })
     max_duration: float = 4.
     max_trials: int = 1
@@ -56,6 +58,7 @@ class SteeringTaskConfig:
     top: float = 0.3
     left: float = 0.3
     right: float = -0.2
+    terminate_out_of_bounds: float = 1.0
 
 @dataclass
 class SteeringEnvConfig(BaseEnvConfig):
@@ -112,6 +115,7 @@ def default_config() -> config_dict.ConfigDict:
                 neural_effort=0.0,  #1e-4,
                 jac_effort=0.05,
                 truncated=-10, #0
+                truncated_progress=-20,
                 
                 # ## old reward fct. (florian's branch):
                 # reach=1,
@@ -212,6 +216,7 @@ class MyoUserSteering(MyoUserBase):
         self.top = self._config.task_config.top
         self.left = self._config.task_config.left
         self.right = self._config.task_config.right
+        self.terminate_out_of_bounds = self._config.task_config.terminate_out_of_bounds
         
     # def _prepare_after_init(self, data):
     #     super()._prepare_after_init(data)
@@ -265,6 +270,8 @@ class MyoUserSteering(MyoUserBase):
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
         dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
+        obs_dict['percentage_of_remaining_path'] = dist_to_end_line/path_length
+
         # Update phase immediately based on current position
         touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
         within_z_limits = 1.0 * (ee_pos[2] >= bottom_line_z) * (ee_pos[2] <= top_line_z)
@@ -296,8 +303,21 @@ class MyoUserSteering(MyoUserBase):
         obs_dict["softcons_for_bounds"] = softcons_for_bounds
 
         ## Compute distances
+
         phase_0_distance = dist_to_start_line + path_length
+        #jax.debug.print(
+        #    "dist_to_start_line: {}, path_length: {}, phase_0_completed_now: {}", 
+        #    dist_to_start_line.shape, path_length.shape, phase_0_completed_now.shape
+        #)
         phase_1_distance = dist_to_end_line
+        jax.debug.print(
+            "completed_phase_0: {}, phase_0_distance: {}, phase_1_distance: {}", 
+            completed_phase_0.shape, phase_0_distance.shape, phase_1_distance.shape
+        )
+        jax.debug.print(
+            "completed_phase_0: {}, phase_0_distance: {}, phase_1_distance: {}", 
+            completed_phase_0, phase_0_distance, phase_1_distance
+        )
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         
         obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
@@ -328,25 +348,20 @@ class MyoUserSteering(MyoUserBase):
 
         # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
         # start line when in phase 0   
-        # 
-        #ejk_effort, previous_qacc = self.get_ejk_effort_costs(obs_dict, info) 
-        #info['previous_qacc'] = previous_qacc
 
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
             ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]),  #-1.*reach_dist)
-            # ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
-            # ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
             #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
             #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
-            #('phase_1_tunnel',   -1.*(obs_dict['completed_phase_0']*obs_dict['con_0_1_within_z_limits'])),
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
             ('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
+            ('truncated_progress', 1.*obs_dict["con_0_1_within_z_limits"]*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
@@ -463,6 +478,34 @@ class MyoUserSteering(MyoUserBase):
                     tunnel_positions_different_lengths.append(tunnel_positions)
         return tunnel_positions_different_lengths
     
+    def get_custom_tunnels_different_widths(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+        tunnel_positions_different_widths  = []
+        IDs = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+        right = 0.3
+        left = -0.2
+        top = 0.1
+        L = right - left
+
+        for ID in IDs:
+            combos = 0
+            while combos < 1:
+                W = L/ID
+                bottom = top - W
+                tunnel_positions = []
+                left = right - L
+                width_midway = (left + right) / 2
+                height_midway = (top + bottom) / 2
+                tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
+                tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
+                tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
+                tunnel_positions.append(screen_pos + jp.array([0., left, height_midway]))
+                tunnel_positions.append(screen_pos)
+                combos += 1
+
+                for i in range(5):
+                    tunnel_positions_different_widths.append(tunnel_positions)
+        return tunnel_positions_different_widths
+
     # def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
     #     tunnel_positions_total  = []
     #     tunnel_positions_total = self.get_custom_tunnels_different_lengths(rng, screen_pos)
@@ -493,7 +536,7 @@ class MyoUserSteering(MyoUserBase):
                     tunnel_positions.append(screen_pos)
                     combos += 1
 
-                    for i in range(5):
+                    for i in range(3):
                         tunnel_positions_total.append(tunnel_positions)
         return tunnel_positions_total
 
@@ -607,7 +650,8 @@ class MyoUserSteering(MyoUserBase):
         state.replace(info=_updated_info)
         
         #done = rwd_dict['done']
-        done = jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32)
+        #jax.debug.print('self.terminate_out_of_bounds {}', self.terminate_out_of_bounds)
+        done = self.terminate_out_of_bounds * jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32) + (1-self.terminate_out_of_bounds)*rwd_dict['done']
 
         state.metrics.update(
             completed_phase_0 = obs_dict["completed_phase_0"],
@@ -637,14 +681,6 @@ class MyoUserSteering(MyoUserBase):
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
     
-    # def add_target_pos_to_data(self, data, target_pos):
-    #     xpos = data.xpos
-    #     geom_xpos = data.geom_xpos
-
-    #     xpos = xpos.at[self.target_body_id].set(target_pos)
-    #     geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
-    #     data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
-    #     return data
 
     def update_task_visuals(self, mj_model, state):
         screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])  #need to re-introduce site pos offset from xml file that was ignored in get_custom_tunnel() to ensure that task visuals properly appear in front of the screen 
