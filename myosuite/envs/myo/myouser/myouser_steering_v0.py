@@ -758,40 +758,33 @@ class MyoUserSteering(MyoUserBase):
         return eval_metrics
 
     def calculate_r2(self, rollouts):
-
-        from sklearn.linear_model import LinearRegression
-        from sklearn.metrics import r2_score
-
         MTs = []
         IDs = []
         Ds = []
         Ws = []
+        completed_phase_0 = False
 
-        for rollout in rollouts:
-            completed_phase_0 = False
-            # timestep_start_steering = None
-            for step, state in enumerate(rollout):
+        for ep in range(len(rollouts)):
+            for state in rollouts[ep]:
+
                 metrics = getattr(state, "metrics")
                 info = getattr(state, "info")
 
-                D = abs(info["end_line"][1] - info["start_line"][1])
-                W = abs(info["top_line"][2] - info["bottom_line"][2])
-                current_ID = D / W
-
                 if metrics["completed_phase_0"] == True and not completed_phase_0:                    
                     completed_phase_0 = True
-                    # timestep_start_steering = step
                     steering_time_init = state.data.time.copy()
+            
 
                 if completed_phase_0 and metrics["completed_phase_1"]:
-                    # timestep_end_steering = step
-                    # MT = (timestep_end_steering - timestep_start_steering) * 0.002 * 25
                     steering_time_final = state.data.time.copy()
                     MT = (steering_time_final - steering_time_init)
                     MTs.append(MT)
-                    IDs.append(current_ID)
+
+                    D = abs(info["end_line"][1] - info["start_line"][1])
+                    W = abs(info["top_line"][2] - info["bottom_line"][2])
                     Ds.append(D)
                     Ws.append(W)
+                    IDs.append(D / W)
                     completed_phase_0 = False
 
 
@@ -808,8 +801,8 @@ class MyoUserSteering(MyoUserBase):
         a = model.intercept_
         b = model.coef_[0]
         y_pred = model.predict(IDs)
-        print(f"IDs: {IDs}")
-        print(f"MTs: {MTs}")
+        #print(f"IDs: {IDs}")
+        #print(f"MTs: {MTs}")
 
         print(f"R^2: {r2_score(MTs, y_pred)}, a,b: {a},{b}")
 
