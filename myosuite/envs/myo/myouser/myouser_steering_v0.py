@@ -730,7 +730,7 @@ class MyoUserSteering(MyoUserBase):
 
         return eval_metrics
 
-    def calculate_r2(self, rollouts):
+    def calculate_r2(self, rollouts, average_r2=True):
         MTs = jp.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
                                                 any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
@@ -745,18 +745,37 @@ class MyoUserSteering(MyoUserBase):
         if len(IDs) == 0 or len(MTs) == 0:
             return np.nan, np.nan, np.nan
 
-        # Fit linear regression and compute R^2
-        model = LinearRegression()
-        model.fit(IDs, MTs)
-        a = model.intercept_
-        b = model.coef_[0]
-        y_pred = model.predict(IDs)
-        #print(f"IDs: {IDs}")
-        #print(f"MTs: {MTs}")
+        if average_r2:
+            # Fit linear curve to mean per ID and compute R^2
+            IDs_rounded = IDs.round(2)
+            ID_means = jp.sort(jp.unique(IDs_rounded)).reshape(-1, 1)
+            MT_means = jp.array([MTs[np.argwhere(IDs_rounded.flatten() == _id)].mean() for _id in ID_means])
 
-        print(f"R^2: {r2_score(MTs, y_pred)}, a,b: {a},{b}")
+            model = LinearRegression()
+            model.fit(ID_means, MT_means)
+            a = model.intercept_
+            b = model.coef_[0]
+            y_pred = model.predict(ID_means)
+            r2 = r2_score(MT_means, y_pred)
+            #print(f"IDs: {IDs}")
+            #print(f"MTs: {MTs}")
+        else:
+            # Fit linear curve to all data points and compute R^2
+            model = LinearRegression()
+            model.fit(IDs, MTs)
+            a = model.intercept_
+            b = model.coef_[0]
+            y_pred = model.predict(IDs)
+            r2 = r2_score(MTs, y_pred)
+            #print(f"IDs: {IDs}")
+            #print(f"MTs: {MTs}")
 
-        sl_data = {"ID": IDs, "MT_ref": MTs, "MT_pred": y_pred,
+        print(f"R^2: {r2}, a,b: {a},{b}")
+
+        sl_data = {"ID": IDs, "MT_ref": MTs,
+                "MT_pred": y_pred,
                 "D": Ds, "W": Ws}
+        if average_r2:
+            sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
 
-        return a,b,r2_score(MTs, y_pred),sl_data
+        return a,b,r2,sl_data
