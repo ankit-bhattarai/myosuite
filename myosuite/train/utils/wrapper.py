@@ -281,32 +281,31 @@ class AutoResetWrapper(Wrapper):
 class EvalVmapWrapper(Wrapper):
   """Vectorizes Brax env for evaluation runs, using eval_reset instead of reset as entrypoint."""
 
-  def __init__(self, env: Env, batch_size: Optional[int] = None):
+  def __init__(self, env: Env, n_randomizations: Optional[int] = None):
     super().__init__(env)
-    self.batch_size = batch_size
+    # self.batch_size = batch_size
+    self.n_randomizations = n_randomizations
     self.eval_wrapped = True
 
   def eval_reset(self, rng: jax.Array, eval_id: jax.Array) -> State:
-    if self.batch_size is not None:
-      rng = jax.random.split(rng, self.batch_size)
+    batch_size = len(eval_id)
+    if batch_size > 1:
+      rng = jax.random.split(rng, batch_size)
+    if self.n_randomizations is not None:
+       ## only allow for eval_id values between 0 and (self.n_randomizations - 1) in this case
+       eval_id = eval_id % self.n_randomizations
     return jax.vmap(self.env.eval_reset)(rng, eval_id)
 
   def step(self, state: State, action: jax.Array) -> State:
     return jax.vmap(self.env.step)(state, action)
   
 
-def _maybe_wrap_env_for_evaluation(eval_env, seed, n_episodes=None):
+def _maybe_wrap_env_for_evaluation(eval_env, seed):
     rng = jax.random.PRNGKey(seed)
-    _n_episodes = eval_env.prepare_eval_rollout(rng)
-    if _n_episodes is not None:
-        ## Override n_episodes with enforces value from eval_env
-        logging.info(f"Environment requires exactly {_n_episodes} evaluation episodes.")
-        n_episodes = _n_episodes
-    else:
-       assert n_episodes is not None
+    n_randomizations = eval_env.prepare_eval_rollout(rng)
     
     if not hasattr(eval_env, "eval_wrapped"):
-        eval_env = EvalVmapWrapper(eval_env, batch_size=n_episodes)
+        eval_env = EvalVmapWrapper(eval_env, n_randomizations=n_randomizations)
         assert hasattr(eval_env, "eval_wrapped")
     
-    return eval_env, n_episodes
+    return eval_env, n_randomizations

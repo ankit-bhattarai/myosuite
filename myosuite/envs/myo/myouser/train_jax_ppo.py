@@ -163,13 +163,17 @@ def main(cfg: Config):
 
   # Prepare evaluation episodes
   if env_cfg.env_name=="MyoUserSteering":
-    n_episodes = 50  #unused, as overridden by env below!
+    n_episode_runs = 20  #unused, as overridden by env below!
   # elif env_cfg.env_name=="MyoUserSteeringLaw":
   #   n_episodes = 84  #unused, as overridden by env below!
   else:
-    n_episodes = 1
+    n_episode_runs = 1
     
-  env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=env, seed=config.run.eval_seed, n_episodes=n_episodes)
+  env, n_randomizations = _maybe_wrap_env_for_evaluation(eval_env=env, seed=config.run.eval_seed)
+  if n_randomizations is not None:
+      ## Multiply n_episodes with num of different/randomized episodes required by eval_env
+      n_episodes = n_episode_runs * n_randomizations
+      logging.info(f"Environment requires a multiple of {n_randomizations} evaluation episodes. Will run {n_episodes} in total.")
 
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
@@ -183,7 +187,6 @@ def main(cfg: Config):
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
                             seed=config.run.eval_seed,
                             n_episodes=n_episodes)  #config.run.eval_episodes) 
-  rollouts_combined = [r for rollout in rollouts for r in rollout]
   render_every = 2
   fps = 1.0 / env.dt / render_every
   print(f"FPS for rendering: {fps}")
@@ -208,13 +211,9 @@ def main(cfg: Config):
     print(metrics)
 
   # Render and save the rollout
-  render_every = 2
-  fps = 1.0 / env.dt / render_every
-  print(f"FPS for rendering: {fps}")
-  traj = rollouts_combined[::render_every]
   with h5py.File(logdir / 'traj.h5', 'w') as h5f:
-      h5f.create_dataset('qpos', data=[s.data.qpos for s in traj])
-      h5f.create_dataset('ctrl', data=[s.data.ctrl for s in traj])
+      h5f.create_dataset('qpos', data=[s.data.qpos for rollout in rollouts for s in rollout])
+      h5f.create_dataset('ctrl', data=[s.data.ctrl for rollout in rollouts for s in rollout])
       h5f.close()
   with open(logdir / 'traj.pickle', 'wb') as handle:
       pickle.dump(rollouts, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -225,10 +224,14 @@ def main(cfg: Config):
   # scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = False
 
   # render front view
+  render_every = 1
+  fps = 1.0 / env.dt / render_every
+  print(f"FPS for rendering: {fps}")
   frames = render_traj(
-      traj, env, height=480, width=640, camera="fixed-eye",
+      rollouts, env, height=480, width=640, camera="fixed-eye",
       notebook_context=False,
-      #scene_option=scene_option
+      render_every=render_every,
+      #scene_option=scene_option,
   )
   media.write_video(logdir / "rollout.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout.mp4'.")
@@ -237,7 +240,7 @@ def main(cfg: Config):
 
   # render side view
   frames = render_traj(
-      traj, env, height=480, width=640, camera=None,
+      rollouts, env, height=480, width=640, camera=None,
       notebook_context=False,
       #scene_option=scene_option
   )

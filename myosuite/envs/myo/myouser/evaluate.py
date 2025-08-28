@@ -94,7 +94,9 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
         with open(os.path.join(checkpoint_path, "config.json"), "r") as f:
             config = ConfigDict(json.load(f))
         eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
-        eval_env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed, n_episodes=n_episodes)
+        eval_env, n_randomizations = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed)
+        # n_episodes = 1 * n_randomizations
+        # logging.info(f"Environment allows for {n_randomizations} randomized evaluation episodes.")
         jit_inference_fn = jax.jit(make_inference_fn(params, deterministic=True))
         jit_reset = jax.jit(eval_env.eval_reset)
         jit_step = jax.jit(eval_env.step)

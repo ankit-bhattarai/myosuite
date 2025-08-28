@@ -55,8 +55,8 @@ class SteeringTaskConfig:
     reset_type: str = "range_uniform"
     min_width: float = 0.03
     max_width: float = 0.6
-    max_height: float = 0.1
     min_height: float = 0.03
+    max_height: float = 0.1
     bottom: float = -0.3
     top: float = 0.3
     left: float = 0.3
@@ -476,8 +476,8 @@ class MyoUserSteering(MyoUserBase):
                 tunnel_positions.append(screen_pos)
                 combos += 1
 
-                for i in range(20):
-                    tunnel_positions_different_lengths.append(tunnel_positions)
+                # for i in range(20):
+                tunnel_positions_different_lengths.append(tunnel_positions)
         return tunnel_positions_different_lengths
     
     def get_custom_tunnels_different_widths(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
@@ -504,8 +504,8 @@ class MyoUserSteering(MyoUserBase):
                 tunnel_positions.append(screen_pos)
                 combos += 1
 
-                for i in range(20):
-                    tunnel_positions_different_widths.append(tunnel_positions)
+                # for i in range(20):
+                tunnel_positions_different_widths.append(tunnel_positions)
         return tunnel_positions_different_widths
 
     # def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
@@ -541,33 +541,6 @@ class MyoUserSteering(MyoUserBase):
                     for i in range(20):
                         tunnel_positions_total.append(tunnel_positions)
         return tunnel_positions_total
-
-    def get_custom_tunnels_different_widths(self, rng: jax.Array, screen_pos: jax.Array,
-                                            n_trials_per_tunnel: float = 5) -> dict[str, jax.Array]:
-        tunnel_positions_different_widths  = []
-        IDs = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-        right = 0.3
-        left = -0.2
-        top = 0.1
-        L = right - left
-        for ID in IDs:
-            combos = 0
-            while combos < 1:
-                W = L/ID
-                bottom = top - W
-                tunnel_positions = []
-                left = right - L
-                width_midway = (left + right) / 2
-                height_midway = (top + bottom) / 2
-                tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
-                tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
-                tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
-                tunnel_positions.append(screen_pos + jp.array([0., left, height_midway]))
-                tunnel_positions.append(screen_pos)
-                combos += 1
-                for i in range(n_trials_per_tunnel):
-                    tunnel_positions_different_widths.append(tunnel_positions)
-        return tunnel_positions_different_widths
 
     def reset(self, rng, render_token=None, tunnel_positions=None):
         # jax.debug.print(f"RESET INIT")
@@ -645,10 +618,10 @@ class MyoUserSteering(MyoUserBase):
         
         ## Setup evaluation episodes for Steering Law validation
         rng, rng2 = jax.random.split(rng, 2)
-        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        # self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
         # self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
-        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993]),
-                                                                                     n_trials_per_tunnel=20))
+        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])) + 
+                                            self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
 
         return len(self.SL_tunnel_positions)
 
@@ -758,39 +731,16 @@ class MyoUserSteering(MyoUserBase):
         return eval_metrics
 
     def calculate_r2(self, rollouts):
-        MTs = []
-        IDs = []
-        Ds = []
-        Ws = []
-        completed_phase_0 = False
-
-        for ep in range(len(rollouts)):
-            for state in rollouts[ep]:
-
-                metrics = getattr(state, "metrics")
-                info = getattr(state, "info")
-
-                if metrics["completed_phase_0"] == True and not completed_phase_0:                    
-                    completed_phase_0 = True
-                    steering_time_init = state.data.time.copy()
-            
-
-                if completed_phase_0 and metrics["completed_phase_1"]:
-                    steering_time_final = state.data.time.copy()
-                    MT = (steering_time_final - steering_time_init)
-                    MTs.append(MT)
-
-                    D = abs(info["end_line"][1] - info["start_line"][1])
-                    W = abs(info["top_line"][2] - info["bottom_line"][2])
-                    Ds.append(D)
-                    Ws.append(W)
-                    IDs.append(D / W)
-                    completed_phase_0 = False
-
-
-        n = min(len(IDs), len(MTs))
-        IDs = np.array(IDs[:n]).reshape(-1, 1)
-        MTs = np.array(MTs[:n])
+        MTs = jp.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+        Ds = jp.array([jp.abs(rollout[np.argwhere(_compl_0)[0].item()].info["end_line"][1] - rollout[np.argwhere(_compl_0)[0].item()].info["start_line"][1])
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+        Ws = jp.array([jp.abs(rollout[np.argwhere(_compl_0)[0].item()].info["top_line"][2] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line"][2])
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+        IDs = (Ds / Ws).reshape(-1, 1)
 
         if len(IDs) == 0 or len(MTs) == 0:
             return np.nan, np.nan, np.nan

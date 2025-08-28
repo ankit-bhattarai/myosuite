@@ -119,7 +119,7 @@ class ProgressEvalVideoLogger:
   def __init__(self, logdir, eval_env,
                seed=123,
                deterministic=True,
-               n_episodes=10,
+               n_episode_runs=10,
                ep_length=None,
                eval_metrics_keys={},
                height=480,
@@ -137,7 +137,12 @@ class ProgressEvalVideoLogger:
     self.deterministic = deterministic
 
     # Prepare evaluation episodes
-    self.eval_env, self.n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed, n_episodes=n_episodes)
+    self.eval_env, self.n_randomizations = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed)
+    if self.n_randomizations is not None:
+        ## Multiply n_episodes with num of different/randomized episodes required by eval_env
+        n_episodes = n_episode_runs * self.n_randomizations
+        logging.info(f"Environment requires a multiple of {self.n_randomizations} evaluation episodes. Will run {n_episodes} in total.")
+    self.n_episodes = n_episodes
 
     if ep_length is None:
         ep_length = int(self.eval_env._config.task_config.max_duration / self.eval_env._config.ctrl_dt)
@@ -181,12 +186,11 @@ class ProgressEvalVideoLogger:
     rollout_metrics_keys = rollouts[0][0].metrics.keys()
     # TODO: move this code to separate function?
     rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
-    rollouts_combined = [r for rollout in rollouts for r in rollout]
 
     task_metrics = self.eval_env.calculate_metrics(rollouts, self.eval_metrics_keys)
 
     # Create video that can be uploaded to Weights & Biases
-    video_metrics = self.progress_eval_video(rollouts_combined, current_step)
+    video_metrics = self.progress_eval_video(rollouts, current_step)
 
     metrics = {**rollout_metrics, **task_metrics, **video_metrics, **training_metrics}    
     wandb.log(metrics, step=current_step)
@@ -194,7 +198,7 @@ class ProgressEvalVideoLogger:
 
     return metrics
 
-  def progress_eval_video(self, rollout, current_step):
+  def progress_eval_video(self, rollouts, current_step):
     # Create video that can be uploaded to Weights & Biases
 
     fps = 1.0 / self.eval_env.dt
@@ -206,7 +210,7 @@ class ProgressEvalVideoLogger:
         else:
             camera_suffix = "_" + camera
         frames = render_traj(
-            rollout, self.eval_env, height=480, width=640, camera=camera,
+            rollouts, self.eval_env, height=480, width=640, camera=camera,
             notebook_context=False,
         )
         media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", frames, fps=fps)
@@ -428,7 +432,7 @@ def train_or_load_checkpoint(env_name,
         if log_wandb_videos:
             progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env,
                                                                 seed=config.run.eval_seed,
-                                                                n_episodes=10,
+                                                                n_episode_runs=10,
                                                                 #ep_length=80,
                                                                 cameras=["fixed-eye", None]
                                                                 )

@@ -10,7 +10,7 @@ import wandb
 from datetime import datetime
 
 
-def render_traj(rollout: List[State],
+def render_traj(rollouts: List[List[State]],
                 eval_env: mjx_env.MjxEnv, 
                 height: int = 240,
                 width: int = 320,
@@ -23,7 +23,12 @@ def render_traj(rollout: List[State],
                 notebook_context: bool = True):
     ## if called outside a jupyter notebook file, use notebook_context=False
 
-    traj = rollout[::render_every]
+    if isinstance(rollouts[0], State):
+      # required for backward compatibility with old checkpoints; rollouts[0] should be List[State]
+      rollouts_combined = rollouts
+    else:
+      rollouts_combined = [r for rollout in rollouts for r in rollout]
+    traj = rollouts_combined[::render_every]
     if modify_scene_fns is not None:
         modify_scene_fns = modify_scene_fns[::render_every]
     frames = eval_env.render(traj, height=height, width=width, camera=camera,
