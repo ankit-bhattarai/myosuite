@@ -28,6 +28,8 @@ from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
 from dataclasses import dataclass, field
 from typing import List, Dict
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
 
 @dataclass
 class SteeringTaskConfig:
@@ -482,7 +484,7 @@ class MyoUserSteering(MyoUserBase):
                 tunnel_positions.append(screen_pos)
                 combos += 1
 
-                for i in range(5):
+                for i in range(20):
                     tunnel_positions_different_lengths.append(tunnel_positions)
         return tunnel_positions_different_lengths
     
@@ -510,7 +512,7 @@ class MyoUserSteering(MyoUserBase):
                 tunnel_positions.append(screen_pos)
                 combos += 1
 
-                for i in range(5):
+                for i in range(20):
                     tunnel_positions_different_widths.append(tunnel_positions)
         return tunnel_positions_different_widths
 
@@ -544,7 +546,7 @@ class MyoUserSteering(MyoUserBase):
                     tunnel_positions.append(screen_pos)
                     combos += 1
 
-                    for i in range(3):
+                    for i in range(20):
                         tunnel_positions_total.append(tunnel_positions)
         return tunnel_positions_total
 
@@ -624,7 +626,7 @@ class MyoUserSteering(MyoUserBase):
         
         ## Setup evaluation episodes for Steering Law validation
         rng, rng2 = jax.random.split(rng, 2)
-        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
 
         return len(self.SL_tunnel_positions)
 
@@ -734,13 +736,8 @@ class MyoUserSteering(MyoUserBase):
         return eval_metrics
 
     def calculate_r2(self, rollout):
-
-        from sklearn.linear_model import LinearRegression
-        from sklearn.metrics import r2_score
-
         MTs = []
         IDs = []
-
         completed_phase_0 = False
         timestep_start_steering = None
 
