@@ -26,6 +26,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from myosuite.train.utils.train import train_or_load_checkpoint
+from myosuite.train.utils.wrapper import _maybe_wrap_env_for_evaluation
 from myosuite.envs.myo.myouser.evaluate import evaluate_policy
 from myosuite.envs.myo.myouser.utils import render_traj, ProgressLogger, set_global_seed
 from etils import epath
@@ -44,6 +45,7 @@ import hydra
 from hydra_cli import Config
 from omegaconf import OmegaConf
 from ml_collections.config_dict import ConfigDict
+
 
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -106,6 +108,11 @@ def main(cfg: Config):
   logdir.mkdir(parents=True, exist_ok=True)
   print(f"Logs are being stored in: {logdir}")
 
+  # Set number of training steps to 0 if play_only
+  if config.run.play_only:
+    config.rl.num_timesteps = 0
+    ##TODO: use config.env.eval_mode rather than config.run.play_only (-> config.run.eval_mode?)
+
   # Initialize Weights & Biases if required
   if config.wandb.enabled and not config.run.play_only:
     wandb_params = config.wandb.to_dict()
@@ -121,7 +128,7 @@ def main(cfg: Config):
     writer = None
   
   progress_logger = ProgressLogger(writer=writer, ppo_params=ppo_params, logdir=logdir,
-                                   local_plotting=config.run.local_plotting, log_wandb=config.wandb.enabled, log_tb=config.run.use_tb)
+                                   local_plotting=config.run.local_plotting, log_wandb=config.wandb.enabled and not config.run.play_only, log_tb=config.run.use_tb)
   progress_fn = progress_logger.progress
 
   ## TRAINING/LOADING CHECKPOINT
@@ -154,20 +161,24 @@ def main(cfg: Config):
   ## EVALUATING CHECKPOINT
   print("Starting inference...")
 
+  # Prepare evaluation episodes
+  if env_cfg.env_name=="MyoUserSteering":
+    n_episodes = 50  #unused, as overridden by env below!
+  # elif env_cfg.env_name=="MyoUserSteeringLaw":
+  #   n_episodes = 84  #unused, as overridden by env below!
+  else:
+    n_episodes = 1
+    
+  env, n_episodes = _maybe_wrap_env_for_evaluation(eval_env=env, seed=config.run.eval_seed, n_episodes=n_episodes)
+
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
   jit_inference_fn = jax.jit(inference_fn)
   jit_reset = jax.jit(env.eval_reset)
   jit_step = jax.jit(env.step)
 
-  if env_cfg.env_name=="MyoUserSteering":
-    n_episodes = 50
-  elif env_cfg.env_name=="MyoUserSteeringLaw":
-    n_episodes = 84
-  else:
-    n_episodes = 1
-
   # Prepare for evaluation
+  #TODO: pass rng instead of seed to evaluate_policy, to avoid correlation between rng used for _maybe_wrap_env_for_evaluation and for further evaluation reset/step calls (re-generated using same seed)
   rollouts, log_type = evaluate_policy(#checkpoint_path=_LOAD_CHECKPOINT_PATH.value, env_name=_ENV_NAME.value,
                             eval_env=env, jit_inference_fn=jit_inference_fn, jit_reset=jit_reset, jit_step=jit_step,
                             seed=config.run.eval_seed,

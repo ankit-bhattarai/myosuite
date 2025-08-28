@@ -17,7 +17,7 @@ import mediapy as media
 
 from myosuite.train.myouser.custom_ppo import train as ppo
 from myosuite.train.myouser.custom_ppo import networks_vision_unified as networks
-from myosuite.train.utils.wrapper import wrap_myosuite_training, EvalVmapWrapper
+from myosuite.train.utils.wrapper import wrap_myosuite_training, _maybe_wrap_env_for_evaluation
 from myosuite.envs.myo.myouser.evaluate import evaluate_policy
 from myosuite.envs.myo.myouser.utils import render_traj
 
@@ -132,19 +132,13 @@ class ProgressEvalVideoLogger:
     self.checkpoint_path = ckpt_path
 
     self.seed = seed
-    eval_key = jax.random.PRNGKey(seed)
-    self.eval_key, reset_prepare_keys = jax.random.split(eval_key)
+    # eval_key = jax.random.PRNGKey(seed)
+    # self.eval_key, reset_prepare_keys = jax.random.split(eval_key)
     self.deterministic = deterministic
 
-    # Obtain number of episodes to evaluate from environment itself (if defined)
-    _n_episodes = eval_env.prepare_eval_rollout(reset_prepare_keys)
-    if _n_episodes is not None:
-        ## Override n_episodes with enforces value from eval_env
-        logging.info(f"Environment requires exactly {_n_episodes} evaluation episodes.")
-        n_episodes = _n_episodes
+    # Prepare evaluation episodes
+    self.eval_env, self.n_episodes = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed, n_episodes=n_episodes)
 
-    self.n_episodes = n_episodes
-    self.eval_env = EvalVmapWrapper(eval_env, batch_size=self.n_episodes)
     if ep_length is None:
         ep_length = int(self.eval_env._config.task_config.max_duration / self.eval_env._config.ctrl_dt)
     self.episode_length = ep_length
@@ -166,7 +160,7 @@ class ProgressEvalVideoLogger:
     # Rollout trajectory
     # make_policy(params, deterministic=True)
     jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
-    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, n_episodes=self.n_episodes)[0]
+    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
     if self.eval_env.vision:
        rollouts = rollouts[0]
     
@@ -434,7 +428,7 @@ def train_or_load_checkpoint(env_name,
     else:
         if log_wandb_videos:
             progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env,
-                                                                seed=123, #TODO: add eval_seed to args
+                                                                seed=config.run.eval_seed,
                                                                 n_episodes=10,
                                                                 #ep_length=80,
                                                                 cameras=["fixed-eye", None]
@@ -452,7 +446,7 @@ def train_or_load_checkpoint(env_name,
         progress_fn=progress_fn,
         policy_params_fn=policy_params_fn,  #lambda *args: None,
         policy_params_fn_checkpoints=policy_params_fn_checkpoints,
-        eval_env=None if vision else eval_env,
+        eval_env=eval_env,
     )
     if vision:
         eval_env = env
