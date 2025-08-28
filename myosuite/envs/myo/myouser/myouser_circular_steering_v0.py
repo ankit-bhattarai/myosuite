@@ -273,6 +273,7 @@ class MyoUserCircularSteering(MyoUserBase):
         remaining_angle = (2*jp.pi - theta_now) % (2 * jp.pi)
         radius = (bottom_line_radius + top_line_radius) / 2
         path_length_remaining = radius * remaining_angle
+        obs_dict["remaining_angle"] = remaining_angle
 
         # Update phase immediately based on current position
         touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
@@ -327,7 +328,7 @@ class MyoUserCircularSteering(MyoUserBase):
         obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
         obs_dict["dist"] = dist
         obs_dict["phase_1_x_dist"] = phase_1_x_dist
-        obs_dict["path_length_remaining"] = path_length_remaining
+        obs_dict["path_length_remaining"] = completed_phase_0 * path_length + (1 - completed_phase_0) * path_length_remaining
 
         ## Additional observations
         obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
@@ -482,6 +483,7 @@ class MyoUserCircularSteering(MyoUserBase):
             'softcons_for_bounds': 0.0,
             'path_length_remaining': 0.0,
             'path_length': 0.0,
+            'remaining_angle': 0.0,
         }
 
         return State(data, obs, reward, done, metrics, info)
@@ -517,6 +519,7 @@ class MyoUserCircularSteering(MyoUserBase):
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
+        jax.debug.print("path_length_remaining: {}, path_length: {}, radius {}", obs_dict["path_length_remaining"], (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi, (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0])/2)
 
         done = rwd_dict['done']
         state.metrics.update(
@@ -533,6 +536,7 @@ class MyoUserCircularSteering(MyoUserBase):
             middle_line_crossed = obs_dict["middle_line_crossed"],
             path_length_remaining = obs_dict["path_length_remaining"],
             path_length = (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi,  #2*pi*radius
+            remaining_angle = obs_dict["remaining_angle"],
         )
 
         return state.replace(
