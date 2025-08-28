@@ -17,7 +17,6 @@ from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import MyoUserCircul
 
 from myosuite.envs.myo.myouser.myouser_steering_v0 import default_config as MyoUserSteering_config
 from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import default_config as MyoUserCircularSteering_config
-from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import default_config as MyoUserCircularSteering_config
 # from myosuite.envs.myo.myouser.myouser_steering_law_v0 import default_config as MyoUserSteeringLaw_config
 
 # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
