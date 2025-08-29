@@ -163,7 +163,7 @@ def main(cfg: Config):
 
   # Prepare evaluation episodes
   if env_cfg.env_name=="MyoUserSteering":
-    n_episode_runs = 20  #unused, as overridden by env below!
+    n_episode_runs = 2  #20  #unused, as overridden by env below!
   # elif env_cfg.env_name=="MyoUserSteeringLaw":
   #   n_episodes = 84  #unused, as overridden by env below!
   else:
