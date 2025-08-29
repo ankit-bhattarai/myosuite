@@ -142,6 +142,8 @@ class ProgressEvalVideoLogger:
         ## Multiply n_episodes with num of different/randomized episodes required by eval_env
         n_episodes = n_episode_runs * self.n_randomizations
         logging.info(f"Environment requires a multiple of {self.n_randomizations} evaluation episodes. Will run {n_episodes} in total.")
+    else:
+       n_episodes = n_episode_runs
     self.n_episodes = n_episodes
 
     if ep_length is None:
