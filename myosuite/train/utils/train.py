@@ -275,7 +275,7 @@ def train_or_load_checkpoint(env_name,
     if checkpoint_path is not None:
         # Convert to absolute path
         ckpt_path = epath.Path(checkpoint_path).resolve()
-        if ckpt_path.is_dir():
+        if ckpt_path.is_dir() and ckpt_path.name == "checkpoints":
             latest_ckpts = list(ckpt_path.glob("*"))
             latest_ckpts = [ckpt for ckpt in latest_ckpts if ckpt.is_dir()]
             latest_ckpts.sort(key=lambda x: int(x.name))

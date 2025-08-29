@@ -91,7 +91,8 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     else:
         assert env_name is not None, "If checkpoint path is provided, env name must also be passed as 'env_name'"
         from myosuite.train.utils.train import train_or_load_checkpoint
-        with open(os.path.join(checkpoint_path, "config.json"), "r") as f:
+        _cfg_path = os.path.join(checkpoint_path, "config.json") if checkpoint_path.rstrip("/").endswith("checkpoints") else os.path.join(checkpoint_path, "../config.json") 
+        with open(_cfg_path, "r") as f:
             config = ConfigDict(json.load(f))
         eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
         eval_env, n_randomizations = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed)
