@@ -13,10 +13,12 @@ from myosuite.envs.myo.myouser.myouser_pointing_v0 import modify_radius_geom_ran
 from myosuite.envs.myo.myouser.myouser_tracking_v0 import MyoUserTracking
 from myosuite.envs.myo.myouser.myouser_steering_v0 import MyoUserSteering
 from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import MyoUserCircularSteering
+from myosuite.envs.myo.myouser.myouser_steering_v1 import MyoUserMenuSteering
 # from myosuite.envs.myo.myouser.myouser_steering_law_v0 import MyoUserSteeringLaw
 
 from myosuite.envs.myo.myouser.myouser_steering_v0 import default_config as MyoUserSteering_config
 from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import default_config as MyoUserCircularSteering_config
+from myosuite.envs.myo.myouser.myouser_steering_v1 import default_config as MyoUserMenuSteering_config
 # from myosuite.envs.myo.myouser.myouser_steering_law_v0 import default_config as MyoUserSteeringLaw_config
 
 # registry.manipulation.register_environment("MyoElbow", PlaygroundElbow, default_config)
@@ -24,6 +26,7 @@ registry.manipulation.register_environment("MyoUserPointing", MyoUserPointing, M
 registry.manipulation.register_environment("MyoUserTracking", MyoUserTracking, {})
 registry.manipulation.register_environment("MyoUserSteering", MyoUserSteering, MyoUserSteering_config)
 registry.manipulation.register_environment("MyoUserCircularSteering", MyoUserCircularSteering, MyoUserCircularSteering_config)
+registry.manipulation.register_environment("MyoUserMenuSteering", MyoUserMenuSteering, MyoUserMenuSteering_config)
 # registry.manipulation.register_environment("MyoUserSteeringLaw", MyoUserSteeringLaw, MyoUserSteeringLaw_config)
 
 _randomizer["MyoUserPointing"] = modify_radius_geom_randomisation_fn
