@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jp
+import jax._src.scipy.optimize.bfgs
 import interpax
 import jaxopt
 
@@ -95,7 +96,7 @@ def tunnel_from_nodes(nodes, tunnel_size=None, ord=jp.inf, width_height_constrai
 
     return nodes_left, nodes_right
 
-def distance_to_tunnel(test_point, _interp_fct_left, _interp_fct_right, theta_init=2/3):
+def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None, buffer_theta=None, buffer_nodes_left=None, buffer_nodes_right=None, theta_init=2/3):
     """
     Estimates(!) whether a given point is inside tunnel or not, and returns the signed distance (negative distance: outside tunnel).
     NOTES:
@@ -108,12 +109,26 @@ def distance_to_tunnel(test_point, _interp_fct_left, _interp_fct_right, theta_in
     # theta_closest_right = scipy.optimize.shgo(lambda theta: jp.linalg.norm(_interp_fct_right(theta) - test_point), bounds=[(0, 1)]).x.item()
     # theta_closest_left = jaxopt.GradientDescent(fun=lambda theta: jp.linalg.norm(_interp_fct_left(jp.array(theta)) - jp.array(test_point))).run(jp.array(theta_init)).params
     # theta_closest_right = jaxopt.GradientDescent(fun=lambda theta: jp.linalg.norm(_interp_fct_right(jp.array(theta)) - jp.array(test_point))).run(jp.array(theta_init)).params
-    theta_closest_left = jaxopt.ProjectedGradient(fun=lambda theta: jp.linalg.norm(_interp_fct_left(jp.array(theta)) - jp.array(test_point)), projection=jaxopt.projection.projection_box).run(jp.array(theta_init), hyperparams_proj=(0, 1)).params
-    theta_closest_right = jaxopt.ProjectedGradient(fun=lambda theta: jp.linalg.norm(_interp_fct_right(jp.array(theta)) - jp.array(test_point)), projection=jaxopt.projection.projection_box).run(jp.array(theta_init), hyperparams_proj=(0, 1)).params
+    # theta_closest_left = jaxopt.ProjectedGradient(fun=lambda theta: jp.linalg.norm(_interp_fct_left(jp.array(theta)) - jp.array(test_point)), projection=jaxopt.projection.projection_box).run(jp.array(theta_init), hyperparams_proj=(0, 1)).params
+    # theta_closest_right = jaxopt.ProjectedGradient(fun=lambda theta: jp.linalg.norm(_interp_fct_right(jp.array(theta)) - jp.array(test_point)), projection=jaxopt.projection.projection_box).run(jp.array(theta_init), hyperparams_proj=(0, 1)).params
+    # theta_closest_left = jax._src.scipy.optimize.bfgs.minimize_bfgs(x0=jp.array([theta_init]), fun=lambda theta: jp.linalg.norm(_interp_fct_left(jp.array(theta)) - jp.array(test_point))).x_k.item()
+    # theta_closest_right = jax._src.scipy.optimize.bfgs.minimize_bfgs(x0=jp.array([theta_init]), fun=lambda theta: jp.linalg.norm(_interp_fct_right(jp.array(theta)) - jp.array(test_point))).x_k.item()
     
-    left_bound_closest, right_bound_closest = _interp_fct_left(theta_closest_left), _interp_fct_right(theta_closest_right)
+    if buffer_nodes_left is None or buffer_nodes_right is None:
+        assert _interp_fct_left is not None and _interp_fct_left is not None
+        buffer_size = 101
+        buffer_theta = jp.linspace(0, 1, buffer_size)
+        buffer_nodes_left = _interp_fct_left(buffer_theta)
+        buffer_nodes_right = _interp_fct_right(buffer_theta)
+    
+    buffer_id_closest_left = jp.argmin(jp.linalg.norm(buffer_nodes_left - jp.array(test_point), axis=1))
+    buffer_id_closest_right = jp.argmin(jp.linalg.norm(buffer_nodes_right - jp.array(test_point), axis=1))
+    theta_closest_left, theta_closest_right = buffer_theta[buffer_id_closest_left], buffer_theta[buffer_id_closest_right]
+
+    # left_bound_closest, right_bound_closest = _interp_fct_left(theta_closest_left), _interp_fct_right(theta_closest_right)
+    left_bound_closest, right_bound_closest = buffer_nodes_left[buffer_id_closest_left], buffer_nodes_right[buffer_id_closest_right]
     left_vector = left_bound_closest - test_point
     right_vector = right_bound_closest - test_point
     inside_tunnel = jp.dot(left_bound_closest - test_point, right_bound_closest - test_point) < 0
     tunnel_distance = jp.minimum(jp.linalg.norm(left_vector), jp.linalg.norm(right_vector)) * (-1)**(~inside_tunnel)
-    return tunnel_distance, theta_closest_left, theta_closest_right
+    return tunnel_distance, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest

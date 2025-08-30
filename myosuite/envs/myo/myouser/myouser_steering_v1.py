@@ -63,7 +63,7 @@ class MenuSteeringTaskConfig:
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
-    opt_warmstart: bool = True
+    tunnel_buffer_size: int = 101
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -233,7 +233,8 @@ class MyoUserMenuSteering(MyoUserBase):
         # self.left = self._config.task_config.left
         # self.right = self._config.task_config.right
 
-        self.opt_warmstart = self._config.task_config.opt_warmstart
+        # self.opt_warmstart = True  #self._config.task_config.opt_warmstart
+        self.tunnel_buffer_size = self._config.task_config.tunnel_buffer_size
         self.terminate_out_of_bounds = self._config.task_config.terminate_out_of_bounds
         self.min_dwell_phase_0 = self._config.task_config.min_dwell_phase_0
         self.phase_0_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_0 / self._config.ctrl_dt).astype(int), 1)
@@ -284,10 +285,11 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_0 = info['completed_phase_0']
         completed_phase_1 = info['completed_phase_1']
         ee_pos = obs_dict['fingertip']
-        if self.opt_warmstart:
-            distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], info['tunnel_boundary_left'], info['tunnel_boundary_right'], theta_init=info['percentage_of_remaining_path'])
-        else:
-            distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], info['tunnel_boundary_left'], info['tunnel_boundary_right'])
+        # if self.opt_warmstart:
+        #     distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], _interp_fct_left=info['tunnel_boundary_left'], _interp_fct_right=info['tunnel_boundary_right'], theta_init=info['percentage_of_remaining_path'])
+        distance_to_tunnel_bounds, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest = distance_to_tunnel(ee_pos[1:], buffer_theta=info['tunnel_boundary_parametrization'], buffer_nodes_left=info['tunnel_boundary_left'], buffer_nodes_right=info['tunnel_boundary_right'])
+        obs_dict["left_bound_closest"] = left_bound_closest
+        obs_dict["right_bound_closest"] = right_bound_closest
 
         theta_closest = 0.5 * (theta_closest_left + theta_closest_right)  #TODO: ensure this also works when out of bounds! (e.g., take theta of closer boundary only, depending on task rules)
         obs_dict['percentage_of_remaining_path'] = theta_closest
@@ -327,7 +329,7 @@ class MyoUserMenuSteering(MyoUserBase):
         phase_1_completed_steps = (phase_1_completed_steps + 1) * phase_1_completed_now
         completed_phase_1 = completed_phase_1 + (1 - completed_phase_1) * (phase_1_completed_steps >= self.phase_1_completed_min_steps)   
 
-        current_path_size = jp.linalg.norm(info['tunnel_boundary_left'](theta_closest_left) - info['tunnel_boundary_left'](theta_closest_right)) #TODO: only use this value when inside tunnel? easier way to get path size?
+        current_path_size = jp.linalg.norm(right_bound_closest - left_bound_closest) #TODO: only use this value when inside tunnel? easier way to get path size?
         ## TODO: should we penalize distance to tunnel bounds relative to tunnel size or in absolute terms? 
         softcons_for_bounds = jp.clip(jp.abs(distance_to_tunnel_bounds) / (current_path_size / 2), 0, 1)
         
@@ -499,10 +501,15 @@ class MyoUserMenuSteering(MyoUserBase):
         # _interp_fct_right = scipy.interpolate.make_interp_spline(theta, nodes_right, k=spline_ord)
         _interp_fct_left = interpax.PchipInterpolator(theta, nodes_left, check=False)
         _interp_fct_right = interpax.PchipInterpolator(theta, nodes_right, check=False)
+        
+        buffer_theta = jp.linspace(0, 1, self.tunnel_buffer_size)
+        buffer_nodes_left = _interp_fct_left(buffer_theta)
+        buffer_nodes_right = _interp_fct_right(buffer_theta)
 
         return {'tunnel_nodes': nodes, 
-                'tunnel_boundary_left': _interp_fct_left, 
-                'tunnel_boundary_right': _interp_fct_right,
+                'tunnel_boundary_parametrization': buffer_theta,
+                'tunnel_boundary_left': buffer_nodes_left, 
+                'tunnel_boundary_right': buffer_nodes_right,
         }
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
