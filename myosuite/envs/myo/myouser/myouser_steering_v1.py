@@ -51,7 +51,8 @@ class MenuSteeringTaskConfig:
         "jac_effort": 0,
         "power_for_softcons": 15,
         "truncated": -10,
-        "truncated_progress": -20
+        "truncated_progress": -20,
+        "bonus_inside_path": 0,
     })
     max_duration: float = 4.
     max_trials: int = 1
@@ -121,6 +122,7 @@ def default_config() -> config_dict.ConfigDict:
                 jac_effort=0.05,
                 truncated=-10, #0
                 truncated_progress=-20,
+                bonus_inside_path=0.0,
                 
                 # ## old reward fct. (florian's branch):
                 # reach=1,
@@ -322,10 +324,11 @@ class MyoUserMenuSteering(MyoUserBase):
         phase_0_completed_steps = (phase_0_completed_steps + 1) * phase_0_completed_now
         completed_phase_0 = completed_phase_0 + (1 - completed_phase_0) * (phase_0_completed_steps >= self.phase_0_completed_min_steps)
         
+        inside_tunnel = completed_phase_0 * touching_screen_phase_1 * within_tunnel_limits
         crossed_end_line = theta_closest >= 1
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0])
         touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
-        phase_1_completed_now = completed_phase_0 * crossed_end_line * touching_screen_phase_1 * within_tunnel_limits
+        phase_1_completed_now = inside_tunnel * crossed_end_line
         phase_1_completed_steps = (phase_1_completed_steps + 1) * phase_1_completed_now
         completed_phase_1 = completed_phase_1 + (1 - completed_phase_1) * (phase_1_completed_steps >= self.phase_1_completed_min_steps)   
 
@@ -338,9 +341,10 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
 
         obs_dict["con_0_touching_screen"] = touching_screen_phase_0
-        obs_dict["con_0_1_within_tunnel_limits"] = (1.-within_tunnel_limits) * completed_phase_0
+        obs_dict["con_0_1_within_tunnel_limits"] = within_tunnel_limits 
         obs_dict["completed_phase_0"] = completed_phase_0
         obs_dict['completed_phase_0_arr'] = jp.array([completed_phase_0])
+        obs_dict["con_1_inside_tunnel"] = inside_tunnel
         obs_dict["con_1_crossed_end_line"] = crossed_end_line
         obs_dict["con_1_touching_screen"] = touching_screen_phase_1
         obs_dict["completed_phase_1"] = completed_phase_1
@@ -399,8 +403,9 @@ class MyoUserMenuSteering(MyoUserBase):
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
-            ('truncated', 1.*obs_dict["con_0_1_within_tunnel_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
-            ('truncated_progress', 1.*obs_dict["con_0_1_within_tunnel_limits"]*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
+            ('truncated', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict["completed_phase_0"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
+            ('truncated_progress', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
+            ('bonus_inside_path', 1.*obs_dict['inside_path']),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
@@ -678,7 +683,7 @@ class MyoUserMenuSteering(MyoUserBase):
             percentage_achieved = done * obs_dict["percentage_of_remaining_path"],
             distance_to_tunnel_bounds = obs_dict["distance_to_tunnel_bounds"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
-            out_of_bounds = obs_dict["con_0_1_within_tunnel_limits"],
+            out_of_bounds = 1.-obs_dict["con_0_1_within_tunnel_limits"],
             not_touching = 1. * (1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"],
             jac_effort_reward = rwd_dict["jac_effort"]*self.weighted_reward_keys['jac_effort'],
             #neural_effort_reward = rwd_dict["neural_effort"]*self.weighted_reward_keys['neural_effort'],
