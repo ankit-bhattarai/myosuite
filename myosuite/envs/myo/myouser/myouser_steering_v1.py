@@ -311,7 +311,7 @@ class MyoUserMenuSteering(MyoUserBase):
         current_segment_percentage = jp.mod(theta_closest * (len(nodes) - 1), 1)
         # dist_to_end_line = (1. - current_segment_percentage) * jp.linalg.norm(node_connections[current_segment_id]) + jp.sum(jp.linalg.norm(node_connections[current_segment_id+1:], axis=1))
         ## TODO: debug/verify the following line!
-        dist_to_end_line = jp.sum(jp.linalg.norm(((current_segment_percentage * (jp.arange(len(node_connections)) == current_segment_id)) + 1. * (jp.arange(len(node_connections)) > current_segment_id)).reshape(-1, 1) * node_connections, axis=1))
+        dist_to_end_line = jp.sum(jp.linalg.norm((((1. - current_segment_percentage) * (jp.arange(len(node_connections)) == current_segment_id)) + 1. * (jp.arange(len(node_connections)) > current_segment_id)).reshape(-1, 1) * node_connections, axis=1))
         # dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_pos[1])  #TODO: generalise by measuring 3D distance rather than horizontal distance?
 
 
