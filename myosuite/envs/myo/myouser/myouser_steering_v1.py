@@ -56,14 +56,10 @@ class MenuSteeringTaskConfig:
     max_duration: float = 4.
     max_trials: int = 1
     reset_type: str = "epsilon_uniform"
-    min_width: float = 0.03
-    max_width: float = 0.6
+    min_width: float = 0.05
+    max_width: float = 0.1
     min_height: float = 0.03
-    max_height: float = 0.1
-    bottom: float = -0.3
-    top: float = 0.3
-    left: float = 0.3
-    right: float = -0.2
+    max_height: float = 0.08
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
@@ -231,10 +227,12 @@ class MyoUserMenuSteering(MyoUserBase):
         self.max_width = self._config.task_config.max_width
         self.min_height = self._config.task_config.min_height
         self.max_height = self._config.task_config.max_height
-        self.bottom = self._config.task_config.bottom
-        self.top = self._config.task_config.top
-        self.left = self._config.task_config.left
-        self.right = self._config.task_config.right
+        # self.bottom = self._config.task_config.bottom
+        # self.top = self._config.task_config.top
+        # self.left = self._config.task_config.left
+        # self.right = self._config.task_config.right
+
+        self.opt_warmstart = self._config.task_config.opt_warmstart
         self.terminate_out_of_bounds = self._config.task_config.terminate_out_of_bounds
         self.min_dwell_phase_0 = self._config.task_config.min_dwell_phase_0
         self.phase_0_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_0 / self._config.ctrl_dt).astype(int), 1)
@@ -285,8 +283,11 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_0 = info['completed_phase_0']
         completed_phase_1 = info['completed_phase_1']
         ee_pos = obs_dict['fingertip']
-        distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], info['tunnel_boundary_left'], info['tunnel_boundary_right'])
-        
+        if self.opt_warmstart:
+            distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], info['tunnel_boundary_left'], info['tunnel_boundary_right'], theta_init=info['percentage_of_remaining_path'])
+        else:
+            distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], info['tunnel_boundary_left'], info['tunnel_boundary_right'])
+
         theta_closest = 0.5 * (theta_closest_left + theta_closest_right)  #TODO: ensure this also works when out of bounds! (e.g., take theta of closer boundary only, depending on task rules)
         obs_dict['percentage_of_remaining_path'] = theta_closest
 
@@ -459,9 +460,8 @@ class MyoUserMenuSteering(MyoUserBase):
         }
 
     def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data, spline_ord: int = 1) -> dict[str, jax.Array]:
-        ## TODO: move to config
-        min_width, max_width = 0.05, 0.1
-        min_height, max_height = 0.03, 0.08
+        min_width, max_width = self.min_width, self.max_width
+        min_height, max_height = self.min_height, self.max_height
 
         # Sample tunnel size
         rng1, rng2 = jax.random.split(rng, 2)

@@ -368,7 +368,7 @@ class MyoUserSteering(MyoUserBase):
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
-            ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]),  #-1.*reach_dist)
+            ('reach',   -1.*(1.-(obs_dict['phase_1_completed_steps']>0))*obs_dict["dist"]),  #-1.*reach_dist)
             #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
