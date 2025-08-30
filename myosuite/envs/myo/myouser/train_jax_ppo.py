@@ -174,7 +174,9 @@ def main(cfg: Config):
       ## Multiply n_episodes with num of different/randomized episodes required by eval_env
       n_episodes = n_episode_runs * n_randomizations
       logging.info(f"Environment requires a multiple of {n_randomizations} evaluation episodes. Will run {n_episodes} in total.")
-
+  else:
+    n_episodes = n_episode_runs
+  
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
   jit_inference_fn = jax.jit(inference_fn)
