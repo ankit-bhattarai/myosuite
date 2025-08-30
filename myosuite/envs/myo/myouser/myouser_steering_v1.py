@@ -41,7 +41,7 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'distance_to_tunnel_bounds'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'percentage_of_remaining_path', 'distance_to_tunnel_bounds'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 1,
         "bonus_1": 10,
@@ -63,6 +63,7 @@ class MenuSteeringTaskConfig:
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
+    opt_warmstart: bool = True
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -370,6 +371,7 @@ class MyoUserMenuSteering(MyoUserBase):
         info['last_ctrl'] = obs_dict['last_ctrl']
         # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
+        info['percentage_of_remaining_path'] = obs_dict['percentage_of_remaining_path']
         info["phase_0_completed_steps"] = obs_dict["phase_0_completed_steps"]
         info["phase_1_completed_steps"] = obs_dict["phase_1_completed_steps"]
         info['completed_phase_0'] = obs_dict['completed_phase_0']
@@ -544,6 +546,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
+                "percentage_of_remaining_path": 0.0,
                 "phase_0_completed_steps": 0,
                 "phase_1_completed_steps": 0,
                 "completed_phase_0": 0.0,
