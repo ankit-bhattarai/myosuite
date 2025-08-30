@@ -317,7 +317,7 @@ class MyoUserSteering(MyoUserBase):
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
 
         obs_dict["con_0_touching_screen"] = touching_screen_phase_0
-        obs_dict["con_0_1_within_z_limits"] = (1.-within_z_limits) * completed_phase_0
+        obs_dict["con_0_1_within_z_limits"] = within_z_limits
         obs_dict["con_0_within_y_dist"] = within_y_dist
         obs_dict["completed_phase_0"] = completed_phase_0
         obs_dict['completed_phase_0_arr'] = jp.array([completed_phase_0])
@@ -376,8 +376,8 @@ class MyoUserSteering(MyoUserBase):
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
-            ('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
-            ('truncated_progress', 1.*obs_dict["con_0_1_within_z_limits"]*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
+            ('truncated', 1.*(1.-obs_dict["con_0_1_within_z_limits"])*obs_dict["completed_phase_0"])),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
+            ('truncated_progress', 1.*((1.-obs_dict["con_0_1_within_z_limits"])*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
@@ -685,7 +685,7 @@ class MyoUserSteering(MyoUserBase):
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
-            out_of_bounds = obs_dict["con_0_1_within_z_limits"],
+            out_of_bounds = 1.-obs_dict["con_0_1_within_z_limits"],
             not_touching = 1. * (1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"],
             jac_effort_reward = rwd_dict["jac_effort"]*self.weighted_reward_keys['jac_effort'],
             #neural_effort_reward = rwd_dict["neural_effort"]*self.weighted_reward_keys['neural_effort'],
