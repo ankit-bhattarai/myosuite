@@ -41,17 +41,17 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'percentage_of_remaining_path', 'distance_to_tunnel_bounds'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
-        "reach": 1,
+        "reach": 100,
         "bonus_1": 10,
-        "phase_1_touch": 10,
+        "phase_1_touch": 1, #10,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
         "jac_effort": 0,
         "power_for_softcons": 15,
         "truncated": -10,
-        "truncated_progress": -20,
+        "truncated_progress": 0, #-20,
         "bonus_inside_path": 3,
     })
     max_duration: float = 4.
@@ -288,13 +288,13 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_1 = info['completed_phase_1']
         ee_pos = obs_dict['fingertip']
         # if self.opt_warmstart:
-        #     distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], _interp_fct_left=info['tunnel_boundary_left'], _interp_fct_right=info['tunnel_boundary_right'], theta_init=info['percentage_of_remaining_path'])
+        #     distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], _interp_fct_left=info['tunnel_boundary_left'], _interp_fct_right=info['tunnel_boundary_right'], theta_init=info['path_percentage'])
         distance_to_tunnel_bounds, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest = distance_to_tunnel(ee_pos[1:], buffer_theta=info['tunnel_boundary_parametrization'], buffer_nodes_left=info['tunnel_boundary_left'], buffer_nodes_right=info['tunnel_boundary_right'])
         obs_dict["left_bound_closest"] = left_bound_closest
         obs_dict["right_bound_closest"] = right_bound_closest
 
         theta_closest = 0.5 * (theta_closest_left + theta_closest_right)  #TODO: ensure this also works when out of bounds! (e.g., take theta of closer boundary only, depending on task rules)
-        obs_dict['percentage_of_remaining_path'] = theta_closest
+        obs_dict['path_percentage'] = theta_closest * completed_phase_0
 
         # start_line = obs_dict['start_line']
         # end_line = obs_dict['end_line']
@@ -315,7 +315,7 @@ class MyoUserMenuSteering(MyoUserBase):
         ## TODO: debug/verify the following line!
         dist_to_end_line = jp.sum(jp.linalg.norm((((1. - current_segment_percentage) * (jp.arange(len(node_connections)) == current_segment_id)) + 1. * (jp.arange(len(node_connections)) > current_segment_id)).reshape(-1, 1) * node_connections, axis=1))
         # dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_pos[1])  #TODO: generalise by measuring 3D distance rather than horizontal distance?
-
+        obs_dict["nodes"] = info['tunnel_nodes']
 
         # Update phase immediately based on current position
         touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
@@ -357,6 +357,7 @@ class MyoUserMenuSteering(MyoUserBase):
         phase_1_distance = dist_to_end_line
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         
+        obs_dict["path_length"] = path_length
         obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
         obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
         obs_dict["dist"] = dist
@@ -377,7 +378,7 @@ class MyoUserMenuSteering(MyoUserBase):
         info['last_ctrl'] = obs_dict['last_ctrl']
         # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
-        info['percentage_of_remaining_path'] = obs_dict['percentage_of_remaining_path']
+        info['path_percentage'] = obs_dict['path_percentage']
         info["phase_0_completed_steps"] = obs_dict["phase_0_completed_steps"]
         info["phase_1_completed_steps"] = obs_dict["phase_1_completed_steps"]
         info['completed_phase_0'] = obs_dict['completed_phase_0']
@@ -395,7 +396,7 @@ class MyoUserMenuSteering(MyoUserBase):
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
-            ('reach',   -1.*(1.-(obs_dict['phase_1_completed_steps']>0))*obs_dict["dist"]),  #-1.*reach_dist)
+            ('reach',   1.*(1.-(obs_dict['phase_1_completed_steps']>0))*(obs_dict["path_length"] - obs_dict["dist"])),  #-1.*reach_dist)
             #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
@@ -404,7 +405,7 @@ class MyoUserMenuSteering(MyoUserBase):
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
             ('truncated', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict["completed_phase_0"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
-            ('truncated_progress', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
+            ('truncated_progress', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict['completed_phase_0']*(1.-obs_dict['path_percentage'])),
             ('bonus_inside_path', 1.*obs_dict['con_1_inside_tunnel']),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
@@ -559,7 +560,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
-                "percentage_of_remaining_path": 0.0,
+                "path_percentage": 0.0,
                 "phase_0_completed_steps": 0,
                 "phase_1_completed_steps": 0,
                 "completed_phase_0": 0.0,
@@ -680,7 +681,7 @@ class MyoUserMenuSteering(MyoUserBase):
             #con_0_touching_screen = obs_dict["con_0_touching_screen"],
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
-            percentage_achieved = done * obs_dict["percentage_of_remaining_path"],
+            percentage_achieved = done * obs_dict["path_percentage"],
             distance_to_tunnel_bounds = obs_dict["distance_to_tunnel_bounds"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
             out_of_bounds = 1.-obs_dict["con_0_1_within_tunnel_limits"],
