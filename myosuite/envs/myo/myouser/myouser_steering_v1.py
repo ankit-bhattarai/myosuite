@@ -41,7 +41,7 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'distance_to_tunnel_bounds'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 1,
         "bonus_1": 10,
