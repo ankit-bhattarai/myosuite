@@ -175,7 +175,7 @@ def main(cfg: Config):
       n_episodes = n_episode_runs * n_randomizations
       logging.info(f"Environment requires a multiple of {n_randomizations} evaluation episodes. Will run {n_episodes} in total.")
   else:
-    n_episodes = n_episode_runs
+    n_episodes = n_episode_runs * 10
   
   # Jit required functions
   inference_fn = make_inference_fn(params, deterministic=True)
