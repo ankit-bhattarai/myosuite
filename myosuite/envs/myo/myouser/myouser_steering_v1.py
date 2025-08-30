@@ -45,14 +45,14 @@ class MenuSteeringTaskConfig:
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 1,
         "bonus_1": 10,
-        "phase_1_touch": 1,
-        "phase_1_tunnel": 3,
+        "phase_1_touch": 10,
+        "phase_1_tunnel": 0,
         "neural_effort": 0,
         "jac_effort": 0,
         "power_for_softcons": 15,
         "truncated": -10,
         "truncated_progress": -20,
-        "bonus_inside_path": 0,
+        "bonus_inside_path": 3,
     })
     max_duration: float = 4.
     max_trials: int = 1
@@ -405,7 +405,7 @@ class MyoUserMenuSteering(MyoUserBase):
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
             ('truncated', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict["completed_phase_0"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
             ('truncated_progress', 1.*(1.-obs_dict["con_0_1_within_tunnel_limits"])*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
-            ('bonus_inside_path', 1.*obs_dict['inside_path']),
+            ('bonus_inside_path', 1.*obs_dict['con_1_inside_tunnel']),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
