@@ -15,6 +15,7 @@
 """Base class for MyoUser Arm Steering model."""
 import collections
 import numpy as np
+import interpax
 
 import jax
 import jax.numpy as jp
@@ -297,14 +298,16 @@ class MyoUserMenuSteering(MyoUserBase):
         # path_width = jp.linalg.norm(top_line_z - bottom_line_z)
         
         nodes = info['tunnel_nodes']
-        start_pos = nodes[0]
+        start_pos = jp.array([obs_dict['screen_pos'][0], *nodes[0]])
         # end_pos = nodes[-1]
         dist_to_start_line = jp.linalg.norm(ee_pos - start_pos, axis=-1)
         node_connections = nodes[1:] - nodes[:-1]
         path_length = jp.sum(jp.linalg.norm(node_connections, axis=1))
         current_segment_id = jp.floor(theta_closest * (len(nodes) - 1)).astype(jp.int32)
         current_segment_percentage = jp.mod(theta_closest * (len(nodes) - 1), 1)
-        dist_to_end_line = (1. - current_segment_percentage) * jp.linalg.norm(node_connections[current_segment_id]) + jp.sum(jp.linalg.norm(node_connections[current_segment_id+1:], axis=1))
+        # dist_to_end_line = (1. - current_segment_percentage) * jp.linalg.norm(node_connections[current_segment_id]) + jp.sum(jp.linalg.norm(node_connections[current_segment_id+1:], axis=1))
+        ## TODO: debug/verify the following line!
+        dist_to_end_line = jp.sum(jp.linalg.norm(((current_segment_percentage * (jp.arange(len(node_connections)) == current_segment_id)) + 1. * (jp.arange(len(node_connections)) > current_segment_id)).reshape(-1, 1) * node_connections, axis=1))
         # dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_pos[1])  #TODO: generalise by measuring 3D distance rather than horizontal distance?
 
 
@@ -323,6 +326,7 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_1 = completed_phase_1 + (1 - completed_phase_1) * (phase_1_completed_steps >= self.phase_1_completed_min_steps)   
 
         current_path_size = jp.linalg.norm(info['tunnel_boundary_left'](theta_closest_left) - info['tunnel_boundary_left'](theta_closest_right)) #TODO: only use this value when inside tunnel? easier way to get path size?
+        ## TODO: should we penalize distance to tunnel bounds relative to tunnel size or in absolute terms? 
         softcons_for_bounds = jp.clip(jp.abs(distance_to_tunnel_bounds) / (current_path_size / 2), 0, 1)
         
         # Reset phase 0 when phase 1 is done (and episode ends)
@@ -337,6 +341,7 @@ class MyoUserMenuSteering(MyoUserBase):
         obs_dict["con_1_touching_screen"] = touching_screen_phase_1
         obs_dict["completed_phase_1"] = completed_phase_1
         obs_dict["softcons_for_bounds"] = softcons_for_bounds
+        obs_dict["distance_to_tunnel_bounds"] = distance_to_tunnel_bounds
 
         ## Compute distances
 
@@ -350,7 +355,8 @@ class MyoUserMenuSteering(MyoUserBase):
         obs_dict["phase_1_x_dist"] = phase_1_x_dist
 
         ## Additional observations
-        obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
+        ## WARNING: 'target' is only 2D, in contrast to MyoUserSteering (x/depth component is omitted)
+        obs_dict['target'] = completed_phase_0 * nodes[1+current_segment_id] + (1. - completed_phase_0) * nodes[0]
         # obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
         obs_dict["phase_0_completed_steps"] = phase_0_completed_steps
@@ -388,8 +394,8 @@ class MyoUserMenuSteering(MyoUserBase):
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
-            ('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
-            ('truncated_progress', 1.*obs_dict["con_0_1_within_z_limits"]*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
+            ('truncated', 1.*obs_dict["con_0_1_within_tunnel_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
+            ('truncated_progress', 1.*obs_dict["con_0_1_within_tunnel_limits"]*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
             # # Must keys
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
@@ -487,8 +493,10 @@ class MyoUserMenuSteering(MyoUserBase):
         nodes_left, nodes_right = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints)
 
         theta = jp.linspace(0, 1, len(nodes))
-        _interp_fct_left = scipy.interpolate.make_interp_spline(theta, nodes_left, k=spline_ord)
-        _interp_fct_right = scipy.interpolate.make_interp_spline(theta, nodes_right, k=spline_ord)
+        # _interp_fct_left = scipy.interpolate.PchipInterpolator(theta, nodes_left, k=spline_ord)
+        # _interp_fct_right = scipy.interpolate.make_interp_spline(theta, nodes_right, k=spline_ord)
+        _interp_fct_left = interpax.PchipInterpolator(theta, nodes_left, check=False)
+        _interp_fct_right = interpax.PchipInterpolator(theta, nodes_right, check=False)
 
         return {'tunnel_nodes': nodes, 
                 'tunnel_boundary_left': _interp_fct_left, 
@@ -567,6 +575,7 @@ class MyoUserMenuSteering(MyoUserBase):
             #'con_0_touching_screen': 0.0,
             #'con_1_touching_screen': 0.0,
             #'con_1_crossed_line_y': 0.0,
+            'distance_to_tunnel_bounds': 0.0,
             'softcons_for_bounds': 0.0,
             'out_of_bounds': 0.0,
             'jac_effort_reward': 0.0,
@@ -654,8 +663,9 @@ class MyoUserMenuSteering(MyoUserBase):
             #con_0_touching_screen = obs_dict["con_0_touching_screen"],
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
+            distance_to_tunnel_bounds = obs_dict["distance_to_tunnel_bounds"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
-            out_of_bounds = obs_dict["con_0_1_within_z_limits"],
+            out_of_bounds = obs_dict["con_0_1_within_tunnel_limits"],
             not_touching = 1. * (1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"],
             jac_effort_reward = rwd_dict["jac_effort"]*self.weighted_reward_keys['jac_effort'],
             #neural_effort_reward = rwd_dict["neural_effort"]*self.weighted_reward_keys['neural_effort'],
@@ -710,7 +720,9 @@ class MyoUserMenuSteering(MyoUserBase):
         eval_metrics = {}
 
         # TODO: set eval_metrics_keys as config param?
-        if True:  #"R^2" in eval_metrics_keys:
+        
+        # TODO: implement R^2 calculation for arbitrary steering tasks!
+        if False:  #"R^2" in eval_metrics_keys:
             a,b,r2,_ = self.calculate_r2(rollout)
             eval_metrics["eval/R^2"] = r2
             eval_metrics["eval/a"] = a

@@ -41,6 +41,8 @@ dependencies = [
     "wandb[media]",
     "hydra-core",
     "scikit-learn",
+    "interpax", 
+    "jaxopt",
 ]
 [project.optional-dependencies]
 examples = ["mink[examples]; python_version > '3.9'"]
