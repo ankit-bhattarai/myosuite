@@ -405,6 +405,7 @@ class MyoUserMenuSteering(MyoUserBase):
             ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
         ))
 
+        #TODO: fix this; should go into default dict above
         power_softcons = self.weighted_reward_keys['power_for_softcons']
         phase_1_tunnel_weight = self.weighted_reward_keys['phase_1_tunnel']
 
@@ -585,6 +586,7 @@ class MyoUserMenuSteering(MyoUserBase):
             #'con_0_touching_screen': 0.0,
             #'con_1_touching_screen': 0.0,
             #'con_1_crossed_line_y': 0.0,
+            'percentage_achieved': 0.0,
             'distance_to_tunnel_bounds': 0.0,
             'softcons_for_bounds': 0.0,
             'out_of_bounds': 0.0,
@@ -673,6 +675,7 @@ class MyoUserMenuSteering(MyoUserBase):
             #con_0_touching_screen = obs_dict["con_0_touching_screen"],
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
+            percentage_achieved = done * obs_dict["percentage_of_remaining_path"],
             distance_to_tunnel_bounds = obs_dict["distance_to_tunnel_bounds"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
             out_of_bounds = obs_dict["con_0_1_within_tunnel_limits"],
