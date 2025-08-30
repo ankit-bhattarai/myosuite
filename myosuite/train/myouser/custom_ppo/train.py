@@ -757,14 +757,14 @@ def train(
         training_state.params,
     ))
 
-    if (it+1) % (num_training_interruptions/num_evals_after_init) == 0:
-      metrics = policy_params_fn(current_step, make_policy, params)
     if (num_checkpoints > 0) and ((it+1) % (num_training_interruptions/max(num_checkpoints, 1)) == 0):
       policy_params_fn_checkpoints(current_step, make_policy, params)
       if save_checkpoint_path is not None:
         checkpoint.save(
             save_checkpoint_path, current_step, params, ckpt_config
         )
+    if (it+1) % (num_training_interruptions/num_evals_after_init) == 0:
+      metrics = policy_params_fn(current_step, make_policy, params)
 
     # if num_evals > 0:
     #   metrics = evaluator.run_evaluation(
