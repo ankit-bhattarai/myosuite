@@ -324,10 +324,10 @@ class MyoUserMenuSteering(MyoUserBase):
         phase_0_completed_steps = (phase_0_completed_steps + 1) * phase_0_completed_now
         completed_phase_0 = completed_phase_0 + (1 - completed_phase_0) * (phase_0_completed_steps >= self.phase_0_completed_min_steps)
         
-        inside_tunnel = completed_phase_0 * touching_screen_phase_1 * within_tunnel_limits
         crossed_end_line = theta_closest >= 1
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0])
         touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
+        inside_tunnel = completed_phase_0 * touching_screen_phase_1 * within_tunnel_limits
         phase_1_completed_now = inside_tunnel * crossed_end_line
         phase_1_completed_steps = (phase_1_completed_steps + 1) * phase_1_completed_now
         completed_phase_1 = completed_phase_1 + (1 - completed_phase_1) * (phase_1_completed_steps >= self.phase_1_completed_min_steps)   
