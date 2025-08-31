@@ -730,13 +730,13 @@ class MyoUserMenuSteering(MyoUserBase):
             # left segments
             mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
             mj_model.site(f"line_{i}").size[height_width_indices_left[i]] = 0.5*segment_lengths_left[i]
-            mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
+            # mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
             mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
 
             # right segments
             mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
             mj_model.site(f"line_{n_connectors+i}").size[height_width_indices_right[i]] = 0.5*segment_lengths_right[i]
-            mj_model.site(f"line_{n_connectors+i}").quat[:] = 0.5 + scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
+            # mj_model.site(f"line_{n_connectors+i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
             mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([1., 0., 0., 0.8])
 
         # start pos
