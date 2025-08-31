@@ -12,6 +12,22 @@
         <body name="screen" pos="0.532445 -0.27 0.993">
           <geom name="screen" size="0.01 0.5 0.4" type="box" rgba="1 1 1 1" contype="1" conaffinity="1" margin="0.001"/>
           <site name="screen" type="box" size="0.01 0.5 0.4"/>
+          
+          <site name="line_0" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_1" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_2" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_3" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_4" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_5" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_6" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_7" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_8" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_9" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_10" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+          <site name="line_11" pos="-0.01 0.25 0.2" size="0.001 0.005 0.01" type="box" rgba="0 0 0 0"/>
+
+          <site name="refpos_0" pos="-0.01 0.25 0.2" size="0.001 0.01 0.01" type="ellipsoid" rgba="0 0 0 0"/>
+          <site name="refpos_1" pos="-0.01 0.25 0.2" size="0.001 0.01 0.01" type="ellipsoid" rgba="0 0 0 0"/>
         </body>
 
         <body name="fixed-eye" pos="0 0 1.2" quat="0.583833 0.399104 -0.399421 -0.583368">

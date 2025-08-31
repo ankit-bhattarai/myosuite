@@ -28,7 +28,7 @@ from mujoco_playground._src import mjx_env
 import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from myosuite.envs.myo.myouser.utils_steering import distance_to_tunnel, tunnel_from_nodes
+from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes
 from dataclasses import dataclass, field
 from typing import List, Dict
 from sklearn.linear_model import LinearRegression
@@ -44,7 +44,7 @@ class MenuSteeringTaskConfig:
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 100,
-        "bonus_1": 10,
+        "bonus_1": 50,
         "phase_1_touch": 1, #10,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
@@ -514,6 +514,8 @@ class MyoUserMenuSteering(MyoUserBase):
         buffer_nodes_right = _interp_fct_right(buffer_theta)
 
         return {'tunnel_nodes': nodes, 
+                'tunnel_nodes_left': nodes_left,
+                'tunnel_nodes_right': nodes_right,
                 'tunnel_boundary_parametrization': buffer_theta,
                 'tunnel_boundary_left': buffer_nodes_left, 
                 'tunnel_boundary_right': buffer_nodes_right,
@@ -703,35 +705,47 @@ class MyoUserMenuSteering(MyoUserBase):
     
 
     def update_task_visuals(self, mj_model, state):
-        return
-        raise NotImplementedError()
-        screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])  #need to re-introduce site pos offset from xml file that was ignored in get_custom_tunnel() to ensure that task visuals properly appear in front of the screen 
-        screen_y = screen_pos[1]
-        screen_z = screen_pos[2]
-        top_line = state.info["top_line"]
-        bottom_line = state.info["bottom_line"]
-        start_line = state.info["start_line"]
-        end_line = state.info["end_line"]
-        bottom_z = bottom_line[2] - screen_z
-        top_z = top_line[2] - screen_z
-        left_y = start_line[1] - screen_y
-        right_y = end_line[1] - screen_y
-        width_midway = (left_y + right_y) / 2
-        height_midway = (top_z + bottom_z) / 2
-        height = top_z - bottom_z
-        width = left_y - right_y
-        
-        mj_model.site('bottom_line').pos[1:] = jp.array([width_midway, bottom_z])
-        mj_model.site('bottom_line').size[1] = width / 2
+        screen_pos = state.data.site_xpos[self.screen_id]
+        nodes, _, _, _ = state.info["tunnel_nodes"], state.info["tunnel_boundary_left"], state.info["tunnel_boundary_right"], state.info["tunnel_boundary_parametrization"] 
+        nodes_left, nodes_right = state.info["tunnel_nodes_left"], state.info["tunnel_nodes_right"]
 
-        mj_model.site('top_line').pos[1:] = jp.array([width_midway, top_z])
-        mj_model.site('top_line').size[1] = width / 2
+        n_connectors = len(nodes) - 1
+        rel_vec = np.array([-1, 0])  #use [-1, 0] as reference vector for horizontal axis (i.e. x-axis in relevative plane coordinates), as global y-axis used as x-coordinate points to left in MuJoCo
 
-        mj_model.site('start_line').pos[1:] = jp.array([left_y, height_midway])
-        mj_model.site('start_line').size[2] = height / 2
+        mid_points_left = 0.5*(nodes_left[:-1] + nodes_left[1:])
+        connector_vecs_left = nodes_left[1:] - nodes_left[:-1]
+        segment_lengths_left = np.linalg.norm(connector_vecs_left, axis=1)
+        segments_angles_left = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_left])
 
-        mj_model.site('end_line').pos[1:] = jp.array([right_y, height_midway])
-        mj_model.site('end_line').size[2] = height / 2
+        mid_points_right = 0.5*(nodes_right[:-1] + nodes_right[1:])
+        connector_vecs_right = nodes_right[1:] - nodes_right[:-1]
+        segment_lengths_right = np.linalg.norm(connector_vecs_right, axis=1)
+        segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
+
+        # TODO: this workaround only works for perfectly vertical and/or horizontal boundaries; in other cases, a fix is needed that allows to change site orientation on the fly...  
+        height_width_indices_left = 1 + (np.abs(segments_angles_left // (np.pi/2)).astype(int))
+        height_width_indices_right = 1 + (np.abs(segments_angles_right // (np.pi/2)).astype(int))
+
+        for i in range(n_connectors):
+            # left segments
+            mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
+            mj_model.site(f"line_{i}").size[height_width_indices_left[i]] = 0.5*segment_lengths_left[i]
+            mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
+            mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
+
+            # right segments
+            mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
+            mj_model.site(f"line_{n_connectors+i}").size[height_width_indices_right[i]] = 0.5*segment_lengths_right[i]
+            mj_model.site(f"line_{n_connectors+i}").quat[:] = 0.5 + scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
+            mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([1., 0., 0., 0.8])
+
+        # start pos
+        mj_model.site("refpos_0").pos[1:] = nodes[0] - screen_pos[1:]
+        mj_model.site("refpos_0").rgba[:] = np.array([0., 1., 0., 0.8])
+
+        # end pos
+        mj_model.site("refpos_1").pos[1:] = nodes[-1] - screen_pos[1:]
+        mj_model.site("refpos_1").rgba[:] = np.array([0., 0., 1., 0.8])
 
 
     def calculate_metrics(self, rollout, eval_metrics_keys={"R^2"}):
