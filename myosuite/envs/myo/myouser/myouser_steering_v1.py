@@ -366,6 +366,7 @@ class MyoUserMenuSteering(MyoUserBase):
         ## Additional observations
         ## WARNING: 'target' is only 2D, in contrast to MyoUserSteering (x/depth component is omitted)
         obs_dict['target'] = completed_phase_0 * nodes[1+current_segment_id] + (1. - completed_phase_0) * nodes[0]
+        obs_dict['path_angle'] = info['tunnel_angle_interp'](theta_closest)
         # obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
         obs_dict["phase_0_completed_steps"] = phase_0_completed_steps
@@ -503,15 +504,20 @@ class MyoUserMenuSteering(MyoUserBase):
         nodes = start_pos + jp.array([-1., 1.]) * nodes_rel  #map from relative node coordinates (x, y) to MuJoCo coordinates (y, z) using (z <- y, y <- (-x))
         nodes_left, nodes_right, theta_angle, angle = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints)
 
+        # interpolate nodes
         theta = jp.linspace(0, 1, len(nodes))
         # _interp_fct_left = scipy.interpolate.PchipInterpolator(theta, nodes_left, k=spline_ord)
         # _interp_fct_right = scipy.interpolate.make_interp_spline(theta, nodes_right, k=spline_ord)
         _interp_fct_left = interpax.PchipInterpolator(theta, nodes_left, check=False)
         _interp_fct_right = interpax.PchipInterpolator(theta, nodes_right, check=False)
         
+        # discretize interpolated notes for efficient optimization
         buffer_theta = jp.linspace(0, 1, self.tunnel_buffer_size)
         buffer_nodes_left = _interp_fct_left(buffer_theta)
         buffer_nodes_right = _interp_fct_right(buffer_theta)
+
+        # interpolate heading angles
+        _interp_fct_angle = interpax.PchipInterpolator(theta_angle, angle, check=False)
 
         return {'tunnel_nodes': nodes, 
                 'tunnel_nodes_left': nodes_left,
@@ -519,6 +525,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 'tunnel_boundary_parametrization': buffer_theta,
                 'tunnel_boundary_left': buffer_nodes_left, 
                 'tunnel_boundary_right': buffer_nodes_right,
+                'tunnel_angle_interp': _interp_fct_angle,
         }
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
