@@ -749,13 +749,13 @@ class MyoUserSteering(MyoUserBase):
     def calculate_r2(self, rollouts, average_r2=True):
         MTs = jp.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         Ds = jp.array([jp.abs(rollout[np.argwhere(_compl_0)[0].item()].info["end_line"][1] - rollout[np.argwhere(_compl_0)[0].item()].info["start_line"][1])
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         Ws = jp.array([jp.abs(rollout[np.argwhere(_compl_0)[0].item()].info["top_line"][2] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line"][2])
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         IDs = (Ds / Ws).reshape(-1, 1)
 
         if len(IDs) == 0 or len(MTs) == 0:
