@@ -36,12 +36,13 @@ from sklearn.metrics import r2_score
 
 @dataclass
 class MenuSteeringTaskConfig:
+    task_type: str = "menu_0"
     distance_reach_metric_coefficient: float = 10.
     screen_distance_x: float = 0.5
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 100,
         "bonus_1": 50,
@@ -57,10 +58,14 @@ class MenuSteeringTaskConfig:
     max_duration: float = 4.
     max_trials: int = 1
     reset_type: str = "epsilon_uniform"
-    min_width: float = 0.05
-    max_width: float = 0.1
-    min_height: float = 0.03
-    max_height: float = 0.08
+    menu_min_width: float = 0.05
+    menu_max_width: float = 0.1
+    menu_min_height: float = 0.03
+    menu_max_height: float = 0.08
+    circle_min_radius: float = 0.05
+    circle_max_radius: float = 0.16
+    circle_min_width: float = 0.03
+    circle_max_width: float = 0.2
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
@@ -190,6 +195,7 @@ class MyoUserMenuSteering(MyoUserBase):
     def _setup(self):
         """Task specific setup"""
         super()._setup()
+        self.task_type = self._config.task_config.task_type
         self.max_duration = self._config.task_config.max_duration
 
         # Prepare observation components
@@ -226,10 +232,14 @@ class MyoUserMenuSteering(MyoUserBase):
         self.distance_reach_metric_coefficient = self._config.task_config.distance_reach_metric_coefficient
 
         # Currently hardcoded
-        self.min_width = self._config.task_config.min_width
-        self.max_width = self._config.task_config.max_width
-        self.min_height = self._config.task_config.min_height
-        self.max_height = self._config.task_config.max_height
+        self.menu_min_width = self._config.task_config.menu_min_width
+        self.menu_max_width = self._config.task_config.menu_max_width
+        self.menu_min_height = self._config.task_config.menu_min_height
+        self.menu_max_height = self._config.task_config.menu_max_height
+        self.circle_min_radius = self._config.task_config.circle_min_radius
+        self.circle_max_radius = self._config.task_config.circle_max_radius
+        self.circle_min_width = self._config.task_config.circle_min_width
+        self.circle_max_width = self._config.task_config.circle_max_width
         # self.bottom = self._config.task_config.bottom
         # self.top = self._config.task_config.top
         # self.left = self._config.task_config.left
@@ -471,38 +481,74 @@ class MyoUserMenuSteering(MyoUserBase):
             # 'end_line': data.site_xpos[self.end_line_id],
         }
 
-    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data, spline_ord: int = 1) -> dict[str, jax.Array]:
-        min_width, max_width = self.min_width, self.max_width
-        min_height, max_height = self.min_height, self.max_height
-
-        # Sample tunnel size
-        rng1, rng2 = jax.random.split(rng, 2)
-        rng2, rng_width = jax.random.split(rng2, 2)
-        width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
-        rng2, rng_height = jax.random.split(rng2, 2)
-        height = min_height + jax.random.uniform(rng_height) * (2/3)*(max_height - min_height)  #default: 0.05
-
+    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data, spline_ord: int = 1,
+                          task_type="menu_0") -> dict[str, jax.Array]:
+        
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_center = data.site_xpos[self.screen_id][1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
-        screen_margin = jp.array([0.05, 0.05])
-        screen_size_without_margin = screen_size - screen_margin
 
-        nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15], [0.2, -0.3], [0.3, -0.3]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
-        tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
-        width_height_constraints = [("width", 1.5*width), ("height", height), ("width", width), ("height", height), ("height", height)]
-        total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([1.5*width, height])
+        if task_type == "menu_0":
+            screen_margin = jp.array([0.05, 0.05])
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
 
-        # Sample start pos
-        remaining_size = screen_size_without_margin - total_size
-        rng1, rng_width_offset = jax.random.split(rng1, 2)
-        start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-        rng1, rng_height_offset = jax.random.split(rng1, 2)
-        start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-        start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
-        
+            min_width, max_width = self.menu_min_width, self.menu_max_width
+            min_height, max_height = self.menu_min_height, self.menu_max_height
+
+            # Sample tunnel size
+            rng1, rng2 = jax.random.split(rng, 2)
+            rng2, rng_width = jax.random.split(rng2, 2)
+            width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
+            rng2, rng_height = jax.random.split(rng2, 2)
+            height = min_height + jax.random.uniform(rng_height) * (2/3)*(max_height - min_height)  #default: 0.05
+
+            nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15], [0.2, -0.3], [0.3, -0.3]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
+            tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
+            width_height_constraints = [("width", 1.5*width), ("height", height), ("width", width), ("height", height), ("height", height)]
+            total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([1.5*width, height])
+            norm_ord = jp.inf
+
+            # Sample start pos (centred around screen_pos_topleft)
+            remaining_size = screen_size_with_margin - total_size
+            rng1, rng_width_offset = jax.random.split(rng1, 2)
+            start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+            rng1, rng_height_offset = jax.random.split(rng1, 2)
+            start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+            start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+        elif task_type == "circle_0":
+            screen_margin = jp.array([0.01, 0.01])
+            screen_size_with_margin = screen_size - 2*screen_margin  #here, margin is equally distributed between top/bottom and left/right
+
+            min_radius, max_radius = self.circle_min_radius, self.circle_max_radius
+            min_width, max_width = self.circle_min_width, self.circle_max_width
+
+            # Sample tunnel length and size
+            rng1, rng2 = jax.random.split(rng, 2)
+            rng2, rng_radius = jax.random.split(rng2, 2)
+            circle_radius = min_radius + jax.random.uniform(rng_radius) * (max_radius - min_radius)  #default: 0.75
+            # tunnel_length = circle_radius*(2*jp.pi)
+            rng2, rng_width = jax.random.split(rng2, 2)
+            max_width_restricted = jp.minimum(max_width, jp.min(screen_size_with_margin)-2*circle_radius)  #constraint: (2*circle_radius+tunnel_size)<jp.min(screen_size_with_margin)
+            tunnel_size = min_width + jax.random.uniform(rng_width) * jp.maximum((max_width_restricted - min_width), 0)  #default: 0.05
+
+            theta_def = np.linspace(0, 1, 101)
+            nodes = circle_radius * np.array([np.sin(theta_def*2*np.pi), np.cos(theta_def*2*np.pi)]).T
+            width_height_constraints = None
+            total_size = (2 * circle_radius + tunnel_size) * jp.ones(2)
+            norm_ord = 2
+
+            # Sample start pos (centred around screen_pos_center)
+            remaining_size = screen_size_with_margin - total_size
+            rng1, rng_width_offset = jax.random.split(rng1, 2)
+            start_width_offset = -0.5*remaining_size[0] + jax.random.uniform(rng_width_offset) * remaining_size[0]
+            rng1, rng_height_offset = jax.random.split(rng1, 2)
+            start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
+            start_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
+        else:
+            raise NotImplementedError(f"Task type {task_type} not implemented.")
+
         nodes = start_pos + jp.array([-1., 1.]) * nodes_rel  #map from relative node coordinates (x, y) to MuJoCo coordinates (y, z) using (z <- y, y <- (-x))
-        nodes_left, nodes_right, theta_angle, angle = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints)
+        nodes_left, nodes_right, theta_angle, angle = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints, ord=norm_ord)
 
         # interpolate nodes
         theta = jp.linspace(0, 1, len(nodes))
@@ -576,9 +622,9 @@ class MyoUserMenuSteering(MyoUserBase):
                 "completed_phase_1": 0.0,
                 "previous_qacc": 0.0,
                 }
-        info.update(self.get_custom_tunnel(rng, data))
+        info.update(self.get_custom_tunnel(rng, data, self.task_type))
         # if tunnel_positions is None:
-        #     info.update(self.get_custom_tunnel(rng, data))
+        #     info.update(self.get_custom_tunnel(rng, data, self.task_type))
         # else:
         #     info.update(tunnel_positions)
 
