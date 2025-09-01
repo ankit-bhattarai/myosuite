@@ -42,7 +42,7 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds', 'path_angle'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 100,
         "bonus_1": 50,
@@ -66,6 +66,7 @@ class MenuSteeringTaskConfig:
     circle_max_radius: float = 0.16
     circle_min_width: float = 0.03
     circle_max_width: float = 0.2
+    circle_sample_points: int = 21,
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
@@ -240,6 +241,7 @@ class MyoUserMenuSteering(MyoUserBase):
         self.circle_max_radius = self._config.task_config.circle_max_radius
         self.circle_min_width = self._config.task_config.circle_min_width
         self.circle_max_width = self._config.task_config.circle_max_width
+        self.circle_sample_points = self._config.task_config.circle_sample_points
         # self.bottom = self._config.task_config.bottom
         # self.top = self._config.task_config.top
         # self.left = self._config.task_config.left
@@ -508,7 +510,7 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
             width_height_constraints = [("width", 1.5*width), ("height", height), ("width", width), ("height", height), ("height", height)]
             total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([1.5*width, height])
-            norm_ord = jp.inf
+            norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
             # Sample start pos (centred around screen_pos_topleft)
             remaining_size = screen_size_with_margin - total_size
@@ -523,6 +525,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
             min_radius, max_radius = self.circle_min_radius, self.circle_max_radius
             min_width, max_width = self.circle_min_width, self.circle_max_width
+            n_sample_points = self.circle_sample_points
 
             # Sample tunnel length and size
             rng1, rng2 = jax.random.split(rng, 2)
@@ -533,11 +536,11 @@ class MyoUserMenuSteering(MyoUserBase):
             max_width_restricted = jp.minimum(max_width, jp.min(screen_size_with_margin)-2*circle_radius)  #constraint: (2*circle_radius+tunnel_size)<jp.min(screen_size_with_margin)
             tunnel_size = min_width + jax.random.uniform(rng_width) * jp.maximum((max_width_restricted - min_width), 0)  #default: 0.05
 
-            theta_def = np.linspace(0, 1, 101)
+            theta_def = np.linspace(0, 1, n_sample_points)
             nodes = circle_radius * np.array([np.sin(theta_def*2*np.pi), np.cos(theta_def*2*np.pi)]).T
             width_height_constraints = None
             total_size = (2 * circle_radius + tunnel_size) * jp.ones(2)
-            norm_ord = 2
+            norm_ord = 2  #use Euclidean norm for distance computations/path normalisation
 
             # Sample start pos (centred around screen_pos_center)
             remaining_size = screen_size_with_margin - total_size
