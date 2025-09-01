@@ -371,6 +371,7 @@ class MyoUserMenuSteering(MyoUserBase):
         # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
         obs_dict["phase_0_completed_steps"] = phase_0_completed_steps
         obs_dict["phase_1_completed_steps"] = phase_1_completed_steps
+        obs_dict["current_segment_id"] = current_segment_id
 
         return obs_dict
     
@@ -384,6 +385,7 @@ class MyoUserMenuSteering(MyoUserBase):
         info["phase_1_completed_steps"] = obs_dict["phase_1_completed_steps"]
         info['completed_phase_0'] = obs_dict['completed_phase_0']
         info['completed_phase_1'] = obs_dict['completed_phase_1']
+        info['current_segment_id'] = obs_dict['current_segment_id']
 
         return info
     
