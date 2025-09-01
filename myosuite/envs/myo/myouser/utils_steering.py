@@ -48,7 +48,7 @@ def heading_rotation_matrix(parametrization_fct, theta, delta=1e-3):
 def tunnel_from_nodes(nodes, tunnel_size=None, ord=jp.inf, width_height_constraints=None):
     assert tunnel_size is not None or width_height_constraints is not None
     
-    if (isinstance(tunnel_size, jax.Array) and len(tunnel_size) > 0) or isinstance(tunnel_size, list):
+    if (isinstance(tunnel_size, jax.Array) and tunnel_size.size > 1) or isinstance(tunnel_size, list):
         assert len(tunnel_size) == len(nodes), "If multiple tunnel sizes are provided, the length of 'tunnel_size' needs to match the length of 'nodes'."
         tunnel_size = jp.array(tunnel_size).reshape(-1, 1)
     elif tunnel_size is not None:

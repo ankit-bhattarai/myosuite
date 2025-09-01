@@ -42,9 +42,9 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
-        "reach": 100,
+        "reach": 10,
         "bonus_1": 50,
         "phase_1_touch": 1, #10,
         "phase_1_tunnel": 0,
@@ -281,8 +281,9 @@ class MyoUserMenuSteering(MyoUserBase):
         if self._na > 0:
             obs_dict['act']  = (data.act - 0.5) * 2
         
-        # Store current control input
+        # Store current control input/qacc state
         obs_dict['last_ctrl'] = data.ctrl.copy()
+        # obs_dict['previous_qacc'] = info['qacc'].copy()
 
         # End-effector and target position - read current position from data instead of cached info
         obs_dict['fingertip'] = data.site_xpos[self.fingertip_id]
@@ -306,7 +307,7 @@ class MyoUserMenuSteering(MyoUserBase):
         obs_dict["right_bound_closest"] = right_bound_closest
 
         theta_closest = 0.5 * (theta_closest_left + theta_closest_right)  #TODO: ensure this also works when out of bounds! (e.g., take theta of closer boundary only, depending on task rules)
-        obs_dict['path_percentage'] = theta_closest * completed_phase_0
+        obs_dict["path_percentage"] = theta_closest * completed_phase_0
 
         # start_line = obs_dict['start_line']
         # end_line = obs_dict['end_line']
@@ -384,12 +385,14 @@ class MyoUserMenuSteering(MyoUserBase):
         obs_dict["phase_0_completed_steps"] = phase_0_completed_steps
         obs_dict["phase_1_completed_steps"] = phase_1_completed_steps
         obs_dict["current_segment_id"] = current_segment_id
+        obs_dict["remaining_timesteps"] = 1 + jp.round((self.max_duration - data.time)/self._config.ctrl_dt).astype(jp.int32)  #includes current time step
 
         return obs_dict
     
     def update_info(self, info, obs_dict):
         # TODO: is this really needed? can we drop (almost all) info keys?
         info['last_ctrl'] = obs_dict['last_ctrl']
+        # info['qacc'] = obs_dict['qacc']
         # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
         info['path_percentage'] = obs_dict['path_percentage']
@@ -398,6 +401,7 @@ class MyoUserMenuSteering(MyoUserBase):
         info['completed_phase_0'] = obs_dict['completed_phase_0']
         info['completed_phase_1'] = obs_dict['completed_phase_1']
         info['current_segment_id'] = obs_dict['current_segment_id']
+        info['remaining_timesteps'] = obs_dict['remaining_timesteps']
 
         return info
     
@@ -411,9 +415,9 @@ class MyoUserMenuSteering(MyoUserBase):
         rwd_dict = collections.OrderedDict((
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
-            ('reach',   1.*(1.-(obs_dict['phase_1_completed_steps']>0))*(obs_dict["path_length"] - obs_dict["dist"])),  #-1.*reach_dist)
+            ('reach',   1.*(1.-(obs_dict['phase_1_completed_steps']>0))*(obs_dict["path_length"] - obs_dict["dist"])/(obs_dict["path_length"])),  #-1.*reach_dist)
             #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
-            ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
+            ('bonus_1',   1.*(obs_dict['completed_phase_1'])*(obs_dict['remaining_timesteps'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
             #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
@@ -445,11 +449,11 @@ class MyoUserMenuSteering(MyoUserBase):
         
         return effort_cost
     
-    def get_ejk_effort_costs(self, obs_dict, info):
+    def get_ejk_effort_costs(self, obs_dict):
         r_effort = jp.mean(obs_dict['last_ctrl'])
 
         qacc = obs_dict['qacc']
-        r_jerk = (jp.norm(qacc - info['previous_qacc']) / self.sim_dt) / 100000.0
+        r_jerk = (jp.norm(qacc - obs_dict['previous_qacc']) / self.sim_dt) / 100000.0
 
         shoulder_ang_vel = obs_dict['qvel'][self._shoulder_id]
         elbow_ang_vel    = obs_dict['qvel'][self._elbow_id]
@@ -485,7 +489,7 @@ class MyoUserMenuSteering(MyoUserBase):
             # 'end_line': data.site_xpos[self.end_line_id],
         }
 
-    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data, spline_ord: int = 1,
+    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data,
                           task_type="menu_0") -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
@@ -537,7 +541,7 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_size = min_width + jax.random.uniform(rng_width) * jp.maximum((max_width_restricted - min_width), 0)  #default: 0.05
 
             theta_def = np.linspace(0, 1, n_sample_points)
-            nodes = circle_radius * np.array([np.sin(theta_def*2*np.pi), np.cos(theta_def*2*np.pi)]).T
+            nodes_rel = circle_radius * np.array([np.sin(theta_def*2*np.pi), np.cos(theta_def*2*np.pi)]).T
             width_height_constraints = None
             total_size = (2 * circle_radius + tunnel_size) * jp.ones(2)
             norm_ord = 2  #use Euclidean norm for distance computations/path normalisation
@@ -557,8 +561,8 @@ class MyoUserMenuSteering(MyoUserBase):
 
         # interpolate nodes
         theta = jp.linspace(0, 1, len(nodes))
-        # _interp_fct_left = scipy.interpolate.PchipInterpolator(theta, nodes_left, k=spline_ord)
-        # _interp_fct_right = scipy.interpolate.make_interp_spline(theta, nodes_right, k=spline_ord)
+        # _interp_fct_left = scipy.interpolate.PchipInterpolator(theta, nodes_left, k=1)
+        # _interp_fct_right = scipy.interpolate.make_interp_spline(theta, nodes_right, k=1)
         _interp_fct_left = interpax.PchipInterpolator(theta, nodes_left, check=False)
         _interp_fct_right = interpax.PchipInterpolator(theta, nodes_right, check=False)
         
@@ -617,19 +621,23 @@ class MyoUserMenuSteering(MyoUserBase):
         
         # Reset last control (used for observations only)
         last_ctrl = jp.zeros(self._nu)
+        qacc = jp.zeros(len(self._independent_dofs))
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
+                # "qacc": qacc,
+                "fingertip": data.site_xpos[self.fingertip_id],
                 "path_percentage": 0.0,
                 "phase_0_completed_steps": 0,
                 "phase_1_completed_steps": 0,
                 "completed_phase_0": 0.0,
                 "completed_phase_1": 0.0,
-                "previous_qacc": 0.0,
+                "current_segment_id": 0,
+                "remaining_timesteps": 1 + jp.round((self.max_duration - data.time)/self._config.ctrl_dt).astype(jp.int32),  #includes current time step
                 }
-        info.update(self.get_custom_tunnel(rng, data, self.task_type))
+        info.update(self.get_custom_tunnel(rng, data, task_type=self.task_type))
         # if tunnel_positions is None:
-        #     info.update(self.get_custom_tunnel(rng, data, self.task_type))
+        #     info.update(self.get_custom_tunnel(rng, data, task_type=self.task_type))
         # else:
         #     info.update(tunnel_positions)
 
