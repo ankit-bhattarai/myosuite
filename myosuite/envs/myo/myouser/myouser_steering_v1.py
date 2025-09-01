@@ -66,7 +66,7 @@ class MenuSteeringTaskConfig:
     circle_max_radius: float = 0.16
     circle_min_width: float = 0.03
     circle_max_width: float = 0.2
-    circle_sample_points: int = 21,
+    circle_sample_points: int = 21
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
