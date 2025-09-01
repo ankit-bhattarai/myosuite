@@ -300,9 +300,16 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_0 = info['completed_phase_0']
         completed_phase_1 = info['completed_phase_1']
         ee_pos = obs_dict['fingertip']
+        current_checkpoint_theta = info["tunnel_checkpoints"][info["current_checkpoint_segment_id"]]
+        previous_checkpoint_theta = 0. + (info["current_checkpoint_segment_id"] > 0) * info["tunnel_checkpoints"][info["current_checkpoint_segment_id"] - 1]
+        tunnel_current_theta_max = jp.minimum(current_checkpoint_theta + 0.05, 1.)  #allow for 5% more, to ensure that checkpoint condition "theta_closest >= current_checkpoint_theta" can be satisfied below
+        tunnel_current_theta_min = jp.maximum(previous_checkpoint_theta - 0.25, 0.)  #set lower bound to 25% less, as soon as checkpoint condition "theta_closest >= current_checkpoint_theta" has been satisfied below (provides better distance rewards when going the way back)
+
         # if self.opt_warmstart:
         #     distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], _interp_fct_left=info['tunnel_boundary_left'], _interp_fct_right=info['tunnel_boundary_right'], theta_init=info['path_percentage'])
-        distance_to_tunnel_bounds, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest = distance_to_tunnel(ee_pos[1:], buffer_theta=info['tunnel_boundary_parametrization'], buffer_nodes_left=info['tunnel_boundary_left'], buffer_nodes_right=info['tunnel_boundary_right'])
+        distance_to_tunnel_bounds, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest = distance_to_tunnel(ee_pos[1:], buffer_theta=info['tunnel_boundary_parametrization'], 
+                                                                                                                                         buffer_nodes_left=info['tunnel_boundary_left'], buffer_nodes_right=info['tunnel_boundary_right'],
+                                                                                                                                         theta_min=tunnel_current_theta_min, theta_max=tunnel_current_theta_max)
         obs_dict["left_bound_closest"] = left_bound_closest
         obs_dict["right_bound_closest"] = right_bound_closest
 
@@ -322,25 +329,29 @@ class MyoUserMenuSteering(MyoUserBase):
         dist_to_start_line = jp.linalg.norm(ee_pos - start_pos, axis=-1)
         node_connections = nodes[1:] - nodes[:-1]
         path_length = jp.sum(jp.linalg.norm(node_connections, axis=1))
-        current_segment_id = jp.floor(theta_closest * (len(nodes) - 1)).astype(jp.int32)
-        current_segment_percentage = jp.mod(theta_closest * (len(nodes) - 1), 1)
-        # dist_to_end_line = (1. - current_segment_percentage) * jp.linalg.norm(node_connections[current_segment_id]) + jp.sum(jp.linalg.norm(node_connections[current_segment_id+1:], axis=1))
+        current_node_segment_id = jp.floor(theta_closest * (len(nodes) - 1)).astype(jp.int32)
+        current_node_segment_percentage = jp.mod(theta_closest * (len(nodes) - 1), 1)
+        # dist_to_end_line = (1. - current_node_segment_percentage) * jp.linalg.norm(node_connections[current_node_segment_id]) + jp.sum(jp.linalg.norm(node_connections[current_node_segment_id+1:], axis=1))
         ## TODO: debug/verify the following line!
-        dist_to_end_line = jp.sum(jp.linalg.norm((((1. - current_segment_percentage) * (jp.arange(len(node_connections)) == current_segment_id)) + 1. * (jp.arange(len(node_connections)) > current_segment_id)).reshape(-1, 1) * node_connections, axis=1))
+        dist_to_end_line = jp.sum(jp.linalg.norm((((1. - current_node_segment_percentage) * (jp.arange(len(node_connections)) == current_node_segment_id)) + 1. * (jp.arange(len(node_connections)) > current_node_segment_id)).reshape(-1, 1) * node_connections, axis=1))
         # dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_pos[1])  #TODO: generalise by measuring 3D distance rather than horizontal distance?
         obs_dict["nodes"] = info['tunnel_nodes']
 
         # Update phase immediately based on current position
-        touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
+        touching_screen_phase_0 = 1 *(jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
         within_tunnel_limits = distance_to_tunnel_bounds >= 0
         phase_0_completed_now = touching_screen_phase_0 * within_tunnel_limits
         phase_0_completed_steps = (phase_0_completed_steps + 1) * phase_0_completed_now
         completed_phase_0 = completed_phase_0 + (1 - completed_phase_0) * (phase_0_completed_steps >= self.phase_0_completed_min_steps)
         
-        crossed_end_line = theta_closest >= 1
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0])
-        touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
+        touching_screen_phase_1 = 1 * (phase_1_x_dist <= 0.01)
         inside_tunnel = completed_phase_0 * touching_screen_phase_1 * within_tunnel_limits
+
+        # select next checkpoint segment if checkpoint has been reached
+        current_checkpoint_segment_id = (info["current_checkpoint_segment_id"] + 1 * (theta_closest >= current_checkpoint_theta) * inside_tunnel).astype(jp.int32)
+
+        crossed_end_line = theta_closest >= 1
         phase_1_completed_now = inside_tunnel * crossed_end_line
         phase_1_completed_steps = (phase_1_completed_steps + 1) * phase_1_completed_now
         completed_phase_1 = completed_phase_1 + (1 - completed_phase_1) * (phase_1_completed_steps >= self.phase_1_completed_min_steps)   
@@ -378,13 +389,14 @@ class MyoUserMenuSteering(MyoUserBase):
 
         ## Additional observations
         ## WARNING: 'target' is only 2D, in contrast to MyoUserSteering (x/depth component is omitted)
-        obs_dict['target'] = completed_phase_0 * nodes[1+current_segment_id] + (1. - completed_phase_0) * nodes[0]
-        obs_dict['path_angle'] = info['tunnel_angle_interp'](theta_closest)
+        obs_dict['target'] = completed_phase_0 * nodes[1+current_node_segment_id] + (1. - completed_phase_0) * nodes[0]
+        obs_dict["path_angle"] = info["tunnel_angle_interp"](theta_closest)
         # obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
         obs_dict["phase_0_completed_steps"] = phase_0_completed_steps
         obs_dict["phase_1_completed_steps"] = phase_1_completed_steps
-        obs_dict["current_segment_id"] = current_segment_id
+        obs_dict["current_node_segment_id"] = current_node_segment_id
+        obs_dict["current_checkpoint_segment_id"] = current_checkpoint_segment_id
         obs_dict["remaining_timesteps"] = 1 + jp.round((self.max_duration - data.time)/self._config.ctrl_dt).astype(jp.int32)  #includes current time step
 
         return obs_dict
@@ -395,13 +407,14 @@ class MyoUserMenuSteering(MyoUserBase):
         # info['qacc'] = obs_dict['qacc']
         # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
-        info['path_percentage'] = obs_dict['path_percentage']
+        info["path_percentage"] = obs_dict["path_percentage"]
         info["phase_0_completed_steps"] = obs_dict["phase_0_completed_steps"]
         info["phase_1_completed_steps"] = obs_dict["phase_1_completed_steps"]
         info['completed_phase_0'] = obs_dict['completed_phase_0']
         info['completed_phase_1'] = obs_dict['completed_phase_1']
-        info['current_segment_id'] = obs_dict['current_segment_id']
-        info['remaining_timesteps'] = obs_dict['remaining_timesteps']
+        info["current_node_segment_id"] = obs_dict["current_node_segment_id"]
+        info["current_checkpoint_segment_id"] = obs_dict["current_checkpoint_segment_id"]
+        info["remaining_timesteps"] = obs_dict["remaining_timesteps"]
 
         return info
     
@@ -523,6 +536,8 @@ class MyoUserMenuSteering(MyoUserBase):
             rng1, rng_height_offset = jax.random.split(rng1, 2)
             start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
             start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+
+            tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         elif task_type == "circle_0":
             screen_margin = jp.array([0.01, 0.01])
             screen_size_with_margin = screen_size - 2*screen_margin  #here, margin is equally distributed between top/bottom and left/right
@@ -553,6 +568,8 @@ class MyoUserMenuSteering(MyoUserBase):
             rng1, rng_height_offset = jax.random.split(rng1, 2)
             start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
             start_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
+
+            tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
@@ -581,6 +598,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 'tunnel_boundary_left': buffer_nodes_left, 
                 'tunnel_boundary_right': buffer_nodes_right,
                 'tunnel_angle_interp': _interp_fct_angle,
+                'tunnel_checkpoints': tunnel_checkpoints,
         }
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
@@ -632,7 +650,8 @@ class MyoUserMenuSteering(MyoUserBase):
                 "phase_1_completed_steps": 0,
                 "completed_phase_0": 0.0,
                 "completed_phase_1": 0.0,
-                "current_segment_id": 0,
+                "current_node_segment_id": 0,
+                "current_checkpoint_segment_id": 0,
                 "remaining_timesteps": 1 + jp.round((self.max_duration - data.time)/self._config.ctrl_dt).astype(jp.int32),  #includes current time step
                 }
         info.update(self.get_custom_tunnel(rng, data, task_type=self.task_type))

@@ -108,7 +108,7 @@ def tunnel_from_nodes(nodes, tunnel_size=None, ord=jp.inf, width_height_constrai
 
     return nodes_left, nodes_right, theta_angle, angle
 
-def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None, buffer_theta=None, buffer_nodes_left=None, buffer_nodes_right=None, theta_init=2/3):
+def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None, buffer_theta=None, buffer_nodes_left=None, buffer_nodes_right=None, theta_init=2/3, theta_min=0., theta_max=1.):
     """
     Estimates(!) whether a given point is inside tunnel or not, and returns the signed distance (negative distance: outside tunnel).
     NOTES:
@@ -132,6 +132,12 @@ def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None
         buffer_theta = jp.linspace(0, 1, buffer_size)
         buffer_nodes_left = _interp_fct_left(buffer_theta)
         buffer_nodes_right = _interp_fct_right(buffer_theta)
+
+    # "clip" range of possible thetas by setting all node positions that are inaccessible (theta >= theta_max) to [jp.inf, jp.inf]
+    # _id_max = jp.round(theta_max*(len(buffer_theta)-1)).astype(jp.int32)
+    theta_mask = (jp.logical_or(buffer_theta < theta_min, buffer_theta > theta_max)).reshape(-1, 1) * jp.array([1e+8, 1e+8])
+    buffer_nodes_left = buffer_nodes_left + theta_mask
+    buffer_nodes_right = buffer_nodes_right + theta_mask
     
     buffer_id_closest_left = jp.argmin(jp.linalg.norm(buffer_nodes_left - jp.array(test_point), axis=1))
     buffer_id_closest_right = jp.argmin(jp.linalg.norm(buffer_nodes_right - jp.array(test_point), axis=1))
