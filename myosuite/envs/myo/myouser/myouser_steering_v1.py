@@ -36,7 +36,7 @@ from sklearn.metrics import r2_score
 
 @dataclass
 class MenuSteeringTaskConfig:
-    task_type: str = "menu_0"
+    type: str = "menu_0"
     distance_reach_metric_coefficient: float = 10.
     screen_distance_x: float = 0.5
     screen_friction: float = 0.1
@@ -196,7 +196,7 @@ class MyoUserMenuSteering(MyoUserBase):
     def _setup(self):
         """Task specific setup"""
         super()._setup()
-        self.task_type = self._config.task_config.task_type
+        self.task_type = self._config.task_config.type
         self.max_duration = self._config.task_config.max_duration
 
         # Prepare observation components
