@@ -679,6 +679,11 @@ class MyoUserMenuSteering(MyoUserBase):
         #done = rwd_dict['done']
         #jax.debug.print('self.terminate_out_of_bounds {}', self.terminate_out_of_bounds)
         done = self.terminate_out_of_bounds * jp.logical_or(rwd_dict['done'], rwd_dict["truncated"]).astype(jp.float32) + (1-self.terminate_out_of_bounds)*rwd_dict['done']
+        
+        # auxiliary variables used to aggregate certain metrics at the last step of an episode only
+        # #TODO: allow for option in EpisodeWrapper to log final/mean/sum metrics
+        truncated_timeout = data.time >= self.max_duration
+        last_step_of_episode = jp.logical_or(done, truncated_timeout)
 
         state.metrics.update(
             completed_phase_0 = obs_dict["completed_phase_0"],
@@ -690,7 +695,7 @@ class MyoUserMenuSteering(MyoUserBase):
             #con_0_touching_screen = obs_dict["con_0_touching_screen"],
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
-            percentage_achieved = done * obs_dict["path_percentage"],
+            percentage_achieved = last_step_of_episode * obs_dict["path_percentage"],
             distance_to_tunnel_bounds = obs_dict["distance_to_tunnel_bounds"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
             out_of_bounds = 1.-obs_dict["con_0_1_within_tunnel_limits"],
