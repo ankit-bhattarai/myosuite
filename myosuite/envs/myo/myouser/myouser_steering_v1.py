@@ -501,7 +501,7 @@ class MyoUserMenuSteering(MyoUserBase):
         start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
         
         nodes = start_pos + jp.array([-1., 1.]) * nodes_rel  #map from relative node coordinates (x, y) to MuJoCo coordinates (y, z) using (z <- y, y <- (-x))
-        nodes_left, nodes_right = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints)
+        nodes_left, nodes_right, theta_angle, angle = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints)
 
         theta = jp.linspace(0, 1, len(nodes))
         # _interp_fct_left = scipy.interpolate.PchipInterpolator(theta, nodes_left, k=spline_ord)

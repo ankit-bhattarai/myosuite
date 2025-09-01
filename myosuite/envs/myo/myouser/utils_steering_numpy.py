@@ -25,6 +25,17 @@ def heading_angle_NUMPY(parametrization_fct, theta, delta=1e-5, angle_change=Fal
         bwd_angle = (np.arctan2(-(cross2d(_bwd_delta, rel_vec)), np.dot(_bwd_delta, rel_vec)) + np.pi) % (2*np.pi) - np.pi
     return fwd_angle, bwd_angle
 
+def combine_fwd_bwd_angle_NUMPY(fwd_angle, bwd_angle, theta=None, delta=1e-3):
+    """
+    Stacks two vectors of angles computed via finite differences.
+    NOTE: This function assumes that fwd_angle and bwd_angle correspond to forward differences at theta and (theta-delta), respectively.
+    """
+    if theta is None:
+        theta = np.linspace(0, 1, len(fwd_angle))
+    theta_angle = np.ravel(np.vstack((theta - delta, theta)), order="F")[1:]
+    angle = np.ravel(np.vstack((bwd_angle, fwd_angle)), order="F")[1:]
+    return theta_angle, angle
+
 def angle_to_rot_matrix_NUMPY(angle):
     if (isinstance(angle, np.ndarray) and angle.ndim > 0) or isinstance(angle, list):
         return np.vectorize(functools.partial(angle_to_rot_matrix_NUMPY), otypes=[np.ndarray])(angle=np.array(angle))
@@ -51,6 +62,7 @@ def tunnel_from_nodes_NUMPY(nodes, tunnel_size=None, ord=np.inf, width_height_co
     fwd_angle, bwd_angle = heading_angle_NUMPY(_interp_fct, theta=theta, angle_change=False)
     fwd_rot_matrix = angle_to_rot_matrix_NUMPY(fwd_angle)
     bwd_rot_matrix = angle_to_rot_matrix_NUMPY(bwd_angle)
+    theta_angle, angle = combine_fwd_bwd_angle_NUMPY(fwd_angle=fwd_angle, bwd_angle=bwd_angle, theta=theta)
 
     _bwd_offset_left = np.vstack(list(map(lambda x: x.dot(angle_to_rot_matrix_NUMPY(np.pi/2).dot(np.array([1, 0]))), bwd_rot_matrix)))
     _fwd_offset_left = np.vstack(list(map(lambda x: x.dot(angle_to_rot_matrix_NUMPY(np.pi/2).dot(np.array([1, 0]))), fwd_rot_matrix)))
@@ -94,7 +106,7 @@ def tunnel_from_nodes_NUMPY(nodes, tunnel_size=None, ord=np.inf, width_height_co
         _outer_offset_right = 0.5*tunnel_size*_outer_offset_right/np.linalg.norm(_outer_offset_right, axis=1, ord=ord).reshape(-1, 1)
     nodes_right = nodes + _outer_offset_right
 
-    return nodes_left, nodes_right
+    return nodes_left, nodes_right, theta_angle, angle
 
 def distance_to_tunnel_NUMPY(test_point, _interp_fct_left, _interp_fct_right):
     """

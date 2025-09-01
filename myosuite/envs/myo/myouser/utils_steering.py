@@ -24,6 +24,17 @@ def heading_angle(parametrization_fct, theta, delta=1e-3, angle_change=False, re
         bwd_angle = (jp.arctan2(-(cross2d(_bwd_delta, rel_vec)), jp.dot(_bwd_delta, rel_vec)) + jp.pi) % (2*jp.pi) - jp.pi
         return fwd_angle, bwd_angle
     
+def combine_fwd_bwd_angle(fwd_angle, bwd_angle, theta=None, delta=1e-3):
+    """
+    Stacks two vectors of angles computed via finite differences.
+    NOTE: This function assumes that fwd_angle and bwd_angle correspond to forward differences at theta and (theta-delta), respectively.
+    """
+    if theta is None:
+        theta = jp.linspace(0, 1, len(fwd_angle))
+    theta_angle = jp.ravel(jp.vstack((theta - delta, theta)), order="F")[1:]
+    angle = jp.ravel(jp.vstack((bwd_angle, fwd_angle)), order="F")[1:]
+    return theta_angle, angle
+    
 def angle_to_rot_matrix(angle):
     return jp.array([[jp.cos(angle), -jp.sin(angle)], [jp.sin(angle), jp.cos(angle)]])
 
@@ -50,6 +61,7 @@ def tunnel_from_nodes(nodes, tunnel_size=None, ord=jp.inf, width_height_constrai
     fwd_angle, bwd_angle = heading_angle(theta=theta, parametrization_fct=_interp_fct, angle_change=False)
     fwd_rot_matrix = jax.vmap(angle_to_rot_matrix)(fwd_angle)
     bwd_rot_matrix = jax.vmap(angle_to_rot_matrix)(bwd_angle)
+    theta_angle, angle = combine_fwd_bwd_angle(fwd_angle=fwd_angle, bwd_angle=bwd_angle, theta=theta)
 
     _bwd_offset_left = jp.vstack(list(map(lambda x: x.dot(angle_to_rot_matrix(jp.pi/2).dot(jp.array([1, 0]))), bwd_rot_matrix)))
     _fwd_offset_left = jp.vstack(list(map(lambda x: x.dot(angle_to_rot_matrix(jp.pi/2).dot(jp.array([1, 0]))), fwd_rot_matrix)))
@@ -94,7 +106,7 @@ def tunnel_from_nodes(nodes, tunnel_size=None, ord=jp.inf, width_height_constrai
         _outer_offset_right = 0.5*tunnel_size*_outer_offset_right/jp.linalg.norm(_outer_offset_right, axis=1, ord=ord).reshape(-1, 1)
     nodes_right = nodes + _outer_offset_right
 
-    return nodes_left, nodes_right
+    return nodes_left, nodes_right, theta_angle, angle
 
 def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None, buffer_theta=None, buffer_nodes_left=None, buffer_nodes_right=None, theta_init=2/3):
     """
