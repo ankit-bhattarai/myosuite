@@ -735,6 +735,8 @@ class MyoUserMenuSteering(MyoUserBase):
         segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
 
         # TODO: this workaround only works for perfectly vertical and/or horizontal boundaries; in other cases, a fix is needed that allows to change site orientation on the fly...  
+        # For example, we could wrap each site into a body and apply all transformations to the body rather than to the site
+        # Also, how to render arbitrarily curved paths?
         height_width_indices_left = 1 + (np.abs(segments_angles_left // (np.pi/2)).astype(int))
         height_width_indices_right = 1 + (np.abs(segments_angles_right // (np.pi/2)).astype(int))
 
