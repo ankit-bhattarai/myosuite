@@ -288,6 +288,7 @@ class EvalVmapWrapper(Wrapper):
     self.eval_wrapped = True
 
   def eval_reset(self, rng: jax.Array, eval_id: jax.Array) -> State:
+    # TODO: make sure that this runs with n_episodes=1
     batch_size = len(eval_id)
     if batch_size > 1:
       rng = jax.random.split(rng, batch_size)
