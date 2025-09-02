@@ -522,7 +522,7 @@ class MyoUserMenuSteering(MyoUserBase):
             rng2, rng_width = jax.random.split(rng2, 2)
             width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
             rng2, rng_height = jax.random.split(rng2, 2)
-            height = min_height + jax.random.uniform(rng_height) * (2/3)*(max_height - min_height)  #default: 0.05
+            height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
 
             nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15], [0.2, -0.3], [0.3, -0.3]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
             tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
@@ -537,6 +537,39 @@ class MyoUserMenuSteering(MyoUserBase):
             rng1, rng_height_offset = jax.random.split(rng1, 2)
             start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
             start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+
+            tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
+        
+            # Store additional information
+            tunnel_extras = {}
+
+        if task_type == "menu_1":
+            screen_margin = jp.array([0.1, 0.1])
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
+
+            min_width, max_width = self.menu_min_width, self.menu_max_width
+            min_height, max_height = self.menu_min_height, self.menu_max_height
+
+            # Sample tunnel size
+            rng1, rng2 = jax.random.split(rng, 2)
+            rng2, rng_width = jax.random.split(rng2, 2)
+            width = min_width + jax.random.uniform(rng_width) * (max_width - min_width)  #default: 0.08
+            rng2, rng_height = jax.random.split(rng2, 2)
+            height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
+
+            nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [width, 0]
+            tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
+            width_height_constraints = [("width", width), ("height", height), ("height", height)]
+            total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([width, height])
+            norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
+
+            # Sample start pos (centred around screen_pos_topleft)
+            remaining_size = screen_size_with_margin - total_size
+            rng1, rng_width_offset = jax.random.split(rng1, 2)
+            start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+            rng1, rng_height_offset = jax.random.split(rng1, 2)
+            start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+            start_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
