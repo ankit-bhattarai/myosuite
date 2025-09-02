@@ -911,51 +911,51 @@ class MyoUserMenuSteering(MyoUserBase):
             mj_model.site(f"line_{n_connectors+i}").quat[:] = np.array([quat[3], quat[0], quat[1], quat[2]])  # Convert to scalar-first format
             mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([0., 1., 0., 0.8])
 
-        if self.task_type == "menu_0":
-            n_connectors = len(nodes) - 1
-            rel_vec = np.array([-1, 0])  #use [-1, 0] as reference vector for horizontal axis (i.e. x-axis in relevative plane coordinates), as global y-axis used as x-coordinate points to left in MuJoCo
+        # if self.task_type == "menu_0":
+        #     n_connectors = len(nodes) - 1
+        #     rel_vec = np.array([-1, 0])  #use [-1, 0] as reference vector for horizontal axis (i.e. x-axis in relevative plane coordinates), as global y-axis used as x-coordinate points to left in MuJoCo
 
-            mid_points_left = 0.5*(nodes_left[:-1] + nodes_left[1:])
-            connector_vecs_left = nodes_left[1:] - nodes_left[:-1]
-            segment_lengths_left = np.linalg.norm(connector_vecs_left, axis=1)
-            segments_angles_left = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_left])
+        #     mid_points_left = 0.5*(nodes_left[:-1] + nodes_left[1:])
+        #     connector_vecs_left = nodes_left[1:] - nodes_left[:-1]
+        #     segment_lengths_left = np.linalg.norm(connector_vecs_left, axis=1)
+        #     segments_angles_left = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_left])
 
-            mid_points_right = 0.5*(nodes_right[:-1] + nodes_right[1:])
-            connector_vecs_right = nodes_right[1:] - nodes_right[:-1]
-            segment_lengths_right = np.linalg.norm(connector_vecs_right, axis=1)
-            segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
+        #     mid_points_right = 0.5*(nodes_right[:-1] + nodes_right[1:])
+        #     connector_vecs_right = nodes_right[1:] - nodes_right[:-1]
+        #     segment_lengths_right = np.linalg.norm(connector_vecs_right, axis=1)
+        #     segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
 
-            # TODO: this workaround only works for perfectly vertical and/or horizontal boundaries; in other cases, a fix is needed that allows to change site orientation on the fly...  
-            # For example, we could wrap each site into a body and apply all transformations to the body rather than to the site
-            # Also, how to render arbitrarily curved paths?
-            height_width_indices_left = 1 + (np.abs(segments_angles_left // (np.pi/2)).astype(int))
-            height_width_indices_right = 1 + (np.abs(segments_angles_right // (np.pi/2)).astype(int))
+        #     # TODO: this workaround only works for perfectly vertical and/or horizontal boundaries; in other cases, a fix is needed that allows to change site orientation on the fly...  
+        #     # For example, we could wrap each site into a body and apply all transformations to the body rather than to the site
+        #     # Also, how to render arbitrarily curved paths?
+        #     height_width_indices_left = 1 + (np.abs(segments_angles_left // (np.pi/2)).astype(int))
+        #     height_width_indices_right = 1 + (np.abs(segments_angles_right // (np.pi/2)).astype(int))
 
-            for i in range(n_connectors):
-                # left segments
-                mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
-                mj_model.site(f"line_{i}").size[height_width_indices_left[i]] = 0.5*segment_lengths_left[i]
-                # mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
-                mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
+        #     for i in range(n_connectors):
+        #         # left segments
+        #         mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
+        #         mj_model.site(f"line_{i}").size[height_width_indices_left[i]] = 0.5*segment_lengths_left[i]
+        #         # mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
+        #         mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
 
-                # right segments
-                mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
-                mj_model.site(f"line_{n_connectors+i}").size[height_width_indices_right[i]] = 0.5*segment_lengths_right[i]
-                # mj_model.site(f"line_{n_connectors+i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
-                mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([1., 0., 0., 0.8])
-        elif self.task_type == "circle_0":
-            tunnel_center, circle_radius, tunnel_size = state.info["tunnel_extras"]["tunnel_center"], state.info["tunnel_extras"]["circle_radius"], state.info["tunnel_extras"]["tunnel_size"]
-            inner_radius, outer_radius = circle_radius - 0.5* tunnel_size, circle_radius + 0.5* tunnel_size
+        #         # right segments
+        #         mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
+        #         mj_model.site(f"line_{n_connectors+i}").size[height_width_indices_right[i]] = 0.5*segment_lengths_right[i]
+        #         # mj_model.site(f"line_{n_connectors+i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
+        #         mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([1., 0., 0., 0.8])
+        # elif self.task_type == "circle_0":
+        #     tunnel_center, circle_radius, tunnel_size = state.info["tunnel_extras"]["tunnel_center"], state.info["tunnel_extras"]["circle_radius"], state.info["tunnel_extras"]["tunnel_size"]
+        #     inner_radius, outer_radius = circle_radius - 0.5* tunnel_size, circle_radius + 0.5* tunnel_size
 
-            # outer circle boundary
-            mj_model.site("circle_0").pos[1:] = tunnel_center - screen_pos[1:]
-            mj_model.site("circle_0").size[0] = outer_radius
-            mj_model.site("circle_0").rgba[:] = np.array([0., 1., 0., 0.8])
+        #     # outer circle boundary
+        #     mj_model.site("circle_0").pos[1:] = tunnel_center - screen_pos[1:]
+        #     mj_model.site("circle_0").size[0] = outer_radius
+        #     mj_model.site("circle_0").rgba[:] = np.array([0., 1., 0., 0.8])
             
-            # inner circle boundary
-            mj_model.site("circle_1").pos[1:] = tunnel_center - screen_pos[1:]
-            mj_model.site("circle_1").size[0] = inner_radius
-            mj_model.site("circle_1").rgba[:] = np.array([1., 0., 0., 0.8])
+        #     # inner circle boundary
+        #     mj_model.site("circle_1").pos[1:] = tunnel_center - screen_pos[1:]
+        #     mj_model.site("circle_1").size[0] = inner_radius
+        #     mj_model.site("circle_1").rgba[:] = np.array([1., 0., 0., 0.8])
 
         # start pos
         mj_model.site("refpos_0").pos[1:] = nodes[0] - screen_pos[1:]
