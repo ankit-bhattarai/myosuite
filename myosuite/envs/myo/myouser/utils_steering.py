@@ -150,3 +150,9 @@ def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None
     inside_tunnel = jp.dot(left_bound_closest - test_point, right_bound_closest - test_point) < 0
     tunnel_distance = jp.minimum(jp.linalg.norm(left_vector), jp.linalg.norm(right_vector)) * (-1)**(~inside_tunnel)
     return tunnel_distance, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest
+
+def find_body_by_name(spec, name):
+    for body in spec.worldbody.bodies:
+        if body.name == name:
+            return body
+    return None

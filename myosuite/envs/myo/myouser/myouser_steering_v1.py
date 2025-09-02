@@ -28,11 +28,12 @@ from mujoco_playground._src import mjx_env
 import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes
+from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name
 from dataclasses import dataclass, field
 from typing import List, Dict
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+from scipy.spatial.transform import Rotation
 
 @dataclass
 class MenuSteeringTaskConfig:
@@ -185,12 +186,25 @@ class MyoUserMenuSteering(MyoUserBase):
             mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
         return mj_model
         
+    def add_lines(self, spec:mujoco.MjSpec):
+        screen = find_body_by_name(spec, "screen")
+        if self._config.task_config.type == "menu_0":
+            n_lines = 12
+        elif self._config.task_config.type == "circle_0":
+            circle_sample_points = self._config.task_config.circle_sample_points
+            n_lines = 2 * (circle_sample_points - 1)
+        print(f"Added {n_lines}")
+        for i in range(n_lines):
+            screen.add_site(pos=[-0.01, 0.25, 0.2], size=[0.001, 0.005, 0.01], name=f"line_{i}", rgba=[0, 0, 0, 0], type=mujoco._enums.mjtGeom(6), euler=[np.pi/2, 0, 0])
+
     def preprocess_spec(self, spec:mujoco.MjSpec):
+        self.add_lines(spec)
         for geom in spec.geoms:
             if (geom.type == mujoco.mjtGeom.mjGEOM_CYLINDER) or (geom.type == mujoco.mjtGeom.mjGEOM_ELLIPSOID):
                 geom.conaffinity = 0
                 geom.contype = 0
                 print(f"Disabled contacts for cylinder geom named \"{geom.name}\"")
+        
         return spec    
    
     def _setup(self):
@@ -812,24 +826,24 @@ class MyoUserMenuSteering(MyoUserBase):
         segment_lengths_right = np.linalg.norm(connector_vecs_right, axis=1)
         segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
 
-        # TODO: this workaround only works for perfectly vertical and/or horizontal boundaries; in other cases, a fix is needed that allows to change site orientation on the fly...  
-        # For example, we could wrap each site into a body and apply all transformations to the body rather than to the site
-        # Also, how to render arbitrarily curved paths?
-        height_width_indices_left = 1 + (np.abs(segments_angles_left // (np.pi/2)).astype(int))
-        height_width_indices_right = 1 + (np.abs(segments_angles_right // (np.pi/2)).astype(int))
-
         for i in range(n_connectors):
             # left segments
             mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
-            mj_model.site(f"line_{i}").size[height_width_indices_left[i]] = 0.5*segment_lengths_left[i]
-            # mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
+            mj_model.site(f"line_{i}").size[1] = 0.5*segment_lengths_left[i]  # Use y-dimension for length
+            mj_model.site(f"line_{i}").size[2] = 0.005  # Keep fixed width in z-dimension
+            # Convert angle to quaternion rotation around x-axis
+            quat = Rotation.from_euler("x", segments_angles_left[i]).as_quat(canonical=True)
+            mj_model.site(f"line_{i}").quat[:] = np.array([quat[3], quat[0], quat[1], quat[2]])  # Convert to scalar-first format
             mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
 
             # right segments
             mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
-            mj_model.site(f"line_{n_connectors+i}").size[height_width_indices_right[i]] = 0.5*segment_lengths_right[i]
-            # mj_model.site(f"line_{n_connectors+i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
-            mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([1., 0., 0., 0.8])
+            mj_model.site(f"line_{n_connectors+i}").size[1] = 0.5*segment_lengths_right[i]  # Use y-dimension for length
+            mj_model.site(f"line_{n_connectors+i}").size[2] = 0.005  # Keep fixed width in z-dimension
+            # Convert angle to quaternion rotation around x-axis
+            quat = Rotation.from_euler("x", segments_angles_right[i]).as_quat(canonical=True)
+            mj_model.site(f"line_{n_connectors+i}").quat[:] = np.array([quat[3], quat[0], quat[1], quat[2]])  # Convert to scalar-first format
+            mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([0., 1., 0., 0.8])
 
         # start pos
         mj_model.site("refpos_0").pos[1:] = nodes[0] - screen_pos[1:]
