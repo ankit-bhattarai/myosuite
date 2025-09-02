@@ -645,7 +645,7 @@ class MyoUserMenuSteering(MyoUserBase):
             r_inner = spiral_r(thetas, width - 2*jp.pi)
             tunnel_size = multiplier * (r_outer - r_inner)
             start_pos = jp.array([x_middle[0], y_middle[0]]) + screen_pos_center_left
-            tunnel_checkpoints = jp.array([1.])
+            tunnel_checkpoints = jp.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
             
             # Store additional information
             tunnel_extras = {}
