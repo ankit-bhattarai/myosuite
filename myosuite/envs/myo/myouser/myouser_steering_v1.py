@@ -28,7 +28,7 @@ from mujoco_playground._src import mjx_env
 import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name
+from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r
 from dataclasses import dataclass, field
 from typing import List, Dict
 from sklearn.linear_model import LinearRegression
@@ -190,7 +190,7 @@ class MyoUserMenuSteering(MyoUserBase):
         screen = find_body_by_name(spec, "screen")
         if self._config.task_config.type == "menu_0":
             n_lines = 12
-        elif self._config.task_config.type == "circle_0":
+        elif self._config.task_config.type in ["circle_0", "spiral_0"]:
             circle_sample_points = self._config.task_config.circle_sample_points
             n_lines = 2 * (circle_sample_points - 1)
         print(f"Added {n_lines}")
@@ -522,6 +522,7 @@ class MyoUserMenuSteering(MyoUserBase):
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_center = data.site_xpos[self.screen_id][1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
+        screen_pos_center_left = screen_pos_center + 0.5*jp.array([screen_size[0], 0])
 
         if task_type == "menu_0":
             screen_margin = jp.array([0.05, 0.05])
@@ -584,6 +585,26 @@ class MyoUserMenuSteering(MyoUserBase):
             start_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
+        elif task_type == "spiral_0":
+            n_sample_points = self.circle_sample_points
+            start = 15
+            end = 10
+            width = 2
+            theta_middle = jp.linspace((start)*jp.pi, (end+2)*jp.pi, n_sample_points)
+            r_middle = spiral_r_middle(theta_middle, width)
+            x_middle, y_middle = to_cartesian(theta_middle, r_middle)
+            x_middle, y_middle, multiplier = normalise_to_max(x_middle, y_middle, maximum=0.3)
+            nodes_rel = jp.stack([x_middle, y_middle], axis=-1)
+            print(f"nodes_rel.shape: {nodes_rel.shape}")
+            width_height_constraints = None
+            norm_ord = 2
+            thetas = jp.linspace(start*jp.pi, end*jp.pi, n_sample_points)
+            r_outer = spiral_r(thetas, width)
+            r_inner = spiral_r(thetas, width - 2*jp.pi)
+            tunnel_size = multiplier * (r_outer - r_inner)
+            start_pos = jp.array([x_middle[0], y_middle[0]]) + screen_pos_center_left
+            tunnel_checkpoints = jp.array([1.]) 
+
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 

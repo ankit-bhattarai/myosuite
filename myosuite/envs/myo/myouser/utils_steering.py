@@ -156,3 +156,26 @@ def find_body_by_name(spec, name):
         if body.name == name:
             return body
     return None
+
+def spiral_r(theta, w):
+    return jp.pow(theta+w, 3)
+
+def spiral_r_middle(theta, w):
+    """Trying to get the middle of the spiral"""
+    first = spiral_r(theta, w)
+    second = spiral_r(theta, w - 2*jp.pi)
+    return (first + second) / 2
+
+def to_cartesian(theta, r):
+    x = r * jp.cos(theta)
+    y = r * jp.sin(theta)
+    return x, y
+
+def normalise_to_max(x, y, maximum):
+    max_x = jp.max(jp.abs(x))
+    max_y = jp.max(jp.abs(y))
+    greater = jp.maximum(max_x, max_y)
+    multiplier = maximum / greater
+    x *= multiplier
+    y *= multiplier
+    return x, y, multiplier
