@@ -87,8 +87,8 @@
     <joint name="unrothum_r1_con" joint1="unrothum_r1" joint2="shoulder_elv" polycoef="0 -0.178 0 0 0" solimp="0.9999 0.9999"/>
     <joint name="unrothum_r2_con" joint1="unrothum_r2" joint2="shoulder_elv" polycoef="0 0.0490002 0 0 0" solimp="0.9999 0.9999"/>
     <joint name="unrothum_r3_con" joint1="unrothum_r3" joint2="shoulder_elv" polycoef="0 -0.396002 0 0 0" solimp="0.9999 0.9999"/>
-    <!-- <joint name="shoulder1_r2_con" joint1="shoulder1_r2" joint2="elv_angle" polycoef="0 -1 0 0 0" solimp="0.9999 0.9999"/> -->
-    <joint name="shoulder1_r2_con" joint1="shoulder1_r2" joint2="elv_angle" polycoef="0 -1 0 0.6366198 12" solimp="0.9999 0.9999"/>
+    <joint name="shoulder1_r2_con" joint1="shoulder1_r2" joint2="elv_angle" polycoef="0 -1 0 0 0" solimp="0.9999 0.9999"/>
+    <!-- <joint name="shoulder1_r2_con" joint1="shoulder1_r2" joint2="elv_angle" polycoef="0 -1 0 0.6366198 12" solimp="0.9999 0.9999"/> -->
     <joint name="r_z_constraint" joint1="r_z" polycoef="0 0 0 0 0"/>
     <weld name="origin_to_worldbody" body1="thorax" anchor="0 0 0" relpose="0 0 0 1 0 0 0" torquescale="1" active="false"/>
   </equality>
