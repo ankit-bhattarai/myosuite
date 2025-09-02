@@ -28,11 +28,12 @@ from mujoco_playground._src import mjx_env
 import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes
+from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r
 from dataclasses import dataclass, field
 from typing import List, Dict
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+from scipy.spatial.transform import Rotation
 
 @dataclass
 class MenuSteeringTaskConfig:
@@ -185,12 +186,25 @@ class MyoUserMenuSteering(MyoUserBase):
             mj_model.geom('fingertip_contact').friction = self._config.task_config.screen_friction
         return mj_model
         
+    def add_lines(self, spec:mujoco.MjSpec):
+        screen = find_body_by_name(spec, "screen")
+        if self._config.task_config.type == "menu_0":
+            n_lines = 12
+        elif self._config.task_config.type in ["circle_0", "spiral_0"]:
+            circle_sample_points = self._config.task_config.circle_sample_points
+            n_lines = 2 * (circle_sample_points - 1)
+        print(f"Added {n_lines}")
+        for i in range(n_lines):
+            screen.add_site(pos=[-0.01, 0.25, 0.2], size=[0.001, 0.005, 0.01], name=f"line_{i}", rgba=[0, 0, 0, 0], type=mujoco._enums.mjtGeom(6), euler=[np.pi/2, 0, 0])
+
     def preprocess_spec(self, spec:mujoco.MjSpec):
+        self.add_lines(spec)
         for geom in spec.geoms:
             if (geom.type == mujoco.mjtGeom.mjGEOM_CYLINDER) or (geom.type == mujoco.mjtGeom.mjGEOM_ELLIPSOID):
                 geom.conaffinity = 0
                 geom.contype = 0
                 print(f"Disabled contacts for cylinder geom named \"{geom.name}\"")
+        
         return spec    
    
     def _setup(self):
@@ -509,6 +523,7 @@ class MyoUserMenuSteering(MyoUserBase):
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_center = data.site_xpos[self.screen_id][1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
+        screen_pos_center_left = screen_pos_center + 0.5*jp.array([screen_size[0], 0])
 
         if task_type == "menu_0":
             screen_margin = jp.array([0.05, 0.05])
@@ -612,6 +627,28 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_extras = {"tunnel_center": start_pos,
                              "circle_radius": circle_radius,
                              "tunnel_size": tunnel_size}
+        elif task_type == "spiral_0":
+            n_sample_points = self.circle_sample_points
+            start = 15
+            end = 10
+            width = 2
+            theta_middle = jp.linspace((start)*jp.pi, (end+2)*jp.pi, n_sample_points)
+            r_middle = spiral_r_middle(theta_middle, width)
+            x_middle, y_middle = to_cartesian(theta_middle, r_middle)
+            x_middle, y_middle, multiplier = normalise_to_max(x_middle, y_middle, maximum=0.3)
+            nodes_rel = jp.stack([x_middle, y_middle], axis=-1)
+            print(f"nodes_rel.shape: {nodes_rel.shape}")
+            width_height_constraints = None
+            norm_ord = 2
+            thetas = jp.linspace(start*jp.pi, end*jp.pi, n_sample_points)
+            r_outer = spiral_r(thetas, width)
+            r_inner = spiral_r(thetas, width - 2*jp.pi)
+            tunnel_size = multiplier * (r_outer - r_inner)
+            start_pos = jp.array([x_middle[0], y_middle[0]]) + screen_pos_center_left
+            tunnel_checkpoints = jp.array([1.])
+            
+            # Store additional information
+            tunnel_extras = {}
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
@@ -841,8 +878,40 @@ class MyoUserMenuSteering(MyoUserBase):
         screen_pos = state.data.site_xpos[self.screen_id]
         nodes, _, _, _ = state.info["tunnel_nodes"], state.info["tunnel_boundary_left"], state.info["tunnel_boundary_right"], state.info["tunnel_boundary_parametrization"] 
         nodes_left, nodes_right = state.info["tunnel_nodes_left"], state.info["tunnel_nodes_right"]
-        if self.task_type == "menu_0":
 
+        n_connectors = len(nodes) - 1
+        rel_vec = np.array([-1, 0])  #use [-1, 0] as reference vector for horizontal axis (i.e. x-axis in relevative plane coordinates), as global y-axis used as x-coordinate points to left in MuJoCo
+
+        mid_points_left = 0.5*(nodes_left[:-1] + nodes_left[1:])
+        connector_vecs_left = nodes_left[1:] - nodes_left[:-1]
+        segment_lengths_left = np.linalg.norm(connector_vecs_left, axis=1)
+        segments_angles_left = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_left])
+
+        mid_points_right = 0.5*(nodes_right[:-1] + nodes_right[1:])
+        connector_vecs_right = nodes_right[1:] - nodes_right[:-1]
+        segment_lengths_right = np.linalg.norm(connector_vecs_right, axis=1)
+        segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
+
+        for i in range(n_connectors):
+            # left segments
+            mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
+            mj_model.site(f"line_{i}").size[1] = 0.5*segment_lengths_left[i]  # Use y-dimension for length
+            mj_model.site(f"line_{i}").size[2] = 0.005  # Keep fixed width in z-dimension
+            # Convert angle to quaternion rotation around x-axis
+            quat = Rotation.from_euler("x", segments_angles_left[i]).as_quat(canonical=True)
+            mj_model.site(f"line_{i}").quat[:] = np.array([quat[3], quat[0], quat[1], quat[2]])  # Convert to scalar-first format
+            mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
+
+            # right segments
+            mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
+            mj_model.site(f"line_{n_connectors+i}").size[1] = 0.5*segment_lengths_right[i]  # Use y-dimension for length
+            mj_model.site(f"line_{n_connectors+i}").size[2] = 0.005  # Keep fixed width in z-dimension
+            # Convert angle to quaternion rotation around x-axis
+            quat = Rotation.from_euler("x", segments_angles_right[i]).as_quat(canonical=True)
+            mj_model.site(f"line_{n_connectors+i}").quat[:] = np.array([quat[3], quat[0], quat[1], quat[2]])  # Convert to scalar-first format
+            mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([0., 1., 0., 0.8])
+
+        if self.task_type == "menu_0":
             n_connectors = len(nodes) - 1
             rel_vec = np.array([-1, 0])  #use [-1, 0] as reference vector for horizontal axis (i.e. x-axis in relevative plane coordinates), as global y-axis used as x-coordinate points to left in MuJoCo
 

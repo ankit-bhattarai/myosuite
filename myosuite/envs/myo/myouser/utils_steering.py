@@ -150,3 +150,32 @@ def distance_to_tunnel(test_point, _interp_fct_left=None, _interp_fct_right=None
     inside_tunnel = jp.dot(left_bound_closest - test_point, right_bound_closest - test_point) < 0
     tunnel_distance = jp.minimum(jp.linalg.norm(left_vector), jp.linalg.norm(right_vector)) * (-1)**(~inside_tunnel)
     return tunnel_distance, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest
+
+def find_body_by_name(spec, name):
+    for body in spec.worldbody.bodies:
+        if body.name == name:
+            return body
+    return None
+
+def spiral_r(theta, w):
+    return jp.pow(theta+w, 3)
+
+def spiral_r_middle(theta, w):
+    """Trying to get the middle of the spiral"""
+    first = spiral_r(theta, w)
+    second = spiral_r(theta, w - 2*jp.pi)
+    return (first + second) / 2
+
+def to_cartesian(theta, r):
+    x = r * jp.cos(theta)
+    y = r * jp.sin(theta)
+    return x, y
+
+def normalise_to_max(x, y, maximum):
+    max_x = jp.max(jp.abs(x))
+    max_y = jp.max(jp.abs(y))
+    greater = jp.maximum(max_x, max_y)
+    multiplier = maximum / greater
+    x *= multiplier
+    y *= multiplier
+    return x, y, multiplier
