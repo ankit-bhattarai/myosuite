@@ -843,15 +843,15 @@ class MyoUserMenuSteering(MyoUserBase):
         elif self.task_type == "circle_0":
             tunnel_center, circle_radius, tunnel_size = state.info["tunnel_extras"]["tunnel_center"], state.info["tunnel_extras"]["circle_radius"], state.info["tunnel_extras"]["tunnel_size"]
             inner_radius, outer_radius = circle_radius - 0.5* tunnel_size, circle_radius + 0.5* tunnel_size
-            
-            # inner circle boundary
-            mj_model.site("circle_0").pos[1:] = tunnel_center
-            mj_model.site("circle_0").size[0] = inner_radius
-            mj_model.site("circle_0").rgba[:] = np.array([1., 0., 0., 0.8])
 
             # outer circle boundary
-            mj_model.site("circle_1").pos[1:] = tunnel_center
-            mj_model.site("circle_1").size[0] = outer_radius
+            mj_model.site("circle_0").pos[1:] = tunnel_center - screen_pos[1:]
+            mj_model.site("circle_0").size[0] = outer_radius
+            mj_model.site("circle_0").rgba[:] = np.array([0., 1., 0., 0.8])
+            
+            # inner circle boundary
+            mj_model.site("circle_1").pos[1:] = tunnel_center - screen_pos[1:]
+            mj_model.site("circle_1").size[0] = inner_radius
             mj_model.site("circle_1").rgba[:] = np.array([1., 0., 0., 0.8])
 
         # start pos
