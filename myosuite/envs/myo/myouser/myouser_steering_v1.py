@@ -390,6 +390,7 @@ class MyoUserMenuSteering(MyoUserBase):
         ## Additional observations
         ## WARNING: 'target' is only 2D, in contrast to MyoUserSteering (x/depth component is omitted)
         obs_dict['target'] = completed_phase_0 * nodes[1+current_node_segment_id] + (1. - completed_phase_0) * nodes[0]
+        obs_dict['start_pos'] = nodes[0]
         obs_dict["path_angle"] = info["tunnel_angle_interp"](theta_closest)
         # obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
