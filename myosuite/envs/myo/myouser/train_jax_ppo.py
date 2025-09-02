@@ -209,8 +209,9 @@ def main(cfg: Config):
   print(f"#episodes: {len(rollouts)}")
   if env_cfg.env_name=="MyoUserSteering" or env_cfg.env_name=="MyoUserSteeringLaw":
     metrics = env.calculate_metrics(rollouts, ['R^2'])
-    #wandb.log(metrics)
     print(metrics)
+    if config.wandb.enabled:
+      wandb.log(metrics)
 
   # Render and save the rollout
   with h5py.File(logdir / 'traj.h5', 'w') as h5f:
@@ -235,21 +236,19 @@ def main(cfg: Config):
       render_every=render_every,
       #scene_option=scene_option,
   )
-  media.write_video(logdir / "rollout.mp4", frames, fps=fps)
-  print("Rollout video saved as 'rollout.mp4'.")
-  if config.wandb.enabled and not config.run.play_only:
-    wandb.log({'final_policy/front_view': wandb.Video(str(logdir / "rollout.mp4"), format="mp4")})  #, fps=fps)})
-
-  # render side view
-  frames = render_traj(
-      rollouts, env, height=480, width=640, camera=None,
-      notebook_context=False,
-      #scene_option=scene_option
-  )
   media.write_video(logdir / "rollout_1.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout_1.mp4'.")
   if config.wandb.enabled and not config.run.play_only:
     wandb.log({'final_policy/side_view': wandb.Video(str(logdir / "rollout_1.mp4"), format="mp4")})  #, fps=fps)})
+  if config.wandb.enabled:
+    checkpoint_path = logdir / "checkpoints"
+    artifact = wandb.Artifact(
+        name=f'{exp_name}-checkpoints',  
+        type="model"            
+    )
+    artifact.add_dir(str(checkpoint_path))  # ganzen Ordner hinzufügen
+    wandb.log_artifact(artifact)
+    
 
 
 if __name__ == "__main__":
