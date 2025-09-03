@@ -236,6 +236,17 @@ def main(cfg: Config):
       render_every=render_every,
       #scene_option=scene_option,
   )
+  media.write_video(logdir / "rollout.mp4", frames, fps=fps)
+  print("Rollout video saved as 'rollout.mp4'.")
+  if config.wandb.enabled and not config.run.play_only:
+    wandb.log({'final_policy/front_view': wandb.Video(str(logdir / "rollout.mp4"), format="mp4")})  #, fps=fps)})
+
+  # render side view
+  frames = render_traj(
+      rollouts, env, height=480, width=640, camera=None,
+      notebook_context=False,
+      #scene_option=scene_option
+  )
   media.write_video(logdir / "rollout_1.mp4", frames, fps=fps)
   print("Rollout video saved as 'rollout_1.mp4'.")
   if config.wandb.enabled and not config.run.play_only:
@@ -248,7 +259,6 @@ def main(cfg: Config):
     )
     artifact.add_dir(str(checkpoint_path))  # ganzen Ordner hinzufügen
     wandb.log_artifact(artifact)
-    
 
 
 if __name__ == "__main__":
