@@ -28,7 +28,7 @@ from mujoco_playground._src import mjx_env
 import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r
+from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r, normalise
 from dataclasses import dataclass, field
 from typing import List, Dict
 from sklearn.linear_model import LinearRegression
@@ -72,6 +72,11 @@ class MenuSteeringTaskConfig:
     min_dwell_phase_0: float = 0.
     min_dwell_phase_1: float = 0.
     tunnel_buffer_size: int = 101
+    spiral_start: int = 15
+    spiral_end: int = 12
+    spiral_width: float = 2
+    spiral_max: float = 0.25
+    spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -587,13 +592,18 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
         elif task_type == "spiral_0":
             n_sample_points = self.circle_sample_points
-            start = 15
-            end = 10
-            width = 2
+            start = self._config.task_config.spiral_start
+            end = self._config.task_config.spiral_end
+            width = self._config.task_config.spiral_width
+            thetas = jp.linspace(start*jp.pi, end*jp.pi, n_sample_points)
+            rs = spiral_r(thetas, width)
+            xs, ys = to_cartesian(thetas, rs)
+            xs, ys, multiplier = normalise_to_max(xs, ys, maximum=self._config.task_config.spiral_max)
             theta_middle = jp.linspace((start)*jp.pi, (end+2)*jp.pi, n_sample_points)
             r_middle = spiral_r_middle(theta_middle, width)
             x_middle, y_middle = to_cartesian(theta_middle, r_middle)
-            x_middle, y_middle, multiplier = normalise_to_max(x_middle, y_middle, maximum=0.3)
+            # x_middle, y_middle, multiplier = normalise_to_max(x_middle, y_middle, maximum=0.3)
+            x_middle, y_middle = normalise(x_middle, y_middle, multiplier)
             nodes_rel = jp.stack([x_middle, y_middle], axis=-1)
             print(f"nodes_rel.shape: {nodes_rel.shape}")
             width_height_constraints = None
@@ -602,8 +612,9 @@ class MyoUserMenuSteering(MyoUserBase):
             r_outer = spiral_r(thetas, width)
             r_inner = spiral_r(thetas, width - 2*jp.pi)
             tunnel_size = multiplier * (r_outer - r_inner)
-            start_pos = jp.array([x_middle[0], y_middle[0]]) + screen_pos_center_left
-            tunnel_checkpoints = jp.array([1.]) 
+            start_pos = screen_pos_center
+            # Setting checkpoints to 10% intervals of the spiral
+            tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints) 
 
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
