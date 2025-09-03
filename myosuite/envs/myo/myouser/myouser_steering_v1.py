@@ -77,6 +77,7 @@ class MenuSteeringTaskConfig:
     spiral_width: float = 2
     spiral_max: float = 0.25
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
+    spiral_flip: bool = True
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -604,6 +605,9 @@ class MyoUserMenuSteering(MyoUserBase):
             x_middle, y_middle = to_cartesian(theta_middle, r_middle)
             # x_middle, y_middle, multiplier = normalise_to_max(x_middle, y_middle, maximum=0.3)
             x_middle, y_middle = normalise(x_middle, y_middle, multiplier)
+            if self._config.task_config.spiral_flip:
+                x_middle = jp.flip(x_middle)
+                y_middle = jp.flip(y_middle)
             nodes_rel = jp.stack([x_middle, y_middle], axis=-1)
             print(f"nodes_rel.shape: {nodes_rel.shape}")
             width_height_constraints = None
@@ -612,6 +616,8 @@ class MyoUserMenuSteering(MyoUserBase):
             r_outer = spiral_r(thetas, width)
             r_inner = spiral_r(thetas, width - 2*jp.pi)
             tunnel_size = multiplier * (r_outer - r_inner)
+            if self._config.task_config.spiral_flip:
+                tunnel_size = jp.flip(tunnel_size)
             start_pos = screen_pos_center
             # Setting checkpoints to 10% intervals of the spiral
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints) 
