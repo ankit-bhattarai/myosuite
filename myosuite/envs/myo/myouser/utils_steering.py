@@ -184,3 +184,6 @@ def normalise(x, y, multiplier):
     x *= multiplier
     y *= multiplier
     return x, y
+
+def rotate(x, y, angle):
+    return x * jp.cos(angle) - y * jp.sin(angle), x * jp.sin(angle) + y * jp.cos(angle)
