@@ -44,7 +44,7 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'target', 'path_percentage', 'distance_to_tunnel_bounds', 'path_angle'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'start_pos', 'path_percentage', 'distance_to_left_tunnel_bound' 'distance_to_left_tunnel_bound', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 10,
         "bonus_1": 50,
@@ -329,9 +329,10 @@ class MyoUserMenuSteering(MyoUserBase):
 
         # if self.opt_warmstart:
         #     distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], _interp_fct_left=info['tunnel_boundary_left'], _interp_fct_right=info['tunnel_boundary_right'], theta_init=info['path_percentage'])
-        distance_to_tunnel_bounds, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest = distance_to_tunnel(ee_pos[1:], buffer_theta=info['tunnel_boundary_parametrization'], 
+        distance_to_left_tunnel_bound, distance_to_right_tunnel_bound, theta_closest_left, theta_closest_right, left_bound_closest, right_bound_closest = distance_to_tunnel(ee_pos[1:], buffer_theta=info['tunnel_boundary_parametrization'], 
                                                                                                                                          buffer_nodes_left=info['tunnel_boundary_left'], buffer_nodes_right=info['tunnel_boundary_right'],
                                                                                                                                          theta_min=tunnel_current_theta_min, theta_max=tunnel_current_theta_max)
+        distance_to_tunnel_bounds = jp.minimum(distance_to_left_tunnel_bound, distance_to_right_tunnel_bound)
         obs_dict["left_bound_closest"] = left_bound_closest
         obs_dict["right_bound_closest"] = right_bound_closest
 
@@ -395,6 +396,8 @@ class MyoUserMenuSteering(MyoUserBase):
         obs_dict["con_1_touching_screen"] = touching_screen_phase_1
         obs_dict["completed_phase_1"] = completed_phase_1
         obs_dict["softcons_for_bounds"] = softcons_for_bounds
+        obs_dict["distance_to_left_tunnel_bound"] = distance_to_left_tunnel_bound
+        obs_dict["distance_to_right_tunnel_bound"] = distance_to_right_tunnel_bound
         obs_dict["distance_to_tunnel_bounds"] = distance_to_tunnel_bounds
 
         ## Compute distances
