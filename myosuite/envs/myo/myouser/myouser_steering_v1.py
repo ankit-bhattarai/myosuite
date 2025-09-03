@@ -77,7 +77,7 @@ class MenuSteeringTaskConfig:
     spiral_width: float = 2
     spiral_max: float = 0.25
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
-    spiral_flip: bool = True
+    spiral_flip: bool = False
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
