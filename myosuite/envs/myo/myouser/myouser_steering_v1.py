@@ -322,6 +322,7 @@ class MyoUserMenuSteering(MyoUserBase):
         ee_pos = obs_dict['fingertip']
         current_checkpoint_theta = info["tunnel_checkpoints"][info["current_checkpoint_segment_id"]]
         previous_checkpoint_theta = 0. + (info["current_checkpoint_segment_id"] > 0) * info["tunnel_checkpoints"][info["current_checkpoint_segment_id"] - 1]
+        #TODO: move these theta_range values (0.05, -0.25) to config!
         tunnel_current_theta_max = jp.minimum(current_checkpoint_theta + 0.05, 1.)  #allow for 5% more, to ensure that checkpoint condition "theta_closest >= current_checkpoint_theta" can be satisfied below
         tunnel_current_theta_min = jp.maximum(previous_checkpoint_theta - 0.25, 0.)  #set lower bound to 25% less, as soon as checkpoint condition "theta_closest >= current_checkpoint_theta" has been satisfied below (provides better distance rewards when going the way back)
 
