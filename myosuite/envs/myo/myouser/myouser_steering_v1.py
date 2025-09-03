@@ -410,6 +410,7 @@ class MyoUserMenuSteering(MyoUserBase):
         ## Additional observations
         ## WARNING: 'target' is only 2D, in contrast to MyoUserSteering (x/depth component is omitted)
         obs_dict['target'] = completed_phase_0 * nodes[1+current_node_segment_id] + (1. - completed_phase_0) * nodes[0]
+        obs_dict['start_pos'] = nodes[0]
         obs_dict["path_angle"] = info["tunnel_angle_interp"](theta_closest)
         # obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         # obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
@@ -542,7 +543,7 @@ class MyoUserMenuSteering(MyoUserBase):
             rng2, rng_width = jax.random.split(rng2, 2)
             width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
             rng2, rng_height = jax.random.split(rng2, 2)
-            height = min_height + jax.random.uniform(rng_height) * (2/3)*(max_height - min_height)  #default: 0.05
+            height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
 
             nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15], [0.2, -0.3], [0.3, -0.3]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
             tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
@@ -559,6 +560,42 @@ class MyoUserMenuSteering(MyoUserBase):
             start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
+        
+            # Store additional information
+            tunnel_extras = {}
+
+        if task_type == "menu_1":
+            screen_margin = jp.array([0.1, 0.1])
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
+
+            min_width, max_width = self.menu_min_width, self.menu_max_width
+            min_height, max_height = self.menu_min_height, self.menu_max_height
+
+            # Sample tunnel size
+            rng1, rng2 = jax.random.split(rng, 2)
+            rng2, rng_width = jax.random.split(rng2, 2)
+            width = min_width + jax.random.uniform(rng_width) * (max_width - min_width)  #default: 0.08
+            rng2, rng_height = jax.random.split(rng2, 2)
+            height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
+
+            nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [width, 0]
+            tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
+            width_height_constraints = [("width", width), ("height", height), ("height", height)]
+            total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([width, height])
+            norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
+
+            # Sample start pos (centred around screen_pos_topleft)
+            remaining_size = screen_size_with_margin - total_size
+            rng1, rng_width_offset = jax.random.split(rng1, 2)
+            start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+            rng1, rng_height_offset = jax.random.split(rng1, 2)
+            start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+            start_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+
+            tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
+        
+            # Store additional information
+            tunnel_extras = {}
         elif task_type == "circle_0":
             screen_margin = jp.array([0.01, 0.01])
             screen_size_with_margin = screen_size - 2*screen_margin  #here, margin is equally distributed between top/bottom and left/right
@@ -591,6 +628,11 @@ class MyoUserMenuSteering(MyoUserBase):
             start_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
+        
+            # Store additional information
+            tunnel_extras = {"tunnel_center": start_pos,
+                             "circle_radius": circle_radius,
+                             "tunnel_size": tunnel_size}
         elif task_type == "spiral_0":
             n_sample_points = self.circle_sample_points
             start = self._config.task_config.spiral_start
@@ -620,8 +662,10 @@ class MyoUserMenuSteering(MyoUserBase):
                 tunnel_size = jp.flip(tunnel_size)
             start_pos = screen_pos_center
             # Setting checkpoints to 10% intervals of the spiral
-            tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints) 
-
+            tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
+            
+            # Store additional information
+            tunnel_extras = {}
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
@@ -651,6 +695,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 'tunnel_boundary_right': buffer_nodes_right,
                 'tunnel_angle_interp': _interp_fct_angle,
                 'tunnel_checkpoints': tunnel_checkpoints,
+                'tunnel_extras': tunnel_extras,
         }
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
@@ -883,6 +928,52 @@ class MyoUserMenuSteering(MyoUserBase):
             mj_model.site(f"line_{n_connectors+i}").quat[:] = np.array([quat[3], quat[0], quat[1], quat[2]])  # Convert to scalar-first format
             mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([0., 1., 0., 0.8])
 
+        if self.task_type == "menu_0":
+            n_connectors = len(nodes) - 1
+            rel_vec = np.array([-1, 0])  #use [-1, 0] as reference vector for horizontal axis (i.e. x-axis in relevative plane coordinates), as global y-axis used as x-coordinate points to left in MuJoCo
+
+            mid_points_left = 0.5*(nodes_left[:-1] + nodes_left[1:])
+            connector_vecs_left = nodes_left[1:] - nodes_left[:-1]
+            segment_lengths_left = np.linalg.norm(connector_vecs_left, axis=1)
+            segments_angles_left = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_left])
+
+            mid_points_right = 0.5*(nodes_right[:-1] + nodes_right[1:])
+            connector_vecs_right = nodes_right[1:] - nodes_right[:-1]
+            segment_lengths_right = np.linalg.norm(connector_vecs_right, axis=1)
+            segments_angles_right = np.array([(np.arctan2(-(cross2d(_vec, rel_vec)), np.dot(_vec, rel_vec)) + np.pi) % (2*np.pi) - np.pi for _vec in connector_vecs_right])
+
+            # TODO: this workaround only works for perfectly vertical and/or horizontal boundaries; in other cases, a fix is needed that allows to change site orientation on the fly...  
+            # For example, we could wrap each site into a body and apply all transformations to the body rather than to the site
+            # Also, how to render arbitrarily curved paths?
+            height_width_indices_left = 1 + (np.abs(segments_angles_left // (np.pi/2)).astype(int))
+            height_width_indices_right = 1 + (np.abs(segments_angles_right // (np.pi/2)).astype(int))
+
+            for i in range(n_connectors):
+                # left segments
+                mj_model.site(f"line_{i}").pos[1:] = mid_points_left[i] - screen_pos[1:]
+                mj_model.site(f"line_{i}").size[height_width_indices_left[i]] = 0.5*segment_lengths_left[i]
+                # mj_model.site(f"line_{i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_left[i]).as_quat(scalar_first=True)
+                mj_model.site(f"line_{i}").rgba[:] = np.array([1., 0., 0., 0.8])
+
+                # right segments
+                mj_model.site(f"line_{n_connectors+i}").pos[1:] = mid_points_right[i] - screen_pos[1:]
+                mj_model.site(f"line_{n_connectors+i}").size[height_width_indices_right[i]] = 0.5*segment_lengths_right[i]
+                # mj_model.site(f"line_{n_connectors+i}").quat[:] = scipy.spatial.transform.Rotation.from_euler("x", segments_angles_right[i]).as_quat(scalar_first=True)
+                mj_model.site(f"line_{n_connectors+i}").rgba[:] = np.array([1., 0., 0., 0.8])
+        elif self.task_type == "circle_0":
+            tunnel_center, circle_radius, tunnel_size = state.info["tunnel_extras"]["tunnel_center"], state.info["tunnel_extras"]["circle_radius"], state.info["tunnel_extras"]["tunnel_size"]
+            inner_radius, outer_radius = circle_radius - 0.5* tunnel_size, circle_radius + 0.5* tunnel_size
+
+            # outer circle boundary
+            mj_model.site("circle_0").pos[1:] = tunnel_center - screen_pos[1:]
+            mj_model.site("circle_0").size[0] = outer_radius
+            mj_model.site("circle_0").rgba[:] = np.array([0., 1., 0., 0.8])
+            
+            # inner circle boundary
+            mj_model.site("circle_1").pos[1:] = tunnel_center - screen_pos[1:]
+            mj_model.site("circle_1").size[0] = inner_radius
+            mj_model.site("circle_1").rgba[:] = np.array([1., 0., 0., 0.8])
+
         # start pos
         mj_model.site("refpos_0").pos[1:] = nodes[0] - screen_pos[1:]
         mj_model.site("refpos_0").rgba[:] = np.array([0., 1., 0., 0.8])
@@ -890,7 +981,6 @@ class MyoUserMenuSteering(MyoUserBase):
         # end pos
         mj_model.site("refpos_1").pos[1:] = nodes[-1] - screen_pos[1:]
         mj_model.site("refpos_1").rgba[:] = np.array([0., 0., 1., 0.8])
-
 
     def calculate_metrics(self, rollout, eval_metrics_keys={"R^2"}):
 
