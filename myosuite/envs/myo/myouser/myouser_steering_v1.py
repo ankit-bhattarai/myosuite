@@ -73,7 +73,7 @@ class MenuSteeringTaskConfig:
     min_dwell_phase_1: float = 0.
     tunnel_buffer_size: int = 101
     spiral_start: int = 15
-    spiral_end: int = 12
+    spiral_end: int = 10
     spiral_width: float = 2
     spiral_max: float = 0.25
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
@@ -667,7 +667,11 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
             
             # Store additional information
-            tunnel_extras = {}
+            tunnel_extras = {
+                'r_inner': r_inner,
+                'r_outer': r_outer,
+                'multiplier': multiplier,
+            }
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
