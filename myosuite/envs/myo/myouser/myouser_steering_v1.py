@@ -29,6 +29,7 @@ import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
 from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r, normalise
+from myosuite.envs.myo.myouser.steering_law_calculations import calculate_steering_laws
 from dataclasses import dataclass, field
 from typing import List, Dict
 from sklearn.linear_model import LinearRegression
@@ -983,67 +984,8 @@ class MyoUserMenuSteering(MyoUserBase):
         mj_model.site("refpos_1").pos[1:] = nodes[-1] - screen_pos[1:]
         mj_model.site("refpos_1").rgba[:] = np.array([0., 0., 1., 0.8])
 
-    def calculate_metrics(self, rollout, eval_metrics_keys={"R^2"}):
+    def calculate_metrics(self, rollout, task):
 
-        eval_metrics = {}
-
-        # TODO: set eval_metrics_keys as config param?
-        
-        # TODO: implement R^2 calculation for arbitrary steering tasks!
-        if False:  #"R^2" in eval_metrics_keys:
-            a,b,r2,_ = self.calculate_r2(rollout)
-            eval_metrics["eval/R^2"] = r2
-            eval_metrics["eval/a"] = a
-            eval_metrics["eval/b"] = b
+        eval_metrics = calculate_steering_laws(rollout, task)
 
         return eval_metrics
-
-    def calculate_r2(self, rollouts, average_r2=True):
-        MTs = jp.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ds = jp.array([jp.abs(rollout[np.argwhere(_compl_0)[0].item()].info["end_line"][1] - rollout[np.argwhere(_compl_0)[0].item()].info["start_line"][1])
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ws = jp.array([jp.abs(rollout[np.argwhere(_compl_0)[0].item()].info["top_line"][2] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line"][2])
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        IDs = (Ds / Ws).reshape(-1, 1)
-
-        if len(IDs) == 0 or len(MTs) == 0:
-            return np.nan, np.nan, np.nan, {}
-
-        if average_r2:
-            # Fit linear curve to mean per ID and compute R^2
-            IDs_rounded = IDs.round(2)
-            ID_means = jp.sort(jp.unique(IDs_rounded)).reshape(-1, 1)
-            MT_means = jp.array([MTs[np.argwhere(IDs_rounded.flatten() == _id)].mean() for _id in ID_means])
-
-            model = LinearRegression()
-            model.fit(ID_means, MT_means)
-            a = model.intercept_
-            b = model.coef_[0]
-            y_pred = model.predict(ID_means)
-            r2 = r2_score(MT_means, y_pred)
-            #print(f"IDs: {IDs}")
-            #print(f"MTs: {MTs}")
-        else:
-            # Fit linear curve to all data points and compute R^2
-            model = LinearRegression()
-            model.fit(IDs, MTs)
-            a = model.intercept_
-            b = model.coef_[0]
-            y_pred = model.predict(IDs)
-            r2 = r2_score(MTs, y_pred)
-            #print(f"IDs: {IDs}")
-            #print(f"MTs: {MTs}")
-
-        print(f"R^2: {r2}, a,b: {a},{b}")
-
-        sl_data = {"ID": IDs, "MT_ref": MTs,
-                "MT_pred": y_pred,
-                "D": Ds, "W": Ws}
-        if average_r2:
-            sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
-
-        return a,b,r2,sl_data
