@@ -74,11 +74,11 @@ class MenuSteeringTaskConfig:
     min_dwell_phase_1: float = 0.
     tunnel_buffer_size: int = 101
     spiral_start: int = 15
-    spiral_end: int = 12
+    spiral_end: int = 10
     spiral_width: float = 2
     spiral_max: float = 0.25
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
-    spiral_flip: bool = True
+    spiral_flip: bool = False
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -323,6 +323,7 @@ class MyoUserMenuSteering(MyoUserBase):
         ee_pos = obs_dict['fingertip']
         current_checkpoint_theta = info["tunnel_checkpoints"][info["current_checkpoint_segment_id"]]
         previous_checkpoint_theta = 0. + (info["current_checkpoint_segment_id"] > 0) * info["tunnel_checkpoints"][info["current_checkpoint_segment_id"] - 1]
+        #TODO: move these theta_range values (0.05, -0.25) to config!
         tunnel_current_theta_max = jp.minimum(current_checkpoint_theta + 0.05, 1.)  #allow for 5% more, to ensure that checkpoint condition "theta_closest >= current_checkpoint_theta" can be satisfied below
         tunnel_current_theta_min = jp.maximum(previous_checkpoint_theta - 0.25, 0.)  #set lower bound to 25% less, as soon as checkpoint condition "theta_closest >= current_checkpoint_theta" has been satisfied below (provides better distance rewards when going the way back)
 
@@ -667,7 +668,11 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
             
             # Store additional information
-            tunnel_extras = {}
+            tunnel_extras = {
+                'r_inner': r_inner,
+                'r_outer': r_outer,
+                'multiplier': multiplier,
+            }
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
