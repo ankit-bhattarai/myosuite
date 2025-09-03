@@ -115,11 +115,15 @@ def main(cfg: Config):
 
   # Initialize Weights & Biases if required
   if config.wandb.enabled and not config.run.play_only:
+    wandb_api = wandb.Api()
     wandb_params = config.wandb.to_dict()
     wandb_params.pop('enabled')
-    wandb.init(**wandb_params)
+    wandb_run = wandb.init(**wandb_params)
+    wandb_run = wandb_api.run(f"{wandb_params['entity']}/{wandb_params['project']}/{wandb_run.id}")
     wandb.config.update(config.to_dict())
     wandb.config.update({"env_name": env_cfg.env_name})
+  else:
+    wandb_run = None
 
   # Initialize TensorBoard if required
   if config.run.use_tb and not config.run.play_only:
@@ -138,7 +142,9 @@ def main(cfg: Config):
                     logdir=logdir,
                     checkpoint_path=config.rl.load_checkpoint_path,
                     progress_fn=progress_fn,
+                    wandb_run=wandb_run,
                     log_wandb_videos=config.wandb.enabled and not config.run.play_only and config.run.log_wandb_videos,
+                    log_wandb_checkpoints=config.wandb.enabled and not config.run.play_only,
                     vision=config.vision.enabled,
                     domain_randomization=config.run.domain_randomization,
                     rscope_envs=config.run.rscope_envs,
@@ -251,14 +257,6 @@ def main(cfg: Config):
   print("Rollout video saved as 'rollout_1.mp4'.")
   if config.wandb.enabled and not config.run.play_only:
     wandb.log({'final_policy/side_view': wandb.Video(str(logdir / "rollout_1.mp4"), format="mp4")})  #, fps=fps)})
-  if config.wandb.enabled:
-    checkpoint_path = logdir / "checkpoints"
-    artifact = wandb.Artifact(
-        name=f'{exp_name}-checkpoints',  
-        type="model"            
-    )
-    artifact.add_dir(str(checkpoint_path))  # ganzen Ordner hinzufügen
-    wandb.log_artifact(artifact)
 
 
 if __name__ == "__main__":

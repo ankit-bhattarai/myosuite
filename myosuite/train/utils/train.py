@@ -260,7 +260,9 @@ def train_or_load_checkpoint(env_name,
                     checkpoint_path=None,
                     policy_params_fn_checkpoints=None,
                     progress_fn=lambda *args: None,
+                    wandb_run=None,
                     log_wandb_videos=False,
+                    log_wandb_checkpoints=False,
                     vision=False,
                     domain_randomization=False,
                     rscope_envs=None,
@@ -321,6 +323,15 @@ def train_or_load_checkpoint(env_name,
             save_args = orbax_utils.save_args_from_target(params)
             path = ckpt_path / f"{current_step}"
             orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+            if log_wandb_checkpoints:
+                exp_name = logdir.name
+                artifact = wandb.Artifact(
+                    name=f'{exp_name}-checkpoints',  
+                    type="model"
+                )
+                artifact.add_dir(str(ckpt_path))
+                artifact.save()
+                
 
     training_params = dict(ppo_params)
     if "network_factory" in training_params:
@@ -456,5 +467,21 @@ def train_or_load_checkpoint(env_name,
     if vision:
         eval_env = env
     eval_env.enable_eval_mode()
+
+    # Make sure all checkpoints and eval videos are uploaded into wandb artifact
+    if log_wandb_checkpoints:
+        
+        exp_name = logdir.name
+        artifact = wandb.Artifact(
+            name=f'{exp_name}-checkpoints',  
+            type="model"
+        )
+        artifact.add_dir(str(ckpt_path))
+        artifact.save()
+        
+        # delete previous artifacts (need to create multiple as we cannot override existing ones during training)
+        for artifact in wandb_run.logged_artifacts():
+            if any([artifact.name.split("v")[-1] == str(_i) for _i in range(ppo_params.num_checkpoints)]):
+                artifact.delete()
 
     return eval_env, make_inference_fn, params
