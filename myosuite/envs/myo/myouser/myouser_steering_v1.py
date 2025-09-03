@@ -666,7 +666,11 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
             
             # Store additional information
-            tunnel_extras = {}
+            tunnel_extras = {
+                'r_inner': r_inner,
+                'r_outer': r_outer,
+                'multiplier': multiplier,
+            }
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
