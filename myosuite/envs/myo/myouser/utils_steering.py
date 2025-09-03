@@ -179,3 +179,8 @@ def normalise_to_max(x, y, maximum):
     x *= multiplier
     y *= multiplier
     return x, y, multiplier
+
+def normalise(x, y, multiplier):
+    x *= multiplier
+    y *= multiplier
+    return x, y
