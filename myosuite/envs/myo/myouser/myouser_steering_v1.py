@@ -28,7 +28,7 @@ from mujoco_playground._src import mjx_env
 import scipy  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r, normalise
+from myosuite.envs.myo.myouser.utils_steering import cross2d, distance_to_tunnel, tunnel_from_nodes, find_body_by_name, spiral_r_middle, to_cartesian, normalise_to_max, spiral_r, normalise, rotate
 from myosuite.envs.myo.myouser.steering_law_calculations import calculate_steering_laws
 from dataclasses import dataclass, field
 from typing import List, Dict
@@ -75,8 +75,8 @@ class MenuSteeringTaskConfig:
     tunnel_buffer_size: int = 101
     spiral_start: int = 15
     spiral_end: int = 10
-    spiral_width: float = 2
-    spiral_max: float = 0.25
+    spiral_width_range: List[float] = field(default_factory=lambda: [2, 30])
+    spiral_max_range: List[float] = field(default_factory=lambda: [0.2, 0.3])
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
     spiral_flip: bool = False
 
@@ -637,27 +637,43 @@ class MyoUserMenuSteering(MyoUserBase):
             #                  "tunnel_size": tunnel_size}
             tunnel_extras = {}
         elif task_type == "spiral_0":
+            rng, rng_width, rng_rot, rng_max, rng_left, rng_right, rng_end = jax.random.split(rng, 7)
             n_sample_points = self.circle_sample_points
             start = self._config.task_config.spiral_start
             end = self._config.task_config.spiral_end
-            width = self._config.task_config.spiral_width
-            thetas = jp.linspace(start*jp.pi, end*jp.pi, n_sample_points)
+            end_modifier = jax.random.uniform(rng_end, minval=0, maxval=2*jp.pi)
+            width_range = self._config.task_config.spiral_width_range
+            width = jax.random.uniform(rng_width, minval=width_range[0], maxval=width_range[1])
+            thetas = jp.linspace(start*jp.pi, end*jp.pi-end_modifier, n_sample_points)
+            angle = jax.random.uniform(rng_rot, minval=0, maxval=2*jp.pi)
             rs = spiral_r(thetas, width)
             xs, ys = to_cartesian(thetas, rs)
-            xs, ys, multiplier = normalise_to_max(xs, ys, maximum=self._config.task_config.spiral_max)
-            theta_middle = jp.linspace((start)*jp.pi, (end+2)*jp.pi, n_sample_points)
+            xs, ys = rotate(xs, ys, angle)
+            spiral_max_range = self._config.task_config.spiral_max_range
+            spiral_max = jax.random.uniform(rng_max, minval=spiral_max_range[0], maxval=spiral_max_range[1])
+            xs, ys, multiplier = normalise_to_max(xs, ys, maximum=spiral_max)
+            theta_middle = jp.linspace((start)*jp.pi, (end+2)*jp.pi - end_modifier, n_sample_points)
             r_middle = spiral_r_middle(theta_middle, width)
             x_middle, y_middle = to_cartesian(theta_middle, r_middle)
             # x_middle, y_middle, multiplier = normalise_to_max(x_middle, y_middle, maximum=0.3)
+            x_middle, y_middle = rotate(x_middle, y_middle, angle)
             x_middle, y_middle = normalise(x_middle, y_middle, multiplier)
             if self._config.task_config.spiral_flip:
                 x_middle = jp.flip(x_middle)
                 y_middle = jp.flip(y_middle)
+            max_xs = jp.max(jp.abs(xs))
+            max_ys = jp.max(jp.abs(ys))
+            max_shift_xs = 0.3 - max_xs
+            max_shift_ys = 0.3 - max_ys
+            shift_xs = jax.random.uniform(rng_left, minval=0, maxval=max_shift_xs)
+            shift_ys = jax.random.uniform(rng_right, minval=0, maxval=max_shift_ys)
+            x_middle = x_middle + shift_xs
+            y_middle = y_middle + shift_ys
             nodes_rel = jp.stack([x_middle, y_middle], axis=-1)
             print(f"nodes_rel.shape: {nodes_rel.shape}")
             width_height_constraints = None
             norm_ord = 2
-            thetas = jp.linspace(start*jp.pi, end*jp.pi, n_sample_points)
+            thetas = jp.linspace(start*jp.pi, end*jp.pi - end_modifier, n_sample_points)
             r_outer = spiral_r(thetas, width)
             r_inner = spiral_r(thetas, width - 2*jp.pi)
             tunnel_size = multiplier * (r_outer - r_inner)
