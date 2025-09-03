@@ -557,7 +557,7 @@ class MyoUserMenuSteering(MyoUserBase):
             start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
             rng1, rng_height_offset = jax.random.split(rng1, 2)
             start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-            start_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+            anchor_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -590,7 +590,7 @@ class MyoUserMenuSteering(MyoUserBase):
             start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
             rng1, rng_height_offset = jax.random.split(rng1, 2)
             start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-            start_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+            anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -625,14 +625,15 @@ class MyoUserMenuSteering(MyoUserBase):
             start_width_offset = -0.5*remaining_size[0] + jax.random.uniform(rng_width_offset) * remaining_size[0]
             rng1, rng_height_offset = jax.random.split(rng1, 2)
             start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
-            start_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
+            anchor_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
         
             # Store additional information
-            tunnel_extras = {"tunnel_center": start_pos,
-                             "circle_radius": circle_radius,
-                             "tunnel_size": tunnel_size}
+            # tunnel_extras = {"tunnel_center": anchor_pos,
+            #                  "circle_radius": circle_radius,
+            #                  "tunnel_size": tunnel_size}
+            tunnel_extras = {}
         elif task_type == "spiral_0":
             n_sample_points = self.circle_sample_points
             start = self._config.task_config.spiral_start
@@ -660,7 +661,7 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_size = multiplier * (r_outer - r_inner)
             if self._config.task_config.spiral_flip:
                 tunnel_size = jp.flip(tunnel_size)
-            start_pos = screen_pos_center
+            anchor_pos = screen_pos_center
             # Setting checkpoints to 10% intervals of the spiral
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
             
@@ -669,7 +670,7 @@ class MyoUserMenuSteering(MyoUserBase):
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
-        nodes = start_pos + jp.array([-1., 1.]) * nodes_rel  #map from relative node coordinates (x, y) to MuJoCo coordinates (y, z) using (z <- y, y <- (-x))
+        nodes = anchor_pos + jp.array([-1., 1.]) * nodes_rel  #map from relative node coordinates (x, y) to MuJoCo coordinates (y, z) using (z <- y, y <- (-x))
         nodes_left, nodes_right, theta_angle, angle = tunnel_from_nodes(nodes, tunnel_size=tunnel_size, width_height_constraints=width_height_constraints, ord=norm_ord)
 
         # interpolate nodes
