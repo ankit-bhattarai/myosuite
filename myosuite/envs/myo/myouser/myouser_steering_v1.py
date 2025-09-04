@@ -371,9 +371,10 @@ class MyoUserMenuSteering(MyoUserBase):
         obs_dict["nodes"] = info['tunnel_nodes']
 
         # Update phase immediately based on current position
-        touching_screen_phase_0 = 1 *(jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
+        touching_screen_phase_0 = 1 * (jp.linalg.norm(ee_pos[0] - obs_dict['screen_pos'][0]) <= 0.01)
+        close_to_start_pos = 1 * (jp.linalg.norm(ee_pos[1:] - nodes[0]) <= 0.02)
         within_tunnel_limits = distance_to_tunnel_bounds >= 0
-        phase_0_completed_now = touching_screen_phase_0 * within_tunnel_limits
+        phase_0_completed_now = touching_screen_phase_0 * close_to_start_pos * within_tunnel_limits
         phase_0_completed_steps = (phase_0_completed_steps + 1) * phase_0_completed_now
         completed_phase_0 = completed_phase_0 + (1 - completed_phase_0) * (phase_0_completed_steps >= self.phase_0_completed_min_steps)
         
@@ -398,6 +399,7 @@ class MyoUserMenuSteering(MyoUserBase):
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
 
         obs_dict["con_0_touching_screen"] = touching_screen_phase_0
+        obs_dict["con_0_close_to_start_pos"] = close_to_start_pos
         obs_dict["con_0_1_within_tunnel_limits"] = within_tunnel_limits 
         obs_dict["completed_phase_0"] = completed_phase_0
         obs_dict['completed_phase_0_arr'] = jp.array([completed_phase_0])
@@ -905,6 +907,7 @@ class MyoUserMenuSteering(MyoUserBase):
             'distance_phase_0': 0.0,
             'distance_phase_1': 0.0,
             'phase_1_x_dist': 0.0,
+            #'con_0_close_to_start_pos: 0.0,
             #'con_0_touching_screen': 0.0,
             #'con_1_touching_screen': 0.0,
             #'con_1_crossed_line_y': 0.0,
@@ -1039,6 +1042,7 @@ class MyoUserMenuSteering(MyoUserBase):
             distance_phase_0 = obs_dict["distance_phase_0"],
             distance_phase_1 = obs_dict["distance_phase_1"],
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
+            #con_0_close_to_start_pos = obs_dict["con_0_close_to_start_pos"],
             #con_0_touching_screen = obs_dict["con_0_touching_screen"],
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
