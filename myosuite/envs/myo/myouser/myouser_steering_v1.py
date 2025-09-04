@@ -665,7 +665,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
             # Sample element width and height
             if width is None:
-                rng, rng_height = jax.random.split(rng, 2)
+                rng, rng_width = jax.random.split(rng, 2)
                 width = min_item_width + jax.random.uniform(rng_width) * (max_item_width - min_item_width)  #default: 0.08
             if height is None:
                 rng, rng_height = jax.random.split(rng, 2)
@@ -673,7 +673,9 @@ class MyoUserMenuSteering(MyoUserBase):
             if n_menu_items is None:
                 max_items_permitted = jp.floor(screen_size_with_margin[1] / height).astype(jp.int32)
                 rng, rng_n_menu_items = jax.random.split(rng, 2)
-                n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, jp.minimum(max_n_menu_items, max_items_permitted) + 1))  #default: 4
+                # n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, jp.minimum(max_n_menu_items, max_items_permitted).astype(jp.int32) + 1))  #default: 4
+                n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, max_n_menu_items + 1))  #default: 4
+                n_menu_items = jp.minimum(n_menu_items, max_items_permitted).astype(jp.int32)  #TODO: warning: larger values of n_menu_items might be assigned higher probability, due to clipping after random choice (which is required to avoid dynamic indexing)
 
 
             nodes_rel = jp.array([[0., 0.], [0., -(n_menu_items-1)*height], [width, -(n_menu_items-1)*height]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [width, 0]

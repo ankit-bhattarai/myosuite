@@ -281,10 +281,11 @@ class AutoResetWrapper(Wrapper):
 class EvalVmapWrapper(Wrapper):
   """Vectorizes Brax env for evaluation runs, using eval_reset instead of reset as entrypoint."""
 
-  def __init__(self, env: Env, n_randomizations: Optional[int] = None):
+  def __init__(self, env: Env, n_randomizations: Optional[int] = None, predefined_evals: Optional[bool] = True):
     super().__init__(env)
     # self.batch_size = batch_size
     self.n_randomizations = n_randomizations
+    self.predefined_evals = predefined_evals
     self.eval_wrapped = True
 
   def eval_reset(self, rng: jax.Array, eval_id: jax.Array) -> State:
@@ -292,10 +293,13 @@ class EvalVmapWrapper(Wrapper):
     batch_size = len(eval_id)
     if batch_size > 1:
       rng = jax.random.split(rng, batch_size)
-    if self.n_randomizations is not None:
-       ## only allow for eval_id values between 0 and (self.n_randomizations - 1) in this case
-       eval_id = eval_id % self.n_randomizations
-    return jax.vmap(self.env.eval_reset)(rng, eval_id)
+    if self.predefined_evals:
+      if self.n_randomizations is not None:
+        ## only allow for eval_id values between 0 and (self.n_randomizations - 1) in this case
+        eval_id = eval_id % self.n_randomizations
+      return jax.vmap(self.env.eval_reset)(rng, eval_id)
+    else:
+      return jax.vmap(self.env.reset)(rng)
 
   def step(self, state: State, action: jax.Array) -> State:
     return jax.vmap(self.env.step)(state, action)
@@ -303,10 +307,16 @@ class EvalVmapWrapper(Wrapper):
 
 def _maybe_wrap_env_for_evaluation(eval_env, seed):
     rng = jax.random.PRNGKey(seed)
-    n_randomizations = eval_env.prepare_eval_rollout(rng)
+    predefined_evals = True
+    try:
+      n_randomizations = eval_env.prepare_eval_rollout(rng)
+    except AssertionError:
+      print("ERROR: No evaluations defined for this task! Will use random tunnels for evaluation instead...")
+      n_randomizations = 1
+      predefined_evals = False
     
     if not hasattr(eval_env, "eval_wrapped"):
-        eval_env = EvalVmapWrapper(eval_env, n_randomizations=n_randomizations)
-        assert hasattr(eval_env, "eval_wrapped")
+      eval_env = EvalVmapWrapper(eval_env, n_randomizations=n_randomizations, predefined_evals=predefined_evals)
+      assert hasattr(eval_env, "eval_wrapped")
     
     return eval_env, n_randomizations
