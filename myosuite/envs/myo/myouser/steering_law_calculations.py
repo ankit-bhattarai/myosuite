@@ -10,12 +10,12 @@ def calculate_steering_laws(rollouts, task, average_r2=True):
     if np.isnan(r2):
         return {'r2': r2}
     else:
-        if task == 'circle_0':
+        if task in ('circle_0',):
             r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data, average_r2, task)
             r2_yamanaka, sl_data2 = calculate_yamanaka_steering_law(sl_data, average_r2, task)
             r2_liu, sl_data3 = calculate_liu_steering_law(sl_data, average_r2, task)
             metrics = {'r2': r2, 'r2_nancel': r2_nancel, 'r2_yamanaka': r2_yamanaka, 'r2_liu': r2_liu}
-        elif task in ('menu_0', 'menu_1'):
+        elif task in ('menu_0', 'menu_1', 'menu_2'):
             r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data, average_r2, task)
             metrics = {'r2': r2, 'r2_ahlstroem': r2_ahlstroem}
         return metrics
@@ -120,7 +120,7 @@ def calculate_ahlstroem_steering_law(sl_data, average_r2=True):
 def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):   
     sl_data = {}
 
-    if task in ('menu_0', 'menu_1'):
+    if task in ('menu_0', 'menu_1', 'menu_2'):
         MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
                                                 any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])

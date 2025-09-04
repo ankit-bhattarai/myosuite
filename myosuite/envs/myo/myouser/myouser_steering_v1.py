@@ -68,8 +68,10 @@ class MenuSteeringTaskConfig:
     rectangle_max_size: float = 0.1
     menu_min_width: float = 0.05
     menu_max_width: float = 0.1
-    menu_min_height: float = 0.03
+    menu_min_height: float = 0.02
     menu_max_height: float = 0.08
+    menu_min_items: int = 2
+    menu_max_items: int = 6
     circle_min_radius: float = 0.05
     circle_max_radius: float = 0.16
     circle_min_width: float = 0.03
@@ -201,8 +203,8 @@ class MyoUserMenuSteering(MyoUserBase):
         
     def add_lines(self, spec:mujoco.MjSpec):
         screen = find_body_by_name(spec, "screen")
-        if self._config.task_config.type in ["rectangle_0", "menu_0", "menu_1"]:
-            n_lines = 12  #TODO: set lower number for "menu_0" and "rectangle_0"
+        if self._config.task_config.type in ["rectangle_0", "menu_0", "menu_1", "menu_2"]:
+            n_lines = 12  #TODO: set lower number for "menu_1", "menu_2" and "rectangle_0"
         elif self._config.task_config.type in ["circle_0", "spiral_0"]:
             circle_sample_points = self._config.task_config.circle_sample_points
             n_lines = 2 * (circle_sample_points - 1)
@@ -268,6 +270,8 @@ class MyoUserMenuSteering(MyoUserBase):
         self.menu_max_width = self._config.task_config.menu_max_width
         self.menu_min_height = self._config.task_config.menu_min_height
         self.menu_max_height = self._config.task_config.menu_max_height
+        self.menu_min_items = self._config.task_config.menu_min_items
+        self.menu_max_items = self._config.task_config.menu_max_items
         self.circle_min_radius = self._config.task_config.circle_min_radius
         self.circle_max_radius = self._config.task_config.circle_max_radius
         self.circle_min_width = self._config.task_config.circle_min_width
@@ -544,7 +548,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
     def get_custom_tunnel(self, rng: jax.Array, screen_pos_center: jax.Array,
                           task_type="menu_0",
-                          width=None, height=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None) -> dict[str, jax.Array]:
+                          width=None, height=None, n_menu_items=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None) -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
@@ -633,6 +637,46 @@ class MyoUserMenuSteering(MyoUserBase):
                 height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
 
             nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [width, 0]
+            tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
+            width_height_constraints = [("width", width), ("height", height), ("height", height)]
+            total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([width, height])
+            norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
+
+            if anchor_pos is None:
+                # Sample start pos (centred around screen_pos_topleft)
+                remaining_size = screen_size_with_margin - total_size
+                rng, rng_width_offset = jax.random.split(rng, 2)
+                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                rng, rng_height_offset = jax.random.split(rng, 2)
+                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+
+            tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
+        
+            # Store additional information
+            tunnel_extras = {}
+        elif task_type == "menu_2":
+            screen_margin = jp.array([0.1, 0.75])  #lower screen margin for vertical axis, as we do not display/consider the upper half of the first item, which adds another effective margin in this direction
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
+
+            min_item_width, max_item_width = self.menu_min_width, self.menu_max_width
+            min_element_height, max_element_height = self.menu_min_height, self.menu_max_height
+            min_n_menu_items, max_n_menu_items = self.menu_min_items, self.menu_max_items
+
+            # Sample element width and height
+            if width is None:
+                rng, rng_height = jax.random.split(rng, 2)
+                width = min_item_width + jax.random.uniform(rng_width) * (max_item_width - min_item_width)  #default: 0.08
+            if height is None:
+                rng, rng_height = jax.random.split(rng, 2)
+                height = min_element_height + jax.random.uniform(rng_height) * (max_element_height - min_element_height)  #default: 0.05
+            if n_menu_items is None:
+                max_items_permitted = jp.floor(screen_size_with_margin[1] / height).astype(jp.int32)
+                rng, rng_n_menu_items = jax.random.split(rng, 2)
+                n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, jp.minimum(max_n_menu_items, max_items_permitted) + 1))  #default: 4
+
+
+            nodes_rel = jp.array([[0., 0.], [0., -(n_menu_items-1)*height], [width, -(n_menu_items-1)*height]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [width, 0]
             tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
             width_height_constraints = [("width", width), ("height", height), ("height", height)]
             total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([width, height])
@@ -829,6 +873,32 @@ class MyoUserMenuSteering(MyoUserBase):
                         # for i in range(10):
                         tunnels_total.append(tunnel_info)
                         print(f"Added path for ID {ID}, L {L}, W {W}")
+                    _attempts +=1
+                if _attempts == max_attempts_per_tunnel:
+                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+        elif task_type == "menu_2":
+            ## vary lengths for fixed width and number of menu items
+            IDs = [5, 6, 7, 8]  #based on Ahlström steering law!
+            W = 0.075
+            n_menu_items = 4
+
+            for ID in IDs:
+                combos = 0
+                _attempts = 0
+                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    if (n_menu_items < (ID**2 - 4 * n_menu_items)):  #otherwise we cannot find an appropriate height!
+                        H = 2 * W / (jp.sqrt(ID**2 - 4 * n_menu_items))  #based on Ahlström steering law!
+                        if (self.menu_min_height <= H <= self.menu_max_height):
+                            anchor_pos = None  #fixed: screen_pos_center; random: None
+                            tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                                width=W, height=H, n_menu_items=n_menu_items,
+                                                                anchor_pos=anchor_pos)
+                            combos += 1
+                            _attempts = 0
+                            # for i in range(10):
+                            tunnels_total.append(tunnel_info)
+                            print(f"Added path for ID {ID}, W {W}, H {H}, N ITEMS {n_menu_items}")
                     _attempts +=1
                 if _attempts == max_attempts_per_tunnel:
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
