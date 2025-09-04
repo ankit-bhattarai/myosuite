@@ -133,7 +133,7 @@ def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):
         Ws = np.array([np.abs(rollout[0].info['tunnel_nodes_left'][:-1,0] - rollout[0].info['tunnel_nodes_right'][1:,0]) for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and
                         any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         IDs = np.stack([
-            Ds[:, i] / Ws[:, i] if i % 2 == 0 else Ws[:, i] / Ds[:, i]
+            Ds[:, i] / Ws[:, i] if (i % 2 == 0) and (task.startswith('menu')) else Ws[:, i] / Ds[:, i]
             for i in range(Ds.shape[1])
         ], axis=1).sum(axis=1).reshape(-1, 1)
 
