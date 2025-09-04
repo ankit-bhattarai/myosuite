@@ -44,18 +44,18 @@ class MenuSteeringTaskConfig:
     screen_friction: float = 0.1
     ee_name: str = "fingertip"
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
-    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'start_pos', 'path_percentage', 'distance_to_left_tunnel_bound', 'distance_to_left_tunnel_bound', 'path_angle'])  #TODO: update
+    omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'start_pos', 'path_percentage', 'distance_to_left_tunnel_bound', 'distance_to_right_tunnel_bound', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
-        "reach": 5,
+        "reach": 10,
         "reach_old": 0,
-        "bonus_1": 10,  #200,
+        "bonus_1": 50,  #200,
         "bonus_1_old": 0,
         "phase_1_touch": 10,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
         "jac_effort": 10,
         "power_for_softcons": 15,
-        "truncated": -1,
+        "truncated": -2,
         "truncated_progress": 0, #-20,
         "bonus_inside_path": 0,
     })
@@ -563,7 +563,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 rng, rng_size = jax.random.split(rng, 2)
                 tunnel_size = min_size + jax.random.uniform(rng_size) * (max_size - min_size)
 
-            nodes_rel = jp.array([[0., 0.], [-tunnel_length, 0.]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
+            nodes_rel = jp.array([[0., 0.], [tunnel_length, 0.]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
             width_height_constraints = None
             total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([0, tunnel_size])
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
