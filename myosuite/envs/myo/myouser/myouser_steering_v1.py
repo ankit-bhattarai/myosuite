@@ -47,7 +47,9 @@ class MenuSteeringTaskConfig:
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'start_pos', 'path_percentage', 'distance_to_left_tunnel_bound', 'distance_to_left_tunnel_bound', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 10,
+        "reach_old": 0,
         "bonus_1": 50,
+        "bonus_1_old": 0,
         "phase_1_touch": 1, #10,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
@@ -455,8 +457,10 @@ class MyoUserMenuSteering(MyoUserBase):
             # Optional Keys
             # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
             ('reach',   1.*(1.-(obs_dict['phase_1_completed_steps']>0))*(obs_dict["path_length"] - obs_dict["dist"])/(obs_dict["path_length"])),  #-1.*reach_dist)
+            ('reach_old',   -1.*(1.-(obs_dict['phase_1_completed_steps']>0))*obs_dict["dist"]),  #-1.*reach_dist)
             #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
             ('bonus_1',   1.*(obs_dict['completed_phase_1'])*(obs_dict['remaining_timesteps'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
+            ('bonus_1_old',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
             #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
             #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
