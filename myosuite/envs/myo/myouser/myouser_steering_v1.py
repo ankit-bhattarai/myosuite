@@ -1143,8 +1143,10 @@ class MyoUserMenuSteering(MyoUserBase):
         mj_model.site("refpos_1").pos[1:] = nodes[-1] - screen_pos[1:]
         mj_model.site("refpos_1").rgba[:] = np.array([0., 0., 1., 0.8])
 
-    def calculate_metrics(self, rollout, task):
+    def calculate_metrics(self, rollout, eval_metrics_keys={}, task_type=None):
+        if task_type is None:
+            task_type = self._config.task_config.type
 
-        eval_metrics = calculate_steering_laws(rollout, task)
+        eval_metrics = calculate_steering_laws(rollout, task_type)
 
         return eval_metrics
