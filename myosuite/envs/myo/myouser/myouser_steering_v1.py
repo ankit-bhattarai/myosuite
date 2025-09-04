@@ -528,15 +528,15 @@ class MyoUserMenuSteering(MyoUserBase):
             # 'end_line': data.site_xpos[self.end_line_id],
         }
 
-    def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data,
-                          task_type="menu_0") -> dict[str, jax.Array]:
+    def get_custom_tunnel(self, rng: jax.Array, screen_pos_center: jax.Array,
+                          task_type="menu_0",
+                          width=None, height=None, circle_radius=None, tunnel_size=None, anchor_pos=None) -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
-        screen_pos_center = data.site_xpos[self.screen_id][1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
-        screen_pos_center_left = screen_pos_center + 0.5*jp.array([screen_size[0], 0])
+        # screen_pos_center_left = screen_pos_center + 0.5*jp.array([screen_size[0], 0])
 
-        if task_type == "menu_0":
+        if task_type == "rectangle_0":
             screen_margin = jp.array([0.05, 0.05])
             screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
 
@@ -544,11 +544,46 @@ class MyoUserMenuSteering(MyoUserBase):
             min_height, max_height = self.menu_min_height, self.menu_max_height
 
             # Sample tunnel size
-            rng1, rng2 = jax.random.split(rng, 2)
-            rng2, rng_width = jax.random.split(rng2, 2)
-            width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
-            rng2, rng_height = jax.random.split(rng2, 2)
-            height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
+            if width is None:
+                rng, rng_width = jax.random.split(rng, 2)
+                width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
+            if height is None:
+                rng, rng_height = jax.random.split(rng, 2)
+                height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
+
+            nodes_rel = jp.array([[0., 0.], [-width, 0.]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
+            tunnel_size = height
+            width_height_constraints = None
+            total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([0, height])
+            norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
+
+            if anchor_pos is None:
+                # Sample start pos (centred around screen_pos_topleft)
+                remaining_size = screen_size_with_margin - total_size
+                rng, rng_width_offset = jax.random.split(rng, 2)
+                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                rng, rng_height_offset = jax.random.split(rng, 2)
+                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                anchor_pos = screen_pos_topleft - 0.5 * jp.array([0, height]) - jp.array([start_width_offset, start_height_offset])
+
+            tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
+        
+            # Store additional information
+            tunnel_extras = {}
+        elif task_type == "menu_0":
+            screen_margin = jp.array([0.05, 0.05])
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
+
+            min_width, max_width = self.menu_min_width, self.menu_max_width
+            min_height, max_height = self.menu_min_height, self.menu_max_height
+
+            # Sample tunnel size
+            if width is None:
+                rng, rng_width = jax.random.split(rng, 2)
+                width = min_width + jax.random.uniform(rng_width) * (2/3)*(max_width - min_width)  #default: 0.08
+            if height is None:
+                rng, rng_height = jax.random.split(rng, 2)
+                height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
 
             nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15], [0.2, -0.3], [0.3, -0.3]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [-1.5*width, 0]
             tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
@@ -556,20 +591,20 @@ class MyoUserMenuSteering(MyoUserBase):
             total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([1.5*width, height])
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
-            # Sample start pos (centred around screen_pos_topleft)
-            remaining_size = screen_size_with_margin - total_size
-            rng1, rng_width_offset = jax.random.split(rng1, 2)
-            start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-            rng1, rng_height_offset = jax.random.split(rng1, 2)
-            start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-            anchor_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+            if anchor_pos is None:
+                # Sample start pos (centred around screen_pos_topleft)
+                remaining_size = screen_size_with_margin - total_size
+                rng, rng_width_offset = jax.random.split(rng, 2)
+                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                rng, rng_height_offset = jax.random.split(rng, 2)
+                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                anchor_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
             # Store additional information
             tunnel_extras = {}
-
-        if task_type == "menu_1":
+        elif task_type == "menu_1":
             screen_margin = jp.array([0.1, 0.1])
             screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
 
@@ -577,11 +612,12 @@ class MyoUserMenuSteering(MyoUserBase):
             min_height, max_height = self.menu_min_height, self.menu_max_height
 
             # Sample tunnel size
-            rng1, rng2 = jax.random.split(rng, 2)
-            rng2, rng_width = jax.random.split(rng2, 2)
-            width = min_width + jax.random.uniform(rng_width) * (max_width - min_width)  #default: 0.08
-            rng2, rng_height = jax.random.split(rng2, 2)
-            height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
+            if width is None:
+                rng, rng_height = jax.random.split(rng, 2)
+                width = min_width + jax.random.uniform(rng_width) * (max_width - min_width)  #default: 0.08
+            if height is None:
+                rng, rng_height = jax.random.split(rng, 2)
+                height = min_height + jax.random.uniform(rng_height) * (max_height - min_height)  #default: 0.05
 
             nodes_rel = jp.array([[0., 0.], [0., -0.15], [0.2, -0.15]])  #nodes_rel are defined in relative coordinates (x, y), with x-axis to the right and y-axis to the top; [0, 0] should correspond to starting point at the top left, so most top-left tunnel boundary point will be [width, 0]
             tunnel_size = None #not required, since widths and heights are specified for each node individually using the 'width_height_constraints' arg
@@ -589,13 +625,14 @@ class MyoUserMenuSteering(MyoUserBase):
             total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([width, height])
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
-            # Sample start pos (centred around screen_pos_topleft)
-            remaining_size = screen_size_with_margin - total_size
-            rng1, rng_width_offset = jax.random.split(rng1, 2)
-            start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-            rng1, rng_height_offset = jax.random.split(rng1, 2)
-            start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-            anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+            if anchor_pos is None:
+                # Sample start pos (centred around screen_pos_topleft)
+                remaining_size = screen_size_with_margin - total_size
+                rng, rng_width_offset = jax.random.split(rng, 2)
+                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                rng, rng_height_offset = jax.random.split(rng, 2)
+                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -610,13 +647,14 @@ class MyoUserMenuSteering(MyoUserBase):
             n_sample_points = self.circle_sample_points
 
             # Sample tunnel length and size
-            rng1, rng2 = jax.random.split(rng, 2)
-            rng2, rng_radius = jax.random.split(rng2, 2)
-            circle_radius = min_radius + jax.random.uniform(rng_radius) * (max_radius - min_radius)  #default: 0.75
-            # tunnel_length = circle_radius*(2*jp.pi)
-            rng2, rng_width = jax.random.split(rng2, 2)
-            max_width_restricted = jp.minimum(max_width, jp.min(screen_size_with_margin)-2*circle_radius)  #constraint: (2*circle_radius+tunnel_size)<jp.min(screen_size_with_margin)
-            tunnel_size = min_width + jax.random.uniform(rng_width) * jp.maximum((max_width_restricted - min_width), 0)  #default: 0.05
+            if circle_radius is None:
+                rng, rng_radius = jax.random.split(rng, 2)
+                circle_radius = min_radius + jax.random.uniform(rng_radius) * (max_radius - min_radius)  #default: 0.75
+                # tunnel_length = circle_radius*(2*jp.pi)
+            if tunnel_size is None:
+                rng, rng_width = jax.random.split(rng, 2)
+                max_width_restricted = jp.minimum(max_width, jp.min(screen_size_with_margin)-2*circle_radius)  #constraint: (2*circle_radius+tunnel_size)<jp.min(screen_size_with_margin)
+                tunnel_size = min_width + jax.random.uniform(rng_width) * jp.maximum((max_width_restricted - min_width), 0)  #default: 0.05
 
             theta_def = np.linspace(0, 1, n_sample_points)
             nodes_rel = circle_radius * np.array([np.sin(theta_def*2*np.pi), np.cos(theta_def*2*np.pi)]).T
@@ -624,13 +662,14 @@ class MyoUserMenuSteering(MyoUserBase):
             total_size = (2 * circle_radius + tunnel_size) * jp.ones(2)
             norm_ord = 2  #use Euclidean norm for distance computations/path normalisation
 
-            # Sample start pos (centred around screen_pos_center)
-            remaining_size = screen_size_with_margin - total_size
-            rng1, rng_width_offset = jax.random.split(rng1, 2)
-            start_width_offset = -0.5*remaining_size[0] + jax.random.uniform(rng_width_offset) * remaining_size[0]
-            rng1, rng_height_offset = jax.random.split(rng1, 2)
-            start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
-            anchor_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
+            if anchor_pos is None:
+                # Sample start pos (centred around screen_pos_center)
+                remaining_size = screen_size_with_margin - total_size
+                rng, rng_width_offset = jax.random.split(rng, 2)
+                start_width_offset = -0.5*remaining_size[0] + jax.random.uniform(rng_width_offset) * remaining_size[0]
+                rng, rng_height_offset = jax.random.split(rng, 2)
+                start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
+                anchor_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
 
             tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
         
@@ -682,7 +721,8 @@ class MyoUserMenuSteering(MyoUserBase):
             tunnel_size = multiplier * (r_outer - r_inner)
             if self._config.task_config.spiral_flip:
                 tunnel_size = jp.flip(tunnel_size)
-            anchor_pos = screen_pos_center
+            if anchor_pos is None:
+               anchor_pos = screen_pos_center
             # Setting checkpoints to 10% intervals of the spiral
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
             
@@ -719,50 +759,51 @@ class MyoUserMenuSteering(MyoUserBase):
                 'tunnel_boundary_parametrization': buffer_theta,
                 'tunnel_boundary_left': buffer_nodes_left, 
                 'tunnel_boundary_right': buffer_nodes_right,
-                'tunnel_angle_interp': _interp_fct_angle,
+                'tunnel_angle': angle,
+                'tunnel_angle_theta': theta_angle,
+                'tunnel_angle_interp': _interp_fct_angle,  #redundant with (tunnel_angle, tunnel_angle_theta); only stored for convenience and reduced computational workload (but the object type is not compatible with traced arrays, i.e., workarounds are required for domain randomization!)
                 'tunnel_checkpoints': tunnel_checkpoints,
                 'tunnel_extras': tunnel_extras,
         }
 
-    def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
-        tunnel_positions_total  = []
-        IDs = [1, 2, 3, 4, 5]
-        L_min, L_max = 0.05, 0.5
-        W_min, W_max = 0.07, 0.6
-        right = 0.3
-        for ID in IDs:
-            combos = 0
-            while combos < 1:
-                rng, rng2 = jax.random.split(rng, 2)
-                W = jax.random.uniform(rng, minval=W_min, maxval=W_max)
-                L = ID * W
-                if L_min <= L <= L_max:
-                    tunnel_positions = []  #{}
-                    left, bottom, top = self.random_positions_steeringlaw(rng2, L, W, right)
-                    width_midway = (left + right) / 2
-                    height_midway = (top + bottom) / 2
-                    tunnel_positions.append(screen_pos + jp.array([0., width_midway, bottom]))
-                    tunnel_positions.append(screen_pos + jp.array([0., width_midway, top]))
-                    tunnel_positions.append(screen_pos + jp.array([0., right, height_midway]))
-                    tunnel_positions.append(screen_pos + jp.array([0., left, height_midway]))
-                    tunnel_positions.append(screen_pos)
-                    combos += 1
+    def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos_center: jax.Array,
+                                       task_type: str ="menu_0", n_tunnels_per_ID: int = 1) -> dict[str, jax.Array]:
+        tunnels_total = []
+        if task_type == "circle_0":
+            IDs = [6, 7, 8, 9, 10, 11, 12]
 
-                    for i in range(20):
-                        tunnel_positions_total.append(tunnel_positions)
-        return tunnel_positions_total
+            for ID in IDs:
+                combos = 0
+                while combos < n_tunnels_per_ID:
+                    rng, rng2 = jax.random.split(rng, 2)
+                    W = jax.random.uniform(rng, minval=self.circle_min_width, maxval=self.circle_max_width)
+                    L = ID * W
+                    circle_radius = (L) / (2 * jp.pi)
+                    if self.circle_min_radius <= circle_radius <= self.circle_max_radius:
+                        anchor_pos = screen_pos_center  #fixed: screen_pos_center; random: None
+                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                             circle_radius=circle_radius, tunnel_size=W,
+                                                             anchor_pos=anchor_pos)
+                        combos += 1
+                        # for i in range(10):
+                        tunnels_total.append(tunnel_info)
+                        print(f"Added path for ID {ID}, L {L}, W {W}")
 
-    def reset(self, rng, render_token=None):
+        #print(f"tunnels_total", tunnels_total)
+        return tunnels_total
+
+    def reset(self, rng, tunnel_infos=None, render_token=None):
         # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
 
         # Reset biomechanical model
         data = self._reset_bm_model(rng)
-        
+        screen_pos_center = data.site_xpos[self.screen_id][1:]
+
         # Reset last control (used for observations only)
         last_ctrl = jp.zeros(self._nu)
-        qacc = jp.zeros(len(self._independent_dofs))
+        # qacc = jp.zeros(len(self._independent_dofs))
 
         info = {"rng": rng,
                 "last_ctrl": last_ctrl,
@@ -777,11 +818,10 @@ class MyoUserMenuSteering(MyoUserBase):
                 "current_checkpoint_segment_id": 0,
                 "remaining_timesteps": 1 + jp.round((self.max_duration - data.time)/self._config.ctrl_dt).astype(jp.int32),  #includes current time step
                 }
-        info.update(self.get_custom_tunnel(rng, data, task_type=self.task_type))
-        # if tunnel_positions is None:
-        #     info.update(self.get_custom_tunnel(rng, data, task_type=self.task_type))
-        # else:
-        #     info.update(tunnel_positions)
+        if tunnel_infos is None:
+            info.update(self.get_custom_tunnel(rng, screen_pos_center=screen_pos_center, task_type=self.task_type))
+        else:
+            info.update(tunnel_infos)
 
         # Generate inital observations
         # TODO: move the following lines into MyoUserBase.reset?
@@ -822,31 +862,71 @@ class MyoUserMenuSteering(MyoUserBase):
         return self.reset(rng, render_token=render_token, **kwargs)
     
     def eval_reset(self, rng, eval_id, **kwargs):
-        return self.reset(rng, **kwargs)
-        raise NotImplementedError()
         """Reset function wrapper called by evaluate_policy."""
-        _tunnel_position_jp = self.SL_tunnel_positions.at[eval_id].get()
-        tunnel_positions = {}
-        # tunnel_positions['bottom_line'] = _tunnel_position_jp[0]
-        # tunnel_positions['top_line'] = _tunnel_position_jp[1]
-        # tunnel_positions['start_line'] = _tunnel_position_jp[2]
-        # tunnel_positions['end_line'] = _tunnel_position_jp[3]
-        # tunnel_positions['screen_pos'] = _tunnel_position_jp[4]
+        # tunnel_infos = jax.tree.map(lambda x: x.at[eval_id].get(), self.SL_tunnel_infos)
+        tunnel_infos = {}
 
-        return self.reset(rng, tunnel_positions=tunnel_positions, **kwargs)
+        for k in self.SL_tunnel_infos_keys:
+            tunnel_infos[k] = self.SL_tunnel_infos[k].at[eval_id].get()
+        tunnel_extras = {}
+        for k in self.SL_tunnel_infos_keys_extra:
+            _val = self.SL_tunnel_infos[k].at[eval_id].get()
+            if not jp.all(jp.isnan(_val)):  #a single jp.nan value is used for eval_ids that lack a specific key in tunnel_extras
+                tunnel_extras[k] = _val
+        tunnel_infos["tunnel_extras"] = tunnel_extras
+
+        if ("tunnel_angle_theta" in self.SL_tunnel_infos_keys) and ("tunnel_angle" in self.SL_tunnel_infos_keys):
+            tunnel_infos["tunnel_angle_interp"] = interpax.PchipInterpolator(tunnel_infos["tunnel_angle_theta"], tunnel_infos["tunnel_angle"], check=False)
+
+        # _tunnel_infos_jp = self.SL_tunnel_infos.at[eval_id].get()
+        # tunnel_infos = {}
+        # tunnel_infos['bottom_line'] = _tunnel_position_jp[0]
+        # tunnel_infos['top_line'] = _tunnel_position_jp[1]
+        # tunnel_infos['start_line'] = _tunnel_position_jp[2]
+        # tunnel_infos['end_line'] = _tunnel_position_jp[3]
+        # tunnel_infos['screen_pos'] = _tunnel_position_jp[4]
+
+        return self.reset(rng, tunnel_infos=tunnel_infos, **kwargs)
     
-    # def prepare_eval_rollout(self, rng, **kwargs):
-    #     """Function that can be used to define random parameters to be used across multiple evaluation rollouts/resets.
-    #     May return the number of evaluation episodes that should be rolled out (before this method should be called again)."""
+    def prepare_eval_rollout(self, rng, **kwargs):
+        """Function that can be used to define random parameters to be used across multiple evaluation rollouts/resets.
+        May return the number of evaluation episodes that should be rolled out (before this method should be called again)."""
         
-    #     ## Setup evaluation episodes for Steering Law validation
-    #     rng, rng2 = jax.random.split(rng, 2)
-    #     # self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
-    #     # self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
-    #     self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])) + 
-    #                                         self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        ## Setup evaluation episodes for Steering Law validation
+        rng, rng2 = jax.random.split(rng, 2)
+        # self.SL_tunnel_infos = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        # self.SL_tunnel_infos = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
+        # self.SL_tunnel_infos = jp.array(self.get_custom_tunnels_different_lengths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])) + 
+        #                                     self.get_custom_tunnels_different_widths(rng2, screen_pos=jp.array([0.532445, -0.27, 0.993])))
 
-    #     return len(self.SL_tunnel_positions)
+        #TODO: hardcoded atm! should be data.site_xpos[self.screen_id][1:], but when this method is called, the data object has not yet been created
+        screen_pos_center = jp.array([-0.27,  0.993], dtype=jp.float32)
+
+        SL_tunnel_infos_list = self.get_custom_tunnels_steeringlaw(rng2, screen_pos_center=screen_pos_center, task_type=self._config.task_config.type)
+        assert len(SL_tunnel_infos_list) > 0, f"For this task type ({self._config.task_config.type}), no tunnels have been returned."
+
+        # check that all created instances share the same keys
+        _key_list = [set(d.keys()) for d in SL_tunnel_infos_list]
+        SL_tunnel_infos_keys = _key_list[0].intersection(*_key_list[1:])
+        assert _key_list[0] == SL_tunnel_infos_keys, f"Not all created tunnel_info instances share the same keys! The following keys are missing from some instances: {_key_list[0] - SL_tunnel_infos_keys}"
+
+        # merge list of dicts into one dict of jp.arrays (as these can be index with a traced int array), where first dimension corresponds to eval_id
+        SL_tunnel_infos = {}
+        for k in SL_tunnel_infos_keys:
+            if not k in ("tunnel_angle_interp", "tunnel_extras"):
+                SL_tunnel_infos[k] = jp.array(tuple(d[k] for d in SL_tunnel_infos_list))
+
+        # store keys of tunnel_extras subdict separately, but unpack its values into the same level        
+        _extra_key_list = [set(d["tunnel_extras"].keys()) if "tunnel_extras" in d.keys() else set() for d in SL_tunnel_infos_list]
+        SL_tunnel_infos_keys_extra = _extra_key_list[0].union(*_extra_key_list[1:])
+        for k in SL_tunnel_infos_keys_extra:
+            SL_tunnel_infos[k] = jp.array(tuple(d["tunnel_extras"][k] if ("tunnel_extras" in d.keys()) and (k in d["tunnel_extras"].keys()) else jp.nan for d in SL_tunnel_infos_list))
+        
+        self.SL_tunnel_infos_keys = SL_tunnel_infos_keys - {"tunnel_extras", "tunnel_angle_interp"}
+        self.SL_tunnel_infos = SL_tunnel_infos
+        self.SL_tunnel_infos_keys_extra = SL_tunnel_infos_keys_extra
+
+        return len(self.SL_tunnel_infos)
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
