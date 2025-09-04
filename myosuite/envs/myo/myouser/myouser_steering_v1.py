@@ -53,7 +53,7 @@ class MenuSteeringTaskConfig:
         "phase_1_touch": 10,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
-        "jac_effort": 10,
+        "jac_effort": 1.,
         "power_for_softcons": 15,
         "truncated": -2,
         "truncated_progress": 0, #-20,
