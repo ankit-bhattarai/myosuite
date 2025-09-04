@@ -15,7 +15,7 @@ def calculate_steering_laws(rollouts, task, average_r2=True):
             r2_yamanaka, sl_data2 = calculate_yamanaka_steering_law(sl_data, average_r2, task)
             r2_liu, sl_data3 = calculate_liu_steering_law(sl_data, average_r2, task)
             metrics = {'r2': r2, 'r2_nancel': r2_nancel, 'r2_yamanaka': r2_yamanaka, 'r2_liu': r2_liu}
-        elif task in ('menu_0', 'menu_1', 'rectangle_0'):
+        elif task in ('menu_0', 'menu_1'):
             r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data, average_r2, task)
             metrics = {'r2': r2, 'r2_ahlstroem': r2_ahlstroem}
         return metrics
