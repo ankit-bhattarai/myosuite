@@ -46,18 +46,18 @@ class MenuSteeringTaskConfig:
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'start_pos', 'path_percentage', 'distance_to_left_tunnel_bound', 'distance_to_left_tunnel_bound', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
-        "reach": 10,
+        "reach": 5,
         "reach_old": 0,
-        "bonus_1": 50,
+        "bonus_1": 10,  #200,
         "bonus_1_old": 0,
-        "phase_1_touch": 1, #10,
+        "phase_1_touch": 10,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
-        "jac_effort": 0,
+        "jac_effort": 10,
         "power_for_softcons": 15,
-        "truncated": -10,
+        "truncated": -1,
         "truncated_progress": 0, #-20,
-        "bonus_inside_path": 3,
+        "bonus_inside_path": 0,
     })
     max_duration: float = 4.
     max_trials: int = 1
