@@ -195,8 +195,8 @@ class MyoUserMenuSteering(MyoUserBase):
         
     def add_lines(self, spec:mujoco.MjSpec):
         screen = find_body_by_name(spec, "screen")
-        if self._config.task_config.type == "menu_0":
-            n_lines = 12
+        if self._config.task_config.type in ["rectangle_0", "menu_0", "menu_1"]:
+            n_lines = 12  #TODO: set lower number for "menu_0" and "rectangle_0"
         elif self._config.task_config.type in ["circle_0", "spiral_0"]:
             circle_sample_points = self._config.task_config.circle_sample_points
             n_lines = 2 * (circle_sample_points - 1)
