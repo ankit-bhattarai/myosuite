@@ -769,12 +769,63 @@ class MyoUserMenuSteering(MyoUserBase):
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos_center: jax.Array,
                                        task_type: str ="menu_0", n_tunnels_per_ID: int = 1) -> dict[str, jax.Array]:
         tunnels_total = []
-        if task_type == "circle_0":
+        max_attempts_per_tunnel = 50
+        
+        if task_type == "rectangle_0":
+            ## vary lengths for fixed width
+            IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            W = 0.05
+
+            for ID in IDs:
+                combos = 0
+                _attempts = 0
+                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    L = ID * W
+                    if self.menu_min_width <= L <= self.menu_max_width:
+                        anchor_pos = None  #fixed: screen_pos_center; random: None
+                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                             width=L, height=W,
+                                                             anchor_pos=anchor_pos)
+                        combos += 1
+                        _attempts = 0
+                        # for i in range(10):
+                        tunnels_total.append(tunnel_info)
+                        print(f"Added path for ID {ID}, L {L}, W {W}")
+                    _attempts +=1
+                if _attempts == max_attempts_per_tunnel:
+                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+
+            ## vary widths for fixed length
+            IDs = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+            L = 0.5
+
+            for ID in IDs:
+                combos = 0
+                _attempts = 0
+                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    W = L/ID
+                    if self.menu_min_height <= W <= self.menu_max_height:
+                        anchor_pos = None  #fixed: screen_pos_center; random: None
+                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                             width=L, height=W,
+                                                             anchor_pos=anchor_pos)
+                        combos += 1
+                        _attempts = 0
+                        # for i in range(10):
+                        tunnels_total.append(tunnel_info)
+                        print(f"Added path for ID {ID}, L {L}, W {W}")
+                    _attempts +=1
+                if _attempts == max_attempts_per_tunnel:
+                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+        elif task_type == "circle_0":
             IDs = [6, 7, 8, 9, 10, 11, 12]
 
             for ID in IDs:
                 combos = 0
-                while combos < n_tunnels_per_ID:
+                _attempts = 0
+                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
                     rng, rng2 = jax.random.split(rng, 2)
                     W = jax.random.uniform(rng, minval=self.circle_min_width, maxval=self.circle_max_width)
                     L = ID * W
@@ -785,9 +836,13 @@ class MyoUserMenuSteering(MyoUserBase):
                                                              circle_radius=circle_radius, tunnel_size=W,
                                                              anchor_pos=anchor_pos)
                         combos += 1
+                        _attempts = 0
                         # for i in range(10):
                         tunnels_total.append(tunnel_info)
                         print(f"Added path for ID {ID}, L {L}, W {W}")
+                    _attempts +=1
+                if _attempts == max_attempts_per_tunnel:
+                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
 
         #print(f"tunnels_total", tunnels_total)
         return tunnels_total
