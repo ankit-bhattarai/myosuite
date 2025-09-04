@@ -20,111 +20,107 @@ def calculate_steering_laws(rollouts, task, average_r2=True):
             metrics = {'r2': r2, 'r2_ahlstroem': r2_ahlstroem}
         return metrics
 
-def calculate_nancel_steering_law(sl_data, average_r2=True, task='circle_0'):
-    if task=='circle_0':
-        IDs = np.power(sl_data['R'], 2/3) / sl_data['W']
-        MTs = sl_data['MT_ref']
+def calculate_nancel_steering_law(sl_data, average_r2=True):
+    IDs = np.power(sl_data['R'], 2/3) / sl_data['W']
+    MTs = sl_data['MT_ref']
 
-        a, b, r2, y_pred, _, _ = fit_model(IDs, MTs, average_r2=average_r2)
-        print(f"R^2: {r2}, a,b: {a},{b}")
+    a, b, r2, y_pred, _, _ = fit_model(IDs, MTs, average_r2=average_r2)
+    print(f"R^2: {r2}, a,b: {a},{b}")
 
-        sl_data.update({"MT_pred": y_pred})
-        return r2,sl_data
+    sl_data.update({"MT_pred": y_pred})
+    return r2,sl_data
 
-def calculate_yamanaka_steering_law(sl_data, average_r2=True, task='circle_0'):
-    if task=='circle_0':
-        keys = ["D", "W", "R", "MT_ref"]
-        sl_data_1d = {k: np.asarray(sl_data[k]).ravel() for k in keys}
-        df = pd.DataFrame(sl_data_1d)
+def calculate_yamanaka_steering_law(sl_data, average_r2=True):
+    keys = ["D", "W", "R", "MT_ref"]
+    sl_data_1d = {k: np.asarray(sl_data[k]).ravel() for k in keys}
+    df = pd.DataFrame(sl_data_1d)
 
-        if average_r2:
-            df = df.groupby(['D', 'W', 'R'], as_index=False)['MT_ref'].mean()
+    if average_r2:
+        df = df.groupby(['D', 'W', 'R'], as_index=False)['MT_ref'].mean()
 
-        MTs = df['MT_ref'].values
-        Ds = df['D'].values
-        Ws = df['W'].values
-        Rs = df['R'].values
+    MTs = df['MT_ref'].values
+    Ds = df['D'].values
+    Ws = df['W'].values
+    Rs = df['R'].values
 
 
-        def residuals(params):
-            a, b, c, d = params
-            denom = Ws + c * (1.0 / Rs) + d * Ws * (1.0 / Rs)
-            MT_pred = a + b * (Ds / denom)
-            return (MT_pred - MTs).ravel()
+    def residuals(params):
+        a, b, c, d = params
+        denom = Ws + c * (1.0 / Rs) + d * Ws * (1.0 / Rs)
+        MT_pred = a + b * (Ds / denom)
+        return (MT_pred - MTs).ravel()
 
-        x0 = [np.mean(MTs), 1.0, 0.0, 0.0]
+    x0 = [np.mean(MTs), 1.0, 0.0, 0.0]
 
-        res = least_squares(residuals, x0)
+    res = least_squares(residuals, x0)
 
-        a, b, c, d = res.x
-        MT_pred = a + b * (Ds / (Ws + c*(1.0/Rs) + d*Ws*(1.0/Rs)))
+    a, b, c, d = res.x
+    MT_pred = a + b * (Ds / (Ws + c*(1.0/Rs) + d*Ws*(1.0/Rs)))
 
-        r2 = r2_score(MTs, MT_pred)
+    r2 = r2_score(MTs, MT_pred)
 
-        sl_data.update({"MT_pred": MT_pred})
+    sl_data.update({"MT_pred": MT_pred})
 
-        return r2, sl_data
+    return r2, sl_data
 
-def calculate_liu_steering_law(sl_data, average_r2=True, task='circle_0'):
-    if task=='circle_0':
-        keys = ["D", "W", "R", "MT_ref"]
-        sl_data_1d = {k: np.asarray(sl_data[k]).ravel() for k in keys}
-        df = pd.DataFrame(sl_data_1d)
+def calculate_liu_steering_law(sl_data, average_r2=True):
+    keys = ["D", "W", "R", "MT_ref"]
+    sl_data_1d = {k: np.asarray(sl_data[k]).ravel() for k in keys}
+    df = pd.DataFrame(sl_data_1d)
 
-        if average_r2:
-            df = df.groupby(['D', 'W', 'R'], as_index=False)['MT_ref'].mean()
+    if average_r2:
+        df = df.groupby(['D', 'W', 'R'], as_index=False)['MT_ref'].mean()
 
-        MTs = df['MT_ref'].values
-        Ds = df['D'].values
-        Ws = df['W'].values
-        Rs = df['R'].values
+    MTs = df['MT_ref'].values
+    Ds = df['D'].values
+    Ws = df['W'].values
+    Rs = df['R'].values
 
-        y = np.log(MTs)
+    y = np.log(MTs)
 
-        def residuals(params):
-            a, b, c, d = params
-            x1 = np.log(Ds / Ws)
-            x2 = 1.0 / Rs
-            x3 = (1.0 / Rs) * np.log(Ds / Ws)
-            y_pred = a + b*x1 + c*x2 + d*x3
-            return (y_pred - y).ravel() 
-
-        x0 = [np.mean(y), 1.0, 0.0, 0.0]
-
-        res = least_squares(residuals, x0)
-
-        a, b, c, d = res.x
-
+    def residuals(params):
+        a, b, c, d = params
         x1 = np.log(Ds / Ws)
         x2 = 1.0 / Rs
         x3 = (1.0 / Rs) * np.log(Ds / Ws)
         y_pred = a + b*x1 + c*x2 + d*x3
+        return (y_pred - y).ravel() 
 
-        r2 = r2_score(y, y_pred)
+    x0 = [np.mean(y), 1.0, 0.0, 0.0]
 
-        sl_data.update({"MT_pred": np.exp(y_pred)})
+    res = least_squares(residuals, x0)
 
-        return r2, sl_data
+    a, b, c, d = res.x
 
-def calculate_ahlstroem_steering_law(sl_data, average_r2=True, task='menu_0'):
-    if task == 'menu_0' or task == 'menu_1':
-        Ds = np.array(sl_data['D'])
-        Ws = np.array(sl_data['W'])
-        MTs = np.array(sl_data['MT_ref'])
-        IDs = np.stack([
-                np.log2(Ds[:, i] / Ws[:, i]+1) if i % 2 == 0 else 0.5*Ws[:, i] / Ds[:, i]
-                for i in range(Ds.shape[1])
-            ], axis=1).sum(axis=1).reshape(-1, 1)
-        a, b, r2, y_pred, _, _ = fit_model(IDs, MTs, average_r2=average_r2)
-        print(f"R^2: {r2}, a,b: {a},{b}")
+    x1 = np.log(Ds / Ws)
+    x2 = 1.0 / Rs
+    x3 = (1.0 / Rs) * np.log(Ds / Ws)
+    y_pred = a + b*x1 + c*x2 + d*x3
 
-        sl_data.update({"MT_pred": y_pred})
-        return r2,sl_data
+    r2 = r2_score(y, y_pred)
+
+    sl_data.update({"MT_pred": np.exp(y_pred)})
+
+    return r2, sl_data
+
+def calculate_ahlstroem_steering_law(sl_data, average_r2=True):
+    Ds = np.array(sl_data['D'])
+    Ws = np.array(sl_data['W'])
+    MTs = np.array(sl_data['MT_ref'])
+    IDs = np.stack([
+            np.log2(Ds[:, i] / Ws[:, i]+1) if i % 2 == 0 else 0.5*Ws[:, i] / Ds[:, i]
+            for i in range(Ds.shape[1])
+        ], axis=1).sum(axis=1).reshape(-1, 1)
+    a, b, r2, y_pred, _, _ = fit_model(IDs, MTs, average_r2=average_r2)
+    print(f"R^2: {r2}, a,b: {a},{b}")
+
+    sl_data.update({"MT_pred": y_pred})
+    return r2,sl_data
     
 def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):   
     sl_data = {}
 
-    if task in ('menu_0', 'menu_1', 'rectangle_0'):
+    if task in ('menu_0', 'menu_1'):
         MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
                                                 any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
@@ -133,12 +129,22 @@ def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):
         Ws = np.array([np.abs(rollout[0].info['tunnel_nodes_left'][:-1,0] - rollout[0].info['tunnel_nodes_right'][1:,0]) for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and
                         any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         IDs = np.stack([
-            Ds[:, i] / Ws[:, i] if (i % 2 == 0) and (task.startswith('menu')) else Ws[:, i] / Ds[:, i]
+            Ds[:, i] / Ws[:, i] if (i % 2 == 0) else Ws[:, i] / Ds[:, i]
             for i in range(Ds.shape[1])
         ], axis=1).sum(axis=1).reshape(-1, 1)
-
+    elif task in ('rectangle_0',):
+        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
+        Ds = np.array([np.abs(rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes"][-1, 0] - rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes"][0, 0])
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
+        Ws = np.array([np.abs(rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_right"][0, 1] - rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_left"][0, 1])
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
+        IDs = (Ds / Ws).reshape(-1, 1)
     #currently not phase_0 completed steps etc..
-    elif task == 'circle_0':
+    elif task in ('circle_0',):
 
         MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
