@@ -39,6 +39,7 @@ from scipy.spatial.transform import Rotation
 @dataclass
 class MenuSteeringTaskConfig:
     type: str = "menu_0"
+    random_start_pos: bool = False
     distance_reach_metric_coefficient: float = 10.
     screen_distance_x: float = 0.5
     screen_friction: float = 0.1
@@ -46,17 +47,17 @@ class MenuSteeringTaskConfig:
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'completed_phase_0_arr', 'start_pos', 'path_percentage', 'distance_to_left_tunnel_bound', 'distance_to_right_tunnel_bound', 'path_angle'])  #TODO: update
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
-        "reach": 10,
-        "reach_old": 0,
-        "bonus_1": 50,  #200,
-        "bonus_1_old": 0,
-        "phase_1_touch": 10,
+        "reach": 10,  #0
+        "reach_old": 0,  #3.5
+        "bonus_1": 50,  #0
+        "bonus_1_old": 0,  #20
+        "phase_1_touch": 10,  #5
         "phase_1_tunnel": 0,
         "neural_effort": 0,
         "jac_effort": 1.,
         "power_for_softcons": 15,
-        "truncated": -2,
-        "truncated_progress": 0, #-20,
+        "truncated": -2,  #-5
+        "truncated_progress": 0,
         "bonus_inside_path": 0,
     })
     max_duration: float = 4.
@@ -226,6 +227,7 @@ class MyoUserMenuSteering(MyoUserBase):
         """Task specific setup"""
         super()._setup()
         self.task_type = self._config.task_config.type
+        self.random_start_pos = self._config.task_config.random_start_pos
         self.max_duration = self._config.task_config.max_duration
 
         # Prepare observation components
@@ -547,7 +549,7 @@ class MyoUserMenuSteering(MyoUserBase):
         }
 
     def get_custom_tunnel(self, rng: jax.Array, screen_pos_center: jax.Array,
-                          task_type="menu_0",
+                          task_type="menu_0", random_start_pos=False,
                           width=None, height=None, n_menu_items=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None) -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
@@ -575,13 +577,17 @@ class MyoUserMenuSteering(MyoUserBase):
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
             if anchor_pos is None:
-                # Sample start pos (centred around screen_pos_topleft)
-                remaining_size = screen_size_with_margin - total_size
-                rng, rng_width_offset = jax.random.split(rng, 2)
-                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-                rng, rng_height_offset = jax.random.split(rng, 2)
-                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-                anchor_pos = screen_pos_topleft - 0.5 * jp.array([0, tunnel_size]) - jp.array([start_width_offset, start_height_offset])
+                if random_start_pos:
+                    # Sample start pos (centred around screen_pos_topleft)
+                    remaining_size = screen_size_with_margin - total_size
+                    rng, rng_width_offset = jax.random.split(rng, 2)
+                    start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                    rng, rng_height_offset = jax.random.split(rng, 2)
+                    start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([0, tunnel_size]) - jp.array([start_width_offset, start_height_offset])
+                else:
+                    anchor_pos = screen_pos_center - 0.5 * jp.array([tunnel_length, 0])
+
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -609,13 +615,16 @@ class MyoUserMenuSteering(MyoUserBase):
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
             if anchor_pos is None:
-                # Sample start pos (centred around screen_pos_topleft)
-                remaining_size = screen_size_with_margin - total_size
-                rng, rng_width_offset = jax.random.split(rng, 2)
-                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-                rng, rng_height_offset = jax.random.split(rng, 2)
-                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-                anchor_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+                if random_start_pos:
+                    # Sample start pos (centred around screen_pos_topleft)
+                    remaining_size = screen_size_with_margin - total_size
+                    rng, rng_width_offset = jax.random.split(rng, 2)
+                    start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                    rng, rng_height_offset = jax.random.split(rng, 2)
+                    start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
+                else:
+                    anchor_pos = screen_pos_center - 0.5 * jp.array([0.3, -0.3]) - 0.5 * jp.array([1.5*width, height])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -643,13 +652,16 @@ class MyoUserMenuSteering(MyoUserBase):
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
             if anchor_pos is None:
-                # Sample start pos (centred around screen_pos_topleft)
-                remaining_size = screen_size_with_margin - total_size
-                rng, rng_width_offset = jax.random.split(rng, 2)
-                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-                rng, rng_height_offset = jax.random.split(rng, 2)
-                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-                anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+                if random_start_pos:
+                    # Sample start pos (centred around screen_pos_topleft)
+                    remaining_size = screen_size_with_margin - total_size
+                    rng, rng_width_offset = jax.random.split(rng, 2)
+                    start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                    rng, rng_height_offset = jax.random.split(rng, 2)
+                    start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+                else:
+                    anchor_pos = screen_pos_center - 0.5 * jp.array([0.2, -0.15]) - 0.5 * jp.array([width, height])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -685,13 +697,16 @@ class MyoUserMenuSteering(MyoUserBase):
             norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
 
             if anchor_pos is None:
-                # Sample start pos (centred around screen_pos_topleft)
-                remaining_size = screen_size_with_margin - total_size
-                rng, rng_width_offset = jax.random.split(rng, 2)
-                start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
-                rng, rng_height_offset = jax.random.split(rng, 2)
-                start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-                anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
+                if random_start_pos:
+                    # Sample start pos (centred around screen_pos_topleft)
+                    remaining_size = screen_size_with_margin - total_size
+                    rng, rng_width_offset = jax.random.split(rng, 2)
+                    start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                    rng, rng_height_offset = jax.random.split(rng, 2)
+                    start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, -(n_menu_items-1)*height]) - jp.array([start_width_offset, start_height_offset])
+                else:
+                    anchor_pos = screen_pos_center - 0.5 * jp.array([0.2, -0.15]) - 0.5 * jp.array([width, height])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -722,13 +737,16 @@ class MyoUserMenuSteering(MyoUserBase):
             norm_ord = 2  #use Euclidean norm for distance computations/path normalisation
 
             if anchor_pos is None:
-                # Sample start pos (centred around screen_pos_center)
-                remaining_size = screen_size_with_margin - total_size
-                rng, rng_width_offset = jax.random.split(rng, 2)
-                start_width_offset = -0.5*remaining_size[0] + jax.random.uniform(rng_width_offset) * remaining_size[0]
-                rng, rng_height_offset = jax.random.split(rng, 2)
-                start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
-                anchor_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
+                if random_start_pos:
+                    # Sample start pos (centred around screen_pos_center)
+                    remaining_size = screen_size_with_margin - total_size
+                    rng, rng_width_offset = jax.random.split(rng, 2)
+                    start_width_offset = -0.5*remaining_size[0] + jax.random.uniform(rng_width_offset) * remaining_size[0]
+                    rng, rng_height_offset = jax.random.split(rng, 2)
+                    start_height_offset = -0.5*remaining_size[1] + jax.random.uniform(rng_height_offset) * remaining_size[1]
+                    anchor_pos = screen_pos_center + jp.array([start_width_offset, start_height_offset])
+                else:
+                    anchor_pos = screen_pos_center
 
             tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
         
@@ -811,7 +829,7 @@ class MyoUserMenuSteering(MyoUserBase):
         }
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos_center: jax.Array,
-                                       task_type: str ="menu_0", n_tunnels_per_ID: int = 1) -> dict[str, jax.Array]:
+                                       task_type: str ="menu_0", random_start_pos: bool = False, n_tunnels_per_ID: int = 1) -> dict[str, jax.Array]:
         tunnels_total = []
         max_attempts_per_tunnel = 50
         
@@ -829,6 +847,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     if self.rectangle_min_length <= L <= self.rectangle_max_length:
                         anchor_pos = None  #fixed: screen_pos_center; random: None
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                             random_start_pos=random_start_pos,
                                                              tunnel_length=L, tunnel_size=W,
                                                              anchor_pos=anchor_pos)
                         combos += 1
@@ -853,6 +872,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     if self.rectangle_min_size <= W <= self.rectangle_max_size:
                         anchor_pos = None  #fixed: screen_pos_center; random: None
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                             random_start_pos=random_start_pos,
                                                              width=L, height=W,
                                                              anchor_pos=anchor_pos)
                         combos += 1
@@ -879,6 +899,7 @@ class MyoUserMenuSteering(MyoUserBase):
                         if (self.menu_min_height <= H <= self.menu_max_height):
                             anchor_pos = None  #fixed: screen_pos_center; random: None
                             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                                random_start_pos=random_start_pos,
                                                                 width=W, height=H, n_menu_items=n_menu_items,
                                                                 anchor_pos=anchor_pos)
                             combos += 1
@@ -903,6 +924,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     if self.circle_min_radius <= circle_radius <= self.circle_max_radius:
                         anchor_pos = screen_pos_center  #fixed: screen_pos_center; random: None
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+                                                             random_start_pos=random_start_pos,
                                                              circle_radius=circle_radius, tunnel_size=W,
                                                              anchor_pos=anchor_pos)
                         combos += 1
@@ -944,7 +966,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 "remaining_timesteps": 1 + jp.round((self.max_duration - data.time)/self._config.ctrl_dt).astype(jp.int32),  #includes current time step
                 }
         if tunnel_infos is None:
-            info.update(self.get_custom_tunnel(rng, screen_pos_center=screen_pos_center, task_type=self.task_type))
+            info.update(self.get_custom_tunnel(rng, screen_pos_center=screen_pos_center, task_type=self.task_type, random_start_pos=self.random_start_pos))
         else:
             info.update(tunnel_infos)
 
@@ -1028,8 +1050,8 @@ class MyoUserMenuSteering(MyoUserBase):
         #TODO: hardcoded atm! should be data.site_xpos[self.screen_id][1:], but when this method is called, the data object has not yet been created
         screen_pos_center = jp.array([-0.27,  0.993], dtype=jp.float32)
 
-        SL_tunnel_infos_list = self.get_custom_tunnels_steeringlaw(rng2, screen_pos_center=screen_pos_center, task_type=self._config.task_config.type)
-        assert len(SL_tunnel_infos_list) > 0, f"For this task type ({self._config.task_config.type}), no tunnels have been returned."
+        SL_tunnel_infos_list = self.get_custom_tunnels_steeringlaw(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type, random_start_pos=self.random_start_pos)
+        assert len(SL_tunnel_infos_list) > 0, f"For this task type ({self.task_type}), no tunnels have been returned."
 
         # check that all created instances share the same keys
         _key_list = [set(d.keys()) for d in SL_tunnel_infos_list]
