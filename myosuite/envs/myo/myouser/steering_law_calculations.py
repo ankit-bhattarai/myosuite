@@ -42,7 +42,7 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
 
 def calculate_steering_laws(movement_times, rollout_states, task, average_r2=True):
     sl_data = preprocess_steering_law_rollouts(movement_times=movement_times, rollout_states=rollout_states, task=task)
-    a,b,r2,sl_data = calculate_original_steering_law(sl_data.copy(), average_r2)
+    a,b,r2,sl_data0 = calculate_original_steering_law(sl_data.copy(), average_r2)
 
     if np.isnan(r2):
         return {'r2': r2}
