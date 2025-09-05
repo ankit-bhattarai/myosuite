@@ -482,6 +482,9 @@ def train_or_load_checkpoint(env_name,
         # delete previous artifacts (need to create multiple as we cannot override existing ones during training)
         for artifact in wandb_run.logged_artifacts():
             if any([artifact.name.split("v")[-1] == str(_i) for _i in range(ppo_params.num_checkpoints)]):
-                artifact.delete()
+                try:
+                    artifact.delete()
+                except:
+                    pass
 
     return eval_env, make_inference_fn, params
