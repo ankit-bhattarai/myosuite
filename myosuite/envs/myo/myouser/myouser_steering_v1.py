@@ -88,8 +88,8 @@ class MenuSteeringTaskConfig:
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
     spiral_flip: bool = True # If set to true, it flips spiral such that agent starts in the inside and has to reach the outside last.
     spiral_angle_rot: bool = False
-    spiral_eval_endings: List[float] = field(default_factory=lambda: [9, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 10, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 11])
-    spiral_eval_widths: List[float] = field(default_factory=lambda: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+    spiral_eval_endings: List[float] = field(default_factory=lambda: [9, 10, 11])
+    spiral_eval_widths: List[float] = field(default_factory=lambda: [2, 10, 20])
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
