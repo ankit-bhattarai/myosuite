@@ -106,7 +106,8 @@ def evaluate_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n
 def evaluate_policy(checkpoint_path=None, env_name=None,
                     eval_env=None, jit_inference_fn=None, jit_reset=None, jit_step=None,
                     seed=123, n_episodes=1,
-                    ep_length=None):
+                    ep_length=None,
+                    log_MT_only=False):
     """
     Generate an evaluation trajectory from a stored checkpoint policy.
 
@@ -139,4 +140,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
     if eval_env.vision:
         return evaluate_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed, n_episodes, ep_length)
     else:
-        return evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed, n_episodes, ep_length)
+        if log_MT_only:
+            return evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, jit_step, seed, n_episodes, ep_length)
+        else:
+            return evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed, n_episodes, ep_length)
