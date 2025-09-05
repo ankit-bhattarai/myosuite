@@ -21,7 +21,7 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
         IDs = np.stack([
             Ds[:, i] / Ws[:, i] if (i % 2 == 0) else Ws[:, i] / Ds[:, i]
             for i in range(Ds.shape[1])
-        ], axis=1).sum(axis=1).reshape(-1, 1)
+        ], axis=1).sum(axis=1).reshape(-1, 1) if len(Ds) > 0 else np.array([])
         sl_data = {"ID": IDs, "MT_ref": movement_times,
                     "D": Ds, "W": Ws}
     elif task in ('spiral_0',):

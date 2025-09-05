@@ -132,9 +132,10 @@ class ProgressEvalLogger:
                cameras=[None],
                ):
     self.logdir = logdir
-    ckpt_path = logdir / "checkpoints"
-    ckpt_path.mkdir(parents=True, exist_ok=True)
-    self.checkpoint_path = ckpt_path
+    if logdir is not None:
+        ckpt_path = logdir / "checkpoints"
+        ckpt_path.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_path = ckpt_path
 
     self.seed = seed
     # eval_key = jax.random.PRNGKey(seed)
@@ -199,7 +200,7 @@ class ProgressEvalLogger:
     rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
 
     # # run more rollouts that only store information relevant for computing task metrics
-    # (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
+    # (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes, log_MT_only=True)[0]
     # task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
     ### NOTE: moved to checkpoint callback function, which is called more frequently, such that this videologger callback is reserved for "full" rollouts
     task_metrics = {}
@@ -236,7 +237,7 @@ class ProgressEvalLogger:
         # do n_episodes (efficient) rollouts and calculate and log SL metrics
         if self.n_episodes > 0:
             jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
-            (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
+            (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes, log_MT_only=True)[0]
             task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
             print(task_metrics)
             wandb.log(task_metrics, step=current_step)
