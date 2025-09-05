@@ -479,16 +479,19 @@ def train_or_load_checkpoint(env_name,
             policy_params_fn = lambda *args: None
     
     if policy_params_fn_checkpoints is None:
-        if progress_eval_logger is None:
-            progress_eval_logger = ProgressEvalLogger(logdir=logdir, eval_env=eval_env,
-                                                                seed=config.run.eval_seed,
-                                                                log_wandb_checkpoints=log_wandb_checkpoints,
-                                                                n_episode_runs=10,
-                                                                n_episodes_video=10,
-                                                                #ep_length=80,
-                                                                cameras=["fixed-eye", None]
-                                                                )
-        policy_params_fn_checkpoints = progress_eval_logger.progress_save_and_eval_run_minimal
+        if not eval_mode:
+            if progress_eval_logger is None:
+                progress_eval_logger = ProgressEvalLogger(logdir=logdir, eval_env=eval_env,
+                                                                    seed=config.run.eval_seed,
+                                                                    log_wandb_checkpoints=log_wandb_checkpoints,
+                                                                    n_episode_runs=10,
+                                                                    n_episodes_video=10,
+                                                                    #ep_length=80,
+                                                                    cameras=["fixed-eye", None]
+                                                                    )
+            policy_params_fn_checkpoints = progress_eval_logger.progress_save_and_eval_run_minimal
+        else:
+            policy_params_fn_checkpoints = lambda *args: None
 
         # # Define policy parameters function for saving checkpoints
         # def policy_params_fn_checkpoints(current_step, make_policy, params):
