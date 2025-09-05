@@ -875,7 +875,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "menu_2":
             ## vary lengths for fixed width and number of menu items
-            IDs = [5, 6, 7, 8]  #based on Ahlström steering law!
+            IDs = [5, 5.5, 6, 6.5, 7, 7.5, 8]  #based on Ahlström steering law!
             W = 0.075
             n_menu_items = 4
 
@@ -885,7 +885,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
                     rng, rng2 = jax.random.split(rng, 2)
                     if (n_menu_items < (ID**2 - 4 * n_menu_items)):  #otherwise we cannot find an appropriate height!
-                        H = 2 * W / (jp.sqrt(ID**2 - 4 * n_menu_items))  #based on Ahlström steering law!
+                        H = 2 * W / (jp.sqrt(ID**2 - 4 * n_menu_items))  #based on Accot and Zhai menu steering law!
                         if (self.menu_min_height <= H <= self.menu_max_height):
                             anchor_pos = None  #fixed: screen_pos_center; random: None
                             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
@@ -1075,8 +1075,7 @@ class MyoUserMenuSteering(MyoUserBase):
         self.SL_tunnel_infos_keys = SL_tunnel_infos_keys - {"tunnel_extras", "tunnel_angle_interp"}
         self.SL_tunnel_infos = SL_tunnel_infos
         self.SL_tunnel_infos_keys_extra = SL_tunnel_infos_keys_extra
-
-        return len(self.SL_tunnel_infos)
+        return len(SL_tunnel_infos_list)
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
