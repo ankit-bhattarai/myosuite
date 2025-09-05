@@ -28,27 +28,35 @@ from typing import List, Dict
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
+
+
+#Current state: Circle center is always screen position!! Otherwise: change it!!
 
 @dataclass
 class CircularSteeringTaskConfig:
-    distance_reach_metric_coefficient: float = 10.
     screen_distance_x: float = 0.5
     screen_friction: float = 0.1
     obs_keys: List[str] = field(default_factory=lambda: ['qpos', 'qvel', 'qacc', 'fingertip', 'act'])
     omni_keys: List[str] = field(default_factory=lambda: ['screen_pos', 'start_line', 'end_line', 'top_line_radius', 'bottom_line_radius', 'completed_phase_0', 'target', 'middle_line_crossed'])
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 1,
-        "bonus_1": 0,
-        "phase_1_touch": 0,
+        "bonus_1": 10,
+        "phase_1_touch": 8,
         "phase_1_tunnel": 0,
         "neural_effort": 0,
-        "power_for_softcons": 15.,
-        "jac_effort": 5.,
+        "jac_effort": 0,
+        "power_for_softcons": 15,
+        "truncated": 0,
+        "truncated_progress": 0,
+        "bonus_inside_path": 0
     })
     max_duration: float = 5.
     max_trials: int = 1
     reset_type: str = "epsilon_uniform"
-    min_width: float = 0.2
+    min_width: float = 0.1
+    max_width: float = 0.2
     min_inner_radius: float = 0.05
     max_inner_radius: float = 0.3
     inner_radius: float = 0.1
@@ -92,20 +100,19 @@ def default_config() -> config_dict.ConfigDict:
         ),
         
         task_config=config_dict.create(
-            distance_reach_metric_coefficient=10.,
             screen_distance_x=0.5,  #0.59
             screen_friction=0.1,
             obs_keys=['qpos', 'qvel', 'qacc', 'fingertip', 'act'], 
             omni_keys=['screen_pos', 'start_line', 'end_line', 'top_line', 'bottom_line', 'completed_phase_0_arr', 'target'],
-            weighted_reward_keys=config_dict.create(
+             weighted_reward_keys=config_dict.create(
                 reach=1,
-                # bonus_0=0,
-                bonus_1=10,
-                phase_1_touch=0,
+                bonus_1=50,
+                phase_1_touch=8,
                 phase_1_tunnel=0,  #-2,
-                neural_effort=0,  #1e-4,
-                jac_effort=5,
-                power_for_softcons=15
+                neural_effort=0.0,  #1e-4,
+                jac_effort=0,
+                truncated=0, #0
+                truncated_progress=-10,
             ),
             max_duration=4., # timelimit per trial, in seconds
             max_trials=1,  # num of trials per episode
@@ -184,21 +191,11 @@ class MyoUserCircularSteering(MyoUserBase):
 
         #TODO: once contact sensors are integrated, check if the fingertip_geom is needed or not
 
-        self.distance_reach_metric_coefficient = self._config.task_config.distance_reach_metric_coefficient
-
-        # Currently hardcoded
-        self.min_width = 0.2
-        self.min_inner_radius = 0.05
-        self.max_inner_radius = 0.3
-        self.circle_center = 0.0
-        self.inner_radius = 0.1
-        self.outer_radius = 0.2
+        self.min_width = self._config.task_config.min_width
+        self.max_width = self._config.task_config.max_width
+        self.min_inner_radius = self._config.task_config.min_inner_radius
+        self.max_inner_radius = self._config.task_config.max_inner_radius
         
-    # def _prepare_after_init(self, data):
-    #     super()._prepare_after_init(data)
-        # # Define target origin, relative to which target positions will be generated
-        # self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
-
     def get_obs_dict(self, data, info):
         rng = info['rng']
 
@@ -245,57 +242,36 @@ class MyoUserCircularSteering(MyoUserBase):
         path_width = jp.linalg.norm(top_line_radius - bottom_line_radius)
         path_length = 2 * jp.pi * (bottom_line_radius + top_line_radius) / 2
         dist_to_start_line = jp.linalg.norm(ee_pos - start_line, axis=-1)
-        #jax.debug.print("dist_to_start_line: {} and ee_pos {} and start_line {}", dist_to_start_line, ee_pos, start_line)
-        dist_to_end_line = jp.linalg.norm(ee_pos[1] - end_line[1])
 
-
-        # Compute remaining path length
-        # ee_pos_vec = ee_pos[1:3] - obs_dict['screen_pos'][1:3]
-        # ee_pos_vec = jp.where(
-        #     middle_line_crossed == 0,
-        #     ee_pos_vec.at[0].set(jp.maximum(ee_pos_vec[0], 0.1)),
-        #     ee_pos_vec
-        # )
-        # theta_now = jp.atan2(ee_pos_vec[0], ee_pos_vec[1])
-        # theta_rel = (theta_now - jp.pi / 2) % (2 * jp.pi)
-        # remaining_angle = (2 * jp.pi - theta_rel)
-        # radius = (bottom_line_radius + top_line_radius) / 2
-        # path_length_before_middle_line_crossed = radius * remaining_angle 
-        # path_length_after_middle_line_crossed = radius * (2 * jp.pi - remaining_angle)
-        # path_length_remaining = middle_line_crossed*path_length_after_middle_line_crossed + (1-middle_line_crossed)*path_length_before_middle_line_crossed
-
-        ee_pos_vec = jp.where(
-            middle_line_crossed == 0,
-            ee_pos.at[0].set(jp.maximum(ee_pos[0], 0.01)),
-            ee_pos
-        )
+        ee_pos_rel = ee_pos - obs_dict['screen_pos']
+        ee_pos_vec = middle_line_crossed * ee_pos_rel[1:] + (1 - middle_line_crossed) * jp.array([jp.maximum(ee_pos_rel[1], 0.001), ee_pos_rel[2]])
         theta_now = jp.atan2(ee_pos_vec[0], ee_pos_vec[1])
-        remaining_angle = (2*jp.pi - theta_now) % (2 * jp.pi)
+        remaining_angle = jp.fmod((2*jp.pi - theta_now), (2 * jp.pi))
         radius = (bottom_line_radius + top_line_radius) / 2
         path_length_remaining = radius * remaining_angle
+
         obs_dict["remaining_angle"] = remaining_angle
+        obs_dict['percentage_of_remaining_path'] = path_length_remaining / path_length
 
         # Update phase immediately based on current position
-        touching_screen_phase_0 = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
+        touching_screen = 1.0 *(jp.linalg.norm(ee_pos[0] - start_line[0]) <= 0.01)
         dist_to_circle_center = jp.linalg.norm(ee_pos[1:3] - obs_dict['screen_pos'][1:3], axis=-1)
         within_path_limits = 1.0 * (dist_to_circle_center <= top_line_radius) * (dist_to_circle_center >= bottom_line_radius)
         within_y_dist = 1.0 * (jp.linalg.norm(ee_pos[1] - start_line[1]) <= 0.01)
-        phase_0_completed_now = touching_screen_phase_0 * within_path_limits * within_y_dist
+        phase_0_completed_now = touching_screen * within_path_limits * within_y_dist
         completed_phase_0 = completed_phase_0 + (1. - completed_phase_0) * phase_0_completed_now
 
-        #jax.debug.print("completed_phase_0: {}, path_length: {}, path_length_remaining: {}", completed_phase_0, path_length, path_length_remaining)
-
         start_line = obs_dict['start_line']        # Shape: (1024, 3)
-        yz = jp.stack([start_line[1], -start_line[2]], axis=-1)  # (1024, 2)
-        dist_to_middle_line = jp.linalg.norm(yz - ee_pos[1:3], axis=-1)  # (1024,)
-        close_to_middle_line = (dist_to_middle_line <= 0.01).astype(jp.float32)
+        middle_line_pos = jp.stack([start_line[0],start_line[1], obs_dict['screen_pos'][2]-radius], axis=-1)  # (1024, 2)
+        close_to_middle_line = (jp.abs(ee_pos[2] - middle_line_pos[2]) <= (path_width/2 + 0.01)) * (jp.abs(ee_pos[1] - middle_line_pos[1]) <= 0.02) * completed_phase_0 * touching_screen
         middle_line_crossed = middle_line_crossed + (1. - middle_line_crossed) * close_to_middle_line
-
-        crossed_line_y = 1.0 * (ee_pos[1] <= end_line[1]) * middle_line_crossed
+        #jax.debug.print("ee_pos: {}, middle_line_pos: {}, screen_pos: {}, start_line: {}", ee_pos[1:3], middle_line_pos[1:3], obs_dict['screen_pos'][1:3], start_line[1:3])
+        #jax.debug.print("ee_pos: {}, middle_line_pos: {}, middle_line_crossed: {}", ee_pos[1:3], middle_line_pos[1:3], middle_line_crossed)
+        crossed_line_y = 1.0 * (jp.abs(ee_pos[1] - end_line[1]) <= 0.01) * middle_line_crossed * (jp.abs(ee_pos[2] - end_line[2]) <= path_width/2)
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
         touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
-        phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1 * within_path_limits
-        completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now    
+        phase_1_completed_now = completed_phase_0 * crossed_line_y * touching_screen_phase_1# * within_path_limits
+        completed_phase_1 = completed_phase_1 + (1. - completed_phase_1) * phase_1_completed_now  
 
         dist_circle_center_to_circle_path_center = bottom_line_radius + path_width/2
         dist_ee_to_circle_path_center = jp.linalg.norm(ee_pos[1:3] - obs_dict['screen_pos'][1:3])
@@ -305,10 +281,11 @@ class MyoUserCircularSteering(MyoUserBase):
         # Reset phase 0 when phase 1 is done (and episode ends)
         ## TODO: delay this update to the step function, to ensure consistency between different observations (e.g. when defining the reward function)?
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
+        #jax.debug.print("crossed_line_y: {}, completed_phase_1: {}, phase_1_completed_now: {}, end_line[2] - path_width/2 {}, ee_pos[2] {}", crossed_line_y, completed_phase_1, phase_1_completed_now, end_line[2] - path_width/2, ee_pos[2])
 
-        obs_dict["con_0_touching_screen"] = touching_screen_phase_0
+        obs_dict["con_0_touching_screen"] = touching_screen
         #obs_dict["con_0_1_within_z_limits"] = (1.-within_z_limits) * completed_phase_0
-        obs_dict["con_0_1_within_path_limits"] = within_path_limits
+        obs_dict["out_of_bounds"] = (1.-within_path_limits) * completed_phase_0
         obs_dict["con_0_within_y_dist"] = within_y_dist
         obs_dict["completed_phase_0"] = completed_phase_0
         obs_dict["middle_line_crossed"] = middle_line_crossed
@@ -317,30 +294,31 @@ class MyoUserCircularSteering(MyoUserBase):
         obs_dict["completed_phase_1"] = completed_phase_1
         obs_dict["softcons_for_bounds"] = softcons_for_bounds
 
+        obs_dict["inside_path"] = within_path_limits * touching_screen
+
         ## Compute distances
         phase_0_distance = dist_to_start_line + path_length
-        #jax.debug.print("phase_0_distance: {} and path_length {} ", phase_0_distance, path_length)
         phase_1_distance = path_length_remaining
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
-        #jax.debug.print("completed_phase_0: {} and dist {} ", completed_phase_0, dist)
+        #jax.debug.print("phase_0_distance: {} and dist {} and path_length {}", phase_0_distance, dist, path_length)
 
         obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
         obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
         obs_dict["dist"] = dist
         obs_dict["phase_1_x_dist"] = phase_1_x_dist
-        obs_dict["path_length_remaining"] = completed_phase_0 * path_length + (1 - completed_phase_0) * path_length_remaining
+        obs_dict["path_length_remaining"] = completed_phase_0 * path_length_remaining + (1 - completed_phase_0) * path_length
 
         ## Additional observations
         obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
         obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
 
+        #jax.debug.print("completed_phase_0: {}, middle_line_crossed: {}, path_length: {}, path_length_remaining: {}, dist {}", completed_phase_0, middle_line_crossed, path_length, path_length_remaining, dist)
+
         return obs_dict
        
     def update_info(self, info, obs_dict):
         # TODO: is this really needed? can we drop (almost all) info keys?
-        info['last_ctrl'] = obs_dict['last_ctrl']
-        # info['motor_act'] = obs_dict['motor_act']
         info['fingertip'] = obs_dict['fingertip']
         info['completed_phase_0'] = obs_dict['completed_phase_0']
         info['completed_phase_1'] = obs_dict['completed_phase_1']
@@ -360,68 +338,52 @@ class MyoUserCircularSteering(MyoUserBase):
 
         ctrl_magnitude = jp.linalg.norm(obs_dict['last_ctrl'], axis=-1)
 
-        # Give some intermediate reward for transitioning from phase 0 to phase 1 but only when finger is touching the
-        # start line when in phase 0   
-        # 
-        #ejk_effort, previous_qacc = self.get_ejk_effort_costs(obs_dict, info) 
-        #info['previous_qacc'] = previous_qacc
-
         rwd_dict = collections.OrderedDict((
-            # Optional Keys
-            # ('reach',   1.*(jp.exp(-obs_dict["dist"]*self.distance_reach_metric_coefficient) - 1.)/self.distance_reach_metric_coefficient),  #-1.*reach_dist)
-            ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]),  #-1.*reach_dist)
-            # ('bonus_0_old',   1.*(obs_dict['completed_phase_0_first'])), 
-            # ('bonus_1_old',   1.*(obs_dict['completed_phase_1_first'])), 
-            #('bonus_0',   1.*(1.-obs_dict['completed_phase_1'])*((1.-obs_dict['completed_phase_0'])*(obs_dict['con_0_touching_screen']))),  #TODO: possible alternative: give one-time bonus when obs_dict['completed_phase_0_first']==True
-            ('bonus_1',   1.*(obs_dict['completed_phase_1'])),  #TODO :use obs_dict['completed_phase_1_first'] instead?
+            ('reach',   -1.*(1.-obs_dict['completed_phase_1'])*obs_dict["dist"]), 
+            ('bonus_1',   1.*(obs_dict['completed_phase_1'])), 
             ('phase_1_touch',   1.*(obs_dict['completed_phase_0']*(-obs_dict['phase_1_x_dist']) + (1.-obs_dict['completed_phase_0'])*(-0.3))),
-            #('phase_1_touch',   -1.*(obs_dict['completed_phase_0']*(1-obs_dict['con_1_touching_screen']) + (1.-obs_dict['completed_phase_0'])*(0.5))),
-            #('phase_1_tunnel',   -1.*(obs_dict['completed_phase_0']*obs_dict['con_0_1_within_z_limits'])),
-            #('phase_1_tunnel', 1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**15) + (1.-obs_dict['completed_phase_0'])*(-1.))),
             ('neural_effort', -1.*(ctrl_magnitude ** 2)),
             ('jac_effort', -1.* self.get_jac_effort_costs(obs_dict)),
-            #('truncated', 1.*obs_dict["con_0_1_within_z_limits"]),#jp.logical_or(,(1.0 - obs_dict["con_1_touching_screen"]) * obs_dict["completed_phase_0"])
+            ('truncated', 1.*obs_dict["out_of_bounds"]),
+            ('truncated_progress', 1.*obs_dict["out_of_bounds"]*obs_dict['completed_phase_0']*obs_dict['percentage_of_remaining_path']),
             # # Must keys
-            ('done',    1.*(obs_dict['completed_phase_1'])), #np.any(reach_dist > far_th))),
+            ('done',    1.*(obs_dict['completed_phase_1'])),
+            ('bonus_inside_path', 1.*obs_dict['inside_path']),
         ))
 
-        power_softcons = self.weighted_reward_keys['power_for_softcons']
-        phase_1_tunnel_weight = self.weighted_reward_keys['phase_1_tunnel']
+        #power_softcons = self.weighted_reward_keys['power_for_softcons']
+        #phase_1_tunnel_weight = self.weighted_reward_keys['phase_1_tunnel']
 
         exclude = {"power_for_softcons", "phase_1_tunnel"}
 
         rwd_dict['dense'] = jp.sum(
-            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items() if key not in exclude]), axis=0) + phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-0.3)))
+            jp.array([wt * rwd_dict[key] for key, wt in self.weighted_reward_keys.items() if key not in exclude]), axis=0)# + phase_1_tunnel_weight*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**power_softcons) + (1.-obs_dict['completed_phase_0'])*(-0.3)))
 
         return rwd_dict
 
     @staticmethod
-    def get_tunnel_limits(rng, low, high, min_size):
+    def get_tunnel_limits(rng, low, high, min_size, max_size):
         rng1, rng2 = jax.random.split(rng, 2)
         small_low = low
         small_high = high - min_size
         small_line = jax.random.uniform(rng1) * (small_high - small_low) + small_low
         large_low = small_line + min_size
-        large_high = high
+        large_high = jp.minimum(small_line + max_size, high)
         large_line = jax.random.uniform(rng2) * (large_high - large_low) + large_low
+
         return small_line, large_line
     
     def get_relevant_positions(self, data: mjx.Data) -> dict[str, jax.Array]:
         return {
             'fingertip': data.site_xpos[self.fingertip_id],
             'screen_pos': data.site_xpos[self.screen_id],
-            'top_line_radius': 0.3,#data.site_size[self.top_line_id][0],
-            'bottom_line_radius': 0.1,#data.site_size[self.bottom_line_id][0],
             'start_line': data.site_xpos[self.start_line_id],
             'end_line': data.site_xpos[self.end_line_id],
         }
     
     def get_custom_tunnel_radii(self, rng: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
         rng1, rng2 = jax.random.split(rng, 2)
-        inner_radius, outer_radius = self.get_tunnel_limits(rng2, self.min_inner_radius, self.max_inner_radius, self.min_width)
-
-        inner_radius = 0.1
-        outer_radius = 0.3
+        inner_radius, outer_radius = self.get_tunnel_limits(rng2, self.min_inner_radius, self.max_inner_radius, self.min_width, self.max_width)
         return inner_radius, outer_radius
 
     def get_custom_tunnel(self, rng: jax.Array, data: mjx.Data) -> dict[str, jax.Array]:
@@ -440,8 +402,35 @@ class MyoUserCircularSteering(MyoUserBase):
 
         return tunnel_values
 
+    def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
+        tunnels_total = []
+        IDs = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24]
+
+        for ID in IDs:
+            combos = 0
+            while combos < 3:
+                rng, rng2 = jax.random.split(rng, 2)
+                W = jax.random.uniform(rng, minval=self.min_width, maxval=self.max_width)
+                L = ID * W
+                r_inner = (L - jp.pi * W) / (2 * jp.pi)
+                if self.min_inner_radius <= r_inner <= self.max_inner_radius:
+                    r_outer = r_inner + W
+                    pos = (r_inner + r_outer) / 2
+                    tunnel_positions = []
+                    tunnel_positions.append(jp.array([r_inner, 0, 0]))
+                    tunnel_positions.append(jp.array([r_outer, 0, 0]))
+                    tunnel_positions.append(screen_pos + jp.array([0, 0, pos]))
+                    tunnel_positions.append(screen_pos + jp.array([0, 0, pos]))
+                    tunnel_positions.append(screen_pos)
+                    combos += 1
+                    for i in range(5):
+                        tunnels_total.append(tunnel_positions)
+                    print(f"Added 5 paths for ID {ID}, L {L}, W {W}, R {pos}")
+                
+        #print(f"tunnels_total", tunnels_total)
+        return tunnels_total
+
     def reset(self, rng, render_token=None, tunnel_positions=None):
-        # jax.debug.print(f"RESET INIT")
 
         _, rng = jax.random.split(rng, 2)
 
@@ -457,7 +446,10 @@ class MyoUserCircularSteering(MyoUserBase):
                 "completed_phase_1": 0.0,
                 "middle_line_crossed": 0.0
                 }
-        info.update(self.get_custom_tunnel(rng, data))
+        if tunnel_positions is None:
+            info.update(self.get_custom_tunnel(rng, data))
+        else:
+            info.update(tunnel_positions)
         
         # Generate inital observations
         # TODO: move the following lines into MyoUserBase.reset?
@@ -475,15 +467,22 @@ class MyoUserCircularSteering(MyoUserBase):
             'middle_line_crossed': 0.0,
             'dist': 0.0,
             'distance_phase_0': 0.0,
-            'distance_phase_1': 0.0,
+            #'distance_phase_1': 0.0,
             'phase_1_x_dist': 0.0,
             'con_0_touching_screen': 0.0,
             'con_1_touching_screen': 0.0,
             'con_1_crossed_line_y': 0.0,
-            'softcons_for_bounds': 0.0,
+            #'softcons_for_bounds': 0.0,
             'path_length_remaining': 0.0,
-            'path_length': 0.0,
+            #'path_length': 0.0,
             'remaining_angle': 0.0,
+            'rwd_dist': 0.0,
+            'rwd_bonus': 0.0,
+            'rwd_touch': 0.0,
+            'rwd_jac_effort': 0.0,
+            'rwd_truncated_progress': 0.0,
+            'rwd_bonus_inside_path': 0.0,
+            'out_of_bounds': 0.0,
         }
 
         return State(data, obs, reward, done, metrics, info)
@@ -492,9 +491,30 @@ class MyoUserCircularSteering(MyoUserBase):
         render_token = info_before_reset["render_token"] if self.vision else None
         return self.reset(rng, render_token=render_token, **kwargs)
 
+    def eval_reset(self, rng, eval_id, **kwargs):
+        """Reset function wrapper called by evaluate_policy."""
+        _tunnel_position_jp = self.SL_tunnel_positions.at[eval_id].get()
+        tunnel_values = {}
+        tunnel_values['bottom_line_radius'] = jp.array([_tunnel_position_jp[0][0]])
+        tunnel_values['top_line_radius'] = jp.array([_tunnel_position_jp[1][0]])
+        tunnel_values['start_line'] = _tunnel_position_jp[2]
+        tunnel_values['end_line'] = _tunnel_position_jp[3]
+        tunnel_values['screen_pos'] = _tunnel_position_jp[4]
+
+        return self.reset(rng, tunnel_positions=tunnel_values, **kwargs)
+
+    def prepare_eval_rollout(self, rng, **kwargs):
+        """Function that can be used to define random parameters to be used across multiple evaluation rollouts/resets.
+        May return the number of evaluation episodes that should be rolled out (before this method should be called again)."""
+        
+        ## Setup evaluation episodes for Steering Law validation
+        rng, rng2 = jax.random.split(rng, 2)
+        self.SL_tunnel_positions = jp.array(self.get_custom_tunnels_steeringlaw(rng2, screen_pos=jp.array([0.5, -0.27, 0.993])))
+
+        return len(self.SL_tunnel_positions)
+
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
-        # jax.debug.print('Step start - completed_phase_0: {}', state.info['completed_phase_0'])
         rng = state.info['rng']
         rng, rng_ctrl = jax.random.split(rng, 2)
         new_ctrl = self.get_ctrl(state, action, rng_ctrl)
@@ -519,7 +539,7 @@ class MyoUserCircularSteering(MyoUserBase):
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
-        jax.debug.print("path_length_remaining: {}, path_length: {}, radius {}", obs_dict["path_length_remaining"], (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi, (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0])/2)
+        #jax.debug.print("path_length_remaining: {}, path_length: {}, radius {}", obs_dict["path_length_remaining"], (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi, (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0])/2)
 
         done = rwd_dict['done']
         state.metrics.update(
@@ -527,17 +547,27 @@ class MyoUserCircularSteering(MyoUserBase):
             completed_phase_1 = obs_dict["completed_phase_1"],
             dist = obs_dict["dist"],
             distance_phase_0 = obs_dict["distance_phase_0"],
-            distance_phase_1 = obs_dict["distance_phase_1"],
+            #distance_phase_1 = obs_dict["distance_phase_1"],
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
             con_0_touching_screen = obs_dict["con_0_touching_screen"],
             con_1_touching_screen = obs_dict["con_1_touching_screen"],
             con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
-            softcons_for_bounds = obs_dict["softcons_for_bounds"],
+            # softcons_for_bounds = obs_dict["softcons_for_bounds"],
             middle_line_crossed = obs_dict["middle_line_crossed"],
             path_length_remaining = obs_dict["path_length_remaining"],
-            path_length = (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi,  #2*pi*radius
+            #path_length = (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi,  #2*pi*radius
             remaining_angle = obs_dict["remaining_angle"],
+            rwd_dist = rwd_dict['reach']*self.weighted_reward_keys['reach'],
+            rwd_bonus = rwd_dict['bonus_1']*self.weighted_reward_keys['bonus_1'],
+            rwd_touch = rwd_dict['phase_1_touch']*self.weighted_reward_keys['phase_1_touch'],
+            rwd_truncated_progress = rwd_dict['truncated_progress']*self.weighted_reward_keys['truncated_progress'],
+            rwd_jac_effort = rwd_dict["jac_effort"]*self.weighted_reward_keys['jac_effort'],
+            rwd_bonus_inside_path = rwd_dict["bonus_inside_path"]*self.weighted_reward_keys['bonus_inside_path'], 
+            out_of_bounds=obs_dict["out_of_bounds"],
         )
+        #jax.debug.print("path_length_remaining: {}, remaining_angle: {}, fingertip_rel {}", obs_dict["path_length_remaining"], obs_dict["remaining_angle"], obs_dict["fingertip"] - obs_dict['screen_pos'])
+
+        #jax.debug.print("rwd_dist: {} and dist {}", rwd_dict['reach']*self.weighted_reward_keys['reach'], obs_dict["dist"])
 
         return state.replace(
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
@@ -559,3 +589,77 @@ class MyoUserCircularSteering(MyoUserBase):
 
         mj_model.site_size[self.top_line_id, :][0] = state.info["top_line_radius"][0]
         mj_model.site_size[self.bottom_line_id, :][0] = state.info["bottom_line_radius"][0]
+
+        path_width = state.info["top_line_radius"][0] - state.info["bottom_line_radius"][0]
+
+        mj_model.site_size[self.start_line_id, :][2] = path_width/2
+        mj_model.site_size[self.end_line_id, :][2] = path_width/2
+
+    def calculate_metrics(self, rollout, eval_metrics_keys={"R^2"}):
+
+        eval_metrics = {}
+
+        if True:
+            a,b,r2 = self.calculate_r2(rollout)
+            eval_metrics["eval/R^2"] = r2
+            eval_metrics["eval/a"] = a
+            eval_metrics["eval/b"] = b
+
+        return eval_metrics
+
+    def calculate_r2(self, rollouts, average_r2=True):   
+        sl_data = {}
+        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+
+        Ws = np.array([rollout[np.argwhere(_compl_0)[0].item()].info["top_line_radius"] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line_radius"]
+            for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                    any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])
+        ])
+        Rs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].info['top_line_radius'] + rollout[np.argwhere(_compl_0)[0].item()].info['bottom_line_radius'])/2
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.info["completed_phase_1"] for r in rollout])])
+
+        Ds = Rs * (2 * np.pi)
+
+        IDs = (Ds / Ws).reshape(-1, 1)
+        
+        sl_data.update({'R': Rs})
+
+
+        if len(IDs) == 0 or len(MTs) == 0:
+            return np.nan, np.nan, np.nan
+        
+        a, b, r2, y_pred, ID_means, MT_means = fit_model(IDs, MTs, average_r2=average_r2)
+
+        print(f"R^2: {r2}, a,b: {a},{b}")
+
+        sl_data.update({"ID": IDs, "MT_ref": MTs,
+                "MT_pred": y_pred,
+                "D": Ds, "W": Ws})
+        if average_r2:
+            sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
+
+        return a,b,r2
+    
+def fit_model(IDs, MTs, average_r2):
+    if average_r2:
+        IDs_rounded = IDs.round(2)
+        ID_means = np.sort(np.unique(IDs_rounded)).reshape(-1, 1)
+        MT_means = np.array([MTs[np.argwhere(IDs_rounded.flatten() == _id)].mean() for _id in ID_means])
+
+        model = LinearRegression()
+        model.fit(ID_means, MT_means)
+        a = model.intercept_
+        b = model.coef_[0]
+        y_pred = model.predict(ID_means)
+        r2 = r2_score(MT_means, y_pred)
+    else:
+        model = LinearRegression()
+        model.fit(IDs, MTs)
+        a = model.intercept_
+        b = model.coef_[0]
+        y_pred = model.predict(IDs)
+        r2 = r2_score(MTs, y_pred)
+    return a, b, r2, y_pred, ID_means, MT_means
