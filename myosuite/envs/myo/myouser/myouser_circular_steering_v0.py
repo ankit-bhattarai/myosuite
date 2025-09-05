@@ -28,8 +28,7 @@ from typing import List, Dict
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
+from myosuite.envs.myo.myouser.steering_law_calculations import calculate_steering_laws
 
 
 #Current state: Circle center is always screen position!! Otherwise: change it!!
@@ -265,8 +264,7 @@ class MyoUserCircularSteering(MyoUserBase):
         middle_line_pos = jp.stack([start_line[0],start_line[1], obs_dict['screen_pos'][2]-radius], axis=-1)  # (1024, 2)
         close_to_middle_line = (jp.abs(ee_pos[2] - middle_line_pos[2]) <= (path_width/2 + 0.01)) * (jp.abs(ee_pos[1] - middle_line_pos[1]) <= 0.02) * completed_phase_0 * touching_screen
         middle_line_crossed = middle_line_crossed + (1. - middle_line_crossed) * close_to_middle_line
-        #jax.debug.print("ee_pos: {}, middle_line_pos: {}, screen_pos: {}, start_line: {}", ee_pos[1:3], middle_line_pos[1:3], obs_dict['screen_pos'][1:3], start_line[1:3])
-        #jax.debug.print("ee_pos: {}, middle_line_pos: {}, middle_line_crossed: {}", ee_pos[1:3], middle_line_pos[1:3], middle_line_crossed)
+
         crossed_line_y = 1.0 * (jp.abs(ee_pos[1] - end_line[1]) <= 0.01) * middle_line_crossed * (jp.abs(ee_pos[2] - end_line[2]) <= path_width/2)
         phase_1_x_dist = jp.linalg.norm(ee_pos[0] - end_line[0])
         touching_screen_phase_1 = 1.0 * (phase_1_x_dist <= 0.01)
@@ -281,7 +279,6 @@ class MyoUserCircularSteering(MyoUserBase):
         # Reset phase 0 when phase 1 is done (and episode ends)
         ## TODO: delay this update to the step function, to ensure consistency between different observations (e.g. when defining the reward function)?
         completed_phase_0 = completed_phase_0 * (1. - completed_phase_1)
-        #jax.debug.print("crossed_line_y: {}, completed_phase_1: {}, phase_1_completed_now: {}, end_line[2] - path_width/2 {}, ee_pos[2] {}", crossed_line_y, completed_phase_1, phase_1_completed_now, end_line[2] - path_width/2, ee_pos[2])
 
         obs_dict["con_0_touching_screen"] = touching_screen
         #obs_dict["con_0_1_within_z_limits"] = (1.-within_z_limits) * completed_phase_0
@@ -312,8 +309,6 @@ class MyoUserCircularSteering(MyoUserBase):
         obs_dict['target'] = completed_phase_0 * obs_dict['end_line'] + (1. - completed_phase_0) * obs_dict['start_line']
         obs_dict["completed_phase_0_first"] = (1. - info["completed_phase_0"]) * (obs_dict["completed_phase_0"])
         obs_dict["completed_phase_1_first"] = (1. - info["completed_phase_1"]) * (obs_dict["completed_phase_1"])
-
-        #jax.debug.print("completed_phase_0: {}, middle_line_crossed: {}, path_length: {}, path_length_remaining: {}, dist {}", completed_phase_0, middle_line_crossed, path_length, path_length_remaining, dist)
 
         return obs_dict
        
@@ -404,7 +399,7 @@ class MyoUserCircularSteering(MyoUserBase):
 
     def get_custom_tunnels_steeringlaw(self, rng: jax.Array, screen_pos: jax.Array) -> dict[str, jax.Array]:
         tunnels_total = []
-        IDs = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24]
+        IDs = [5, 6, 7, 8, 9, 10, 11, 12, 14]
 
         for ID in IDs:
             combos = 0
@@ -423,9 +418,9 @@ class MyoUserCircularSteering(MyoUserBase):
                     tunnel_positions.append(screen_pos + jp.array([0, 0, pos]))
                     tunnel_positions.append(screen_pos)
                     combos += 1
-                    for i in range(5):
+                    for i in range(10):
                         tunnels_total.append(tunnel_positions)
-                    print(f"Added 5 paths for ID {ID}, L {L}, W {W}, R {pos}")
+                    print(f"Added 10 paths for ID {ID}, L {L}, W {W}, R {pos}")
                 
         #print(f"tunnels_total", tunnels_total)
         return tunnels_total
@@ -493,6 +488,7 @@ class MyoUserCircularSteering(MyoUserBase):
 
     def eval_reset(self, rng, eval_id, **kwargs):
         """Reset function wrapper called by evaluate_policy."""
+        print("eval_id", eval_id)
         _tunnel_position_jp = self.SL_tunnel_positions.at[eval_id].get()
         tunnel_values = {}
         tunnel_values['bottom_line_radius'] = jp.array([_tunnel_position_jp[0][0]])
@@ -539,7 +535,6 @@ class MyoUserCircularSteering(MyoUserBase):
         _updated_info = self.update_info(state.info, obs_dict)
         _, _updated_info['rng'] = jax.random.split(rng, 2) #update rng after each step to ensure variability across steps
         state.replace(info=_updated_info)
-        #jax.debug.print("path_length_remaining: {}, path_length: {}, radius {}", obs_dict["path_length_remaining"], (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0]) * jp.pi, (obs_dict["top_line_radius"][0] + obs_dict["bottom_line_radius"][0])/2)
 
         done = rwd_dict['done']
         state.metrics.update(
@@ -565,22 +560,10 @@ class MyoUserCircularSteering(MyoUserBase):
             rwd_bonus_inside_path = rwd_dict["bonus_inside_path"]*self.weighted_reward_keys['bonus_inside_path'], 
             out_of_bounds=obs_dict["out_of_bounds"],
         )
-        #jax.debug.print("path_length_remaining: {}, remaining_angle: {}, fingertip_rel {}", obs_dict["path_length_remaining"], obs_dict["remaining_angle"], obs_dict["fingertip"] - obs_dict['screen_pos'])
-
-        #jax.debug.print("rwd_dist: {} and dist {}", rwd_dict['reach']*self.weighted_reward_keys['reach'], obs_dict["dist"])
 
         return state.replace(
             data=data, obs=obs, reward=rwd_dict['dense'], done=done
         )
-    
-    # def add_target_pos_to_data(self, data, target_pos):
-    #     xpos = data.xpos
-    #     geom_xpos = data.geom_xpos
-
-    #     xpos = xpos.at[self.target_body_id].set(target_pos)
-    #     geom_xpos = geom_xpos.at[self.target_geom_id].set(target_pos)
-    #     data = data.replace(xpos=xpos, geom_xpos=geom_xpos)
-    #     return data
 
     def update_task_visuals(self, mj_model, state):
         screen_pos = state.info["screen_pos"] + jp.array([0.01, 0., 0.])  #need to re-introduce site pos offset from xml file that was ignored in get_custom_tunnel() to ensure that task visuals properly appear in front of the screen 
@@ -595,71 +578,10 @@ class MyoUserCircularSteering(MyoUserBase):
         mj_model.site_size[self.start_line_id, :][2] = path_width/2
         mj_model.site_size[self.end_line_id, :][2] = path_width/2
 
-    def calculate_metrics(self, rollout, eval_metrics_keys={"R^2"}):
+    def calculate_metrics(self, rollout, eval_metrics_keys={}, task_type=None):
+        if task_type is None:
+            task_type = 'circle_0'
 
-        eval_metrics = {}
-
-        if True:
-            a,b,r2 = self.calculate_r2(rollout)
-            eval_metrics["eval/R^2"] = r2
-            eval_metrics["eval/a"] = a
-            eval_metrics["eval/b"] = b
+        eval_metrics = calculate_steering_laws(rollout, task_type)
 
         return eval_metrics
-
-    def calculate_r2(self, rollouts, average_r2=True):   
-        sl_data = {}
-        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
-
-        Ws = np.array([rollout[np.argwhere(_compl_0)[0].item()].info["top_line_radius"] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line_radius"]
-            for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                    any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])
-        ])
-        Rs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].info['top_line_radius'] + rollout[np.argwhere(_compl_0)[0].item()].info['bottom_line_radius'])/2
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["completed_phase_1"] for r in rollout])])
-
-        Ds = Rs * (2 * np.pi)
-
-        IDs = (Ds / Ws).reshape(-1, 1)
-        
-        sl_data.update({'R': Rs})
-
-
-        if len(IDs) == 0 or len(MTs) == 0:
-            return np.nan, np.nan, np.nan
-        
-        a, b, r2, y_pred, ID_means, MT_means = fit_model(IDs, MTs, average_r2=average_r2)
-
-        print(f"R^2: {r2}, a,b: {a},{b}")
-
-        sl_data.update({"ID": IDs, "MT_ref": MTs,
-                "MT_pred": y_pred,
-                "D": Ds, "W": Ws})
-        if average_r2:
-            sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
-
-        return a,b,r2
-    
-def fit_model(IDs, MTs, average_r2):
-    if average_r2:
-        IDs_rounded = IDs.round(2)
-        ID_means = np.sort(np.unique(IDs_rounded)).reshape(-1, 1)
-        MT_means = np.array([MTs[np.argwhere(IDs_rounded.flatten() == _id)].mean() for _id in ID_means])
-
-        model = LinearRegression()
-        model.fit(ID_means, MT_means)
-        a = model.intercept_
-        b = model.coef_[0]
-        y_pred = model.predict(ID_means)
-        r2 = r2_score(MT_means, y_pred)
-    else:
-        model = LinearRegression()
-        model.fit(IDs, MTs)
-        a = model.intercept_
-        b = model.coef_[0]
-        y_pred = model.predict(IDs)
-        r2 = r2_score(MTs, y_pred)
-    return a, b, r2, y_pred, ID_means, MT_means
