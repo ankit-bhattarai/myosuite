@@ -173,29 +173,28 @@ def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):
         if np.isnan(Ds):
             return np.nan, np.nan, np.nan, np.nan
         IDs = (Ds / Ws).reshape(-1, 1)
-    #currently not phase_0 completed steps etc..
     elif task in ('circle_0',):
 
         MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])])
+                                                any(_compl_1 := [r.metrics["phase_1_completed_steps"] for r in rollout])])
 
         if 'top_line_radius' in rollouts[0][0].info.keys():
             Ws = np.array([rollout[np.argwhere(_compl_0)[0].item()].info["top_line_radius"] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line_radius"]
                 for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                        any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])
+                                        any(_compl_1 := [r.metrics["phase_1_completed_steps"] for r in rollout])
             ])
             Rs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].info['top_line_radius'] + rollout[np.argwhere(_compl_0)[0].item()].info['bottom_line_radius'])/2
                             for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                    any(_compl_1 := [r.info["completed_phase_1"] for r in rollout])])
+                                                    any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         else:
             Ws = np.array([np.abs(rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_left"][0,1] - rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_right"][0,1])
                 for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                        any(_compl_1 := [r.metrics["completed_phase_1"] for r in rollout])
+                                        any(_compl_1 := [r.metrics["phase_1_completed_steps"] for r in rollout])
             ])
             Rs = np.array([np.abs(max(rollout[np.argwhere(_compl_1)[0].item()].info['tunnel_nodes_left'][:,1]) - min(rollout[np.argwhere(_compl_0)[0].item()].info['tunnel_nodes_left'][:,1]))/2
                 for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                        any(_compl_1 := [r.info["completed_phase_1"] for r in rollout])])
+                                        any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
         if np.isnan(Ds):
             return np.nan, np.nan, np.nan, np.nan
         Ds = Rs * (2 * np.pi)
