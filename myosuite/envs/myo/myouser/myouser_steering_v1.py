@@ -1051,8 +1051,7 @@ class MyoUserMenuSteering(MyoUserBase):
         self.SL_tunnel_infos_keys = SL_tunnel_infos_keys - {"tunnel_extras", "tunnel_angle_interp"}
         self.SL_tunnel_infos = SL_tunnel_infos
         self.SL_tunnel_infos_keys_extra = SL_tunnel_infos_keys_extra
-
-        return len(self.SL_tunnel_infos)
+        return len(SL_tunnel_infos_list)
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
