@@ -88,6 +88,8 @@ class MenuSteeringTaskConfig:
     spiral_checkpoints: List[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
     spiral_flip: bool = True # If set to true, it flips spiral such that agent starts in the inside and has to reach the outside last.
     spiral_angle_rot: bool = False
+    spiral_eval_endings: List[float] = field(default_factory=lambda: [9, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 10, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 11])
+    spiral_eval_widths: List[float] = field(default_factory=lambda: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -550,7 +552,8 @@ class MyoUserMenuSteering(MyoUserBase):
 
     def get_custom_tunnel(self, rng: jax.Array, screen_pos_center: jax.Array,
                           task_type="menu_0", random_start_pos=False,
-                          width=None, height=None, n_menu_items=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None) -> dict[str, jax.Array]:
+                          width=None, height=None, n_menu_items=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None,
+                          spiral_end=None, spiral_width=None) -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
@@ -763,8 +766,14 @@ class MyoUserMenuSteering(MyoUserBase):
             flip = self._config.task_config.spiral_flip
             angle_rot = self._config.task_config.spiral_angle_rot
             rng, end_rng, width_rng = jax.random.split(rng, 3)
-            end = jax.random.uniform(end_rng, minval=end_range[0], maxval=end_range[1])
-            width = jax.random.uniform(width_rng, minval=width_range[0], maxval=width_range[1])
+            if spiral_end is None:
+                end = jax.random.uniform(end_rng, minval=end_range[0], maxval=end_range[1])
+            else:
+                end = spiral_end
+            if spiral_width is None:
+                width = jax.random.uniform(width_rng, minval=width_range[0], maxval=width_range[1])
+            else:
+                width = spiral_width
             theta_middle = jp.linspace((start)*jp.pi, (end+2)*jp.pi, n_sample_points)
             r_middle = spiral_r_middle(theta_middle, width)
             x_middle, y_middle = to_cartesian(theta_middle, r_middle)
@@ -794,6 +803,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 'r_outer': r_outer,
                 'multiplier': multiplier,
             }
+            tunnel_extras = {}
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
@@ -937,6 +947,20 @@ class MyoUserMenuSteering(MyoUserBase):
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
 
         #print(f"tunnels_total", tunnels_total)
+        elif task_type == "spiral_0":
+            spiral_endings = self._config.task_config.spiral_eval_endings
+            spiral_widths = self._config.task_config.spiral_eval_widths
+
+            for spiral_end in spiral_endings:
+                for spiral_width in spiral_widths:
+                    for _ in range(n_tunnels_per_ID):
+                        rng, rng2 = jax.random.split(rng, 2)
+                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type,
+                                                             spiral_end=spiral_end, spiral_width=spiral_width)
+                        tunnels_total.append(tunnel_info)
+                        print(f"Added path for spiral_end {spiral_end}, spiral_width {spiral_width}")
+        print(f"Added {len(tunnels_total)} tunnels in total.")
+
         return tunnels_total
 
     def reset(self, rng, tunnel_infos=None, render_token=None):
