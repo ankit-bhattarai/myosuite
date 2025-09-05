@@ -14,8 +14,10 @@
 # ==============================================================================
 """Train a PPO agent using JAX on the specified environment."""
 
-from datetime import datetime
 import os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+from datetime import datetime
 import warnings
 import pickle
 import h5py
@@ -47,8 +49,6 @@ from omegaconf import OmegaConf
 from ml_collections.config_dict import ConfigDict
 
 
-
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["MUJOCO_GL"] = "egl"
 xla_flags = os.environ.get('XLA_FLAGS', '')
 xla_flags += ' --xla_gpu_triton_gemm_any=True'
