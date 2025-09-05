@@ -6,6 +6,37 @@ import jax.numpy as jp
 
 from myosuite.train.utils.wrapper import _maybe_wrap_env_for_evaluation
 
+def find_first_one(arr):
+# Returns the index of first 1, or len(arr) if no 1 exists
+    return jp.argmax(jp.concatenate([arr, jp.array([1])]))
+
+def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):
+    eval_key = jax.random.PRNGKey(seed)
+    eval_key, reset_keys = jax.random.split(eval_key)
+    state = jit_reset(reset_keys, eval_id=jp.arange(n_episodes, dtype=jp.int32), **reset_info_kwargs)
+    dones = jp.zeros(n_episodes)
+    history = []
+    for ii in range(ep_length):
+        eval_key, key = jax.random.split(eval_key)
+        ctrl, _ = jit_inference_fn(state.obs, jax.random.split(key, n_episodes))
+        state = jit_step(state, ctrl)
+        history.append(state)
+        dones = jp.logical_or(dones, state.done)
+        if dones.all():
+            break
+    stacked_states = jax.tree_util.tree_map(lambda *leaves: jax.numpy.stack(leaves, axis=1), 
+                              *history)
+    completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.done)
+    unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
+    states = [unvmap(state, i) for i in range(n_episodes)]
+    all_completion_times = []
+    all_states = []
+    for ct, st in zip(completion_times, states):
+        if ct < ep_length:
+            all_completion_times.append(ct*eval_env.dt)
+            all_states.append(st)
+    return completion_times, all_states
+    
 
 def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):
     eval_key = jax.random.PRNGKey(seed)
