@@ -49,7 +49,7 @@ class MenuSteeringTaskConfig:
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 0,
         "reach_old": 3.5,
-        "bonus_0": 0,
+        "bonus_0": 5,
         "bonus_1": 0,
         "bonus_1_old": 20,
         "phase_1_touch": 5,
