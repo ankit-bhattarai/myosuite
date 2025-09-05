@@ -135,6 +135,31 @@ def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):
             Ds[:, i] / Ws[:, i] if (i % 2 == 0) else Ws[:, i] / Ds[:, i]
             for i in range(Ds.shape[1])
         ], axis=1).sum(axis=1).reshape(-1, 1)
+
+    elif task in ('spiral_0',):
+        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
+                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
+                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
+        Ds = np.array([
+            np.sqrt(np.sum(np.square(np.abs(rollout[0].info['tunnel_nodes'][1:] 
+                                    - rollout[0].info['tunnel_nodes'][:-1])), axis=-1))
+            for rollout in rollouts
+            if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout])
+            and any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])
+        ])
+        Ws = np.array([
+            np.sqrt(np.sum(np.square(
+                rollout[0].info['tunnel_nodes_left'] - rollout[0].info['tunnel_nodes_right']
+            ), axis=-1))[1:]
+            for rollout in rollouts
+            if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout])
+            and any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])
+        ])
+        if np.isnan(Ds):
+            return np.nan, np.nan, np.nan, np.nan
+        
+        IDs = np.sum(Ds / Ws).reshape(-1, 1)
+
     elif task in ('rectangle_0',):
         MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
                         for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
