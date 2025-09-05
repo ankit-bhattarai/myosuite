@@ -5,8 +5,45 @@ import numpy as np
 from scipy.optimize import least_squares
 import pandas as pd
 
-def calculate_steering_laws(rollouts, task, average_r2=True):
-    a,b,r2,sl_data = calculate_original_steering_law(rollouts, average_r2, task)
+def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
+    movement_times = np.array(movement_times)
+
+    if task in ("circle_0",):
+        Ws = np.array([np.abs(r.info["tunnel_nodes_left"][0,1] - r.info["tunnel_nodes_right"][0,1]) for r in rollout_states])
+        Rs = np.array([np.abs(0.5*(r.info["tunnel_nodes_left"][:,1].max() - r.info["tunnel_nodes_right"][:,1].min())) for r in rollout_states])
+        Ds = Rs * (2 * np.pi)
+        IDs = (Ds / Ws).reshape(-1, 1)
+        sl_data = {"ID": IDs, "MT_ref": movement_times,
+                    "D": Ds, "W": Ws, "R": Rs}
+    elif task in ('menu_0', 'menu_1', 'menu_2'):
+        Ds = np.array([np.abs(-r.info["tunnel_nodes_left"][1:,1] + r.info["tunnel_nodes_right"][:-1,1]) for r in rollout_states])
+        Ws = np.array([np.abs(r.info["tunnel_nodes_left"][:-1,0] - r.info["tunnel_nodes_right"][1:,0]) for r in rollout_states])
+        IDs = np.stack([
+            Ds[:, i] / Ws[:, i] if (i % 2 == 0) else Ws[:, i] / Ds[:, i]
+            for i in range(Ds.shape[1])
+        ], axis=1).sum(axis=1).reshape(-1, 1)
+        sl_data = {"ID": IDs, "MT_ref": movement_times,
+                    "D": Ds, "W": Ws}
+    elif task in ('spiral_0',):
+        Ds = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes"][1:] - r.info["tunnel_nodes"][:-1]), axis=-1) for r in rollout_states])
+        Ws = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes_left"] - r.info["tunnel_nodes_right"]), axis=-1)[1:] for r in rollout_states])
+        IDs = np.sum(Ds / Ws).reshape(-1, 1)
+        sl_data = {"ID": IDs, "MT_ref": movement_times,
+                    "D": Ds, "W": Ws}
+    elif task in ('rectangle_0',):
+        Ds = np.array([np.abs(r.info["tunnel_nodes"][-1, 0] - r.info["tunnel_nodes"][0, 0]) for r in rollout_states])
+        Ws = np.array([np.abs(r.info["tunnel_nodes_right"][0, 1] - r.info["tunnel_nodes_left"][0, 1]) for r in rollout_states])
+        IDs = (Ds / Ws).reshape(-1, 1)
+        sl_data = {"ID": IDs, "MT_ref": movement_times,
+                    "D": Ds, "W": Ws}
+    else:
+        raise NotImplementedError()
+    return sl_data
+
+def calculate_steering_laws(movement_times, rollout_states, task, average_r2=True):
+    sl_data = preprocess_steering_law_rollouts(movement_times=movement_times, rollout_states=rollout_states, task=task)
+    a,b,r2,sl_data = calculate_original_steering_law(sl_data.copy(), average_r2)
+
     if np.isnan(r2):
         return {'r2': r2}
     else:
@@ -21,13 +58,15 @@ def calculate_steering_laws(rollouts, task, average_r2=True):
         return metrics
 
 def calculate_nancel_steering_law(sl_data, average_r2=True):
-    IDs = np.power(sl_data['R'], 2/3) / sl_data['W']
+    IDs = (np.power(sl_data['R'], 2/3) / sl_data['W']).reshape(-1, 1)
     MTs = sl_data['MT_ref']
 
-    a, b, r2, y_pred, _, _ = fit_model(IDs, MTs, average_r2=average_r2)
+    a, b, r2, y_pred, ID_means, MT_means = fit_model(IDs, MTs, average_r2=average_r2)
     print(f"R^2: {r2}, a,b: {a},{b}")
 
     sl_data.update({"MT_pred": y_pred})
+    if average_r2:
+        sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
     return r2,sl_data
 
 def calculate_yamanaka_steering_law(sl_data, average_r2=True):
@@ -55,11 +94,14 @@ def calculate_yamanaka_steering_law(sl_data, average_r2=True):
     res = least_squares(residuals, x0)
 
     a, b, c, d = res.x
-    MT_pred = a + b * (Ds / (Ws + c*(1.0/Rs) + d*Ws*(1.0/Rs)))
+    ID_means = (Ds / (Ws + c*(1.0/Rs) + d*Ws*(1.0/Rs)))
+    MT_pred = a + b * ID_means
 
     r2 = r2_score(MTs, MT_pred)
 
     sl_data.update({"MT_pred": MT_pred})
+    if average_r2:
+        sl_data.update({"ID_means": ID_means, "MT_means_ref": MTs})
 
     return r2, sl_data
 
@@ -100,6 +142,8 @@ def calculate_liu_steering_law(sl_data, average_r2=True):
     r2 = r2_score(y, y_pred)
 
     sl_data.update({"MT_pred": np.exp(y_pred)})
+    if average_r2:
+        sl_data.update({"ID_means": x1, "curvature_means": x2, "MT_means_ref": MTs})
 
     return r2, sl_data
 
@@ -111,98 +155,17 @@ def calculate_ahlstroem_steering_law(sl_data, average_r2=True):
             np.log2(Ds[:, i] / Ws[:, i]+1) if i % 2 == 0 else 0.5*Ws[:, i] / Ds[:, i]
             for i in range(Ds.shape[1])
         ], axis=1).sum(axis=1).reshape(-1, 1)
-    a, b, r2, y_pred, _, _ = fit_model(IDs, MTs, average_r2=average_r2)
+    a, b, r2, y_pred, ID_means, MT_means= fit_model(IDs, MTs, average_r2=average_r2)
     print(f"R^2: {r2}, a,b: {a},{b}")
 
     sl_data.update({"MT_pred": y_pred})
+    if average_r2:
+        sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
     return r2,sl_data
     
-def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):   
-    sl_data = {}
-
-    if task in ('menu_0', 'menu_1', 'menu_2'):
-        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ds = np.array([np.abs(-rollout[0].info['tunnel_nodes_left'][1:,1] + rollout[0].info['tunnel_nodes_right'][:-1,1]) for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                        any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ws = np.array([np.abs(rollout[0].info['tunnel_nodes_left'][:-1,0] - rollout[0].info['tunnel_nodes_right'][1:,0]) for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and
-                        any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        if np.isnan(Ds):
-            return np.nan, np.nan, np.nan, np.nan
-
-        IDs = np.stack([
-            Ds[:, i] / Ws[:, i] if (i % 2 == 0) else Ws[:, i] / Ds[:, i]
-            for i in range(Ds.shape[1])
-        ], axis=1).sum(axis=1).reshape(-1, 1)
-
-    elif task in ('spiral_0',):
-        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ds = np.array([
-            np.sqrt(np.sum(np.square(np.abs(rollout[0].info['tunnel_nodes'][1:] 
-                                    - rollout[0].info['tunnel_nodes'][:-1])), axis=-1))
-            for rollout in rollouts
-            if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout])
-            and any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])
-        ])
-        Ws = np.array([
-            np.sqrt(np.sum(np.square(
-                rollout[0].info['tunnel_nodes_left'] - rollout[0].info['tunnel_nodes_right']
-            ), axis=-1))[1:]
-            for rollout in rollouts
-            if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout])
-            and any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])
-        ])
-        if np.isnan(Ds):
-            return np.nan, np.nan, np.nan, np.nan
-        
-        IDs = np.sum(Ds / Ws).reshape(-1, 1)
-
-    elif task in ('rectangle_0',):
-        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ds = np.array([np.abs(rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes"][-1, 0] - rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes"][0, 0])
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        Ws = np.array([np.abs(rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_right"][0, 1] - rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_left"][0, 1])
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        if np.isnan(Ds):
-            return np.nan, np.nan, np.nan, np.nan
-        IDs = (Ds / Ws).reshape(-1, 1)
-    elif task in ('circle_0',):
-
-        MTs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].data.time - rollout[np.argwhere(_compl_0)[0].item()].data.time) 
-                        for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-
-        if 'top_line_radius' in rollouts[0][0].info.keys():
-            Ws = np.array([rollout[np.argwhere(_compl_0)[0].item()].info["top_line_radius"] - rollout[np.argwhere(_compl_0)[0].item()].info["bottom_line_radius"]
-                for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                        any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])
-            ])
-            Rs = np.array([(rollout[np.argwhere(_compl_1)[0].item()].info['top_line_radius'] + rollout[np.argwhere(_compl_0)[0].item()].info['bottom_line_radius'])/2
-                            for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                                    any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        else:
-            Ws = np.array([np.abs(rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_left"][0,1] - rollout[np.argwhere(_compl_0)[0].item()].info["tunnel_nodes_right"][0,1])
-                for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                        any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])
-            ])
-            Rs = np.array([np.abs(max(rollout[np.argwhere(_compl_1)[0].item()].info['tunnel_nodes_left'][:,1]) - min(rollout[np.argwhere(_compl_0)[0].item()].info['tunnel_nodes_left'][:,1]))/2
-                for rollout in rollouts if any(_compl_0 := [r.metrics["completed_phase_0"] for r in rollout]) and 
-                                        any(_compl_1 := [r.info["phase_1_completed_steps"] for r in rollout])])
-        if np.isnan(Ds):
-            return np.nan, np.nan, np.nan, np.nan
-        Ds = Rs * (2 * np.pi)
-
-        IDs = (Ds / Ws).reshape(-1, 1)
-        
-        sl_data.update({'R': Rs})
-
+def calculate_original_steering_law(sl_data, average_r2=True):   
+    IDs = sl_data["ID"]
+    MTs = sl_data["MT_ref"]
 
     if len(IDs) == 0 or len(MTs) == 0:
         return np.nan, np.nan, np.nan, np.nan
@@ -211,9 +174,7 @@ def calculate_original_steering_law(rollouts, average_r2=True, task='menu_0'):
 
     print(f"R^2: {r2}, a,b: {a},{b}")
 
-    sl_data.update({"ID": IDs, "MT_ref": MTs,
-               "MT_pred": y_pred,
-               "D": Ds, "W": Ws})
+    sl_data.update({"MT_pred": y_pred})
     if average_r2:
         sl_data.update({"ID_means": ID_means, "MT_means_ref": MT_means})
 
@@ -238,6 +199,8 @@ def fit_model(IDs, MTs, average_r2):
         b = model.coef_[0]
         y_pred = model.predict(IDs)
         r2 = r2_score(MTs, y_pred)
+        ID_means = None
+        MT_means = None
     return a, b, r2, y_pred, ID_means, MT_means
 
 def plot_steering_law(sl_data, r2, average_r2=True, law_name='Original'):

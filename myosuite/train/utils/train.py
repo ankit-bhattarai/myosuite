@@ -11,6 +11,9 @@ from mujoco_playground import registry
 import wandb
 import mediapy as media
 
+from orbax import checkpoint as ocp
+from flax.training import orbax_utils
+
 # from brax.training.agents.ppo import networks as ppo_networks
 # from brax.training.agents.ppo import networks_vision as ppo_networks_vision
 # from brax.training.agents.ppo import train as ppo
@@ -21,105 +24,107 @@ from myosuite.train.utils.wrapper import wrap_myosuite_training, _maybe_wrap_env
 from myosuite.envs.myo.myouser.evaluate import evaluate_policy
 from myosuite.envs.myo.myouser.utils import render_traj
 
-class ProgressEvalVideoLoggerDEPRECATED:
+# class ProgressEvalVideoLoggerDEPRECATED:
+#   def __init__(self, logdir, eval_env,
+#                seed=123,
+#                deterministic=True,
+#                n_episodes=10,
+#                ep_length=None,
+#                height=480,
+#                width=640,
+#                cameras=[None],
+#                ):
+#     self.logdir = logdir
+#     ckpt_path = logdir / "checkpoints"
+#     ckpt_path.mkdir(parents=True, exist_ok=True)
+#     self.checkpoint_path = ckpt_path
+#     self.eval_env = eval_env
+#     self.seed = seed
+#     self.eval_key = jax.random.PRNGKey(seed)
+#     self.deterministic = deterministic
+#     self.n_episodes = n_episodes
+
+#     if ep_length is None:
+#         ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
+#     self.episode_length = ep_length
+
+#     self.height = height
+#     self.width = width
+#     self.cameras = cameras
+#     self.n_cameras = len(cameras)
+
+#   def rollout_traj_frames(self, make_policy, params):
+#     rollout = []
+#     # TODO: use jax.lax.scan instead of for-loop
+#     for ep_id in range(self.n_episodes):
+#       traj_frames = self._rollout(make_policy, params)
+#       rollout.extend(traj_frames)
+#     return rollout
+
+#   def _rollout(self, make_policy, params):
+#     ## code is partially based on rscope.BraxRolloutSaver class
+
+#     key_unroll, key_reset = jax.random.split(self.eval_key)
+#     policy = make_policy(params, deterministic=self.deterministic)
+#     state = self.eval_env.reset(key_reset)
+
+#     # Collect complete rollout
+#     def step_fn(c):
+#       state, key, i, rollout_frames = c
+#       key, key_ctrl = jax.random.split(key)
+#       ctrl, _ = policy(state.obs, key_ctrl)
+#       state = self.eval_env.step(state, ctrl)
+#       for camera_id, camera in enumerate(self.cameras):
+#         frames = self.eval_env.render_array(self.eval_env.mj_model, state, height=self.height, width=self.width, camera=camera)
+#         rollout_frames = rollout_frames.at[camera_id, i].set(frames)
+#       # return (state, key), jax.tree.map(lambda x: x[: self.rscope_envs], full_ret)
+#       return (state, key, i+1, rollout_frames)
+    
+#     def cond_fn(c):
+#       state, key, i, rollout_frames = c
+#       return ~state.done.all()
+    
+#     # _, rollout = jax.lax.scan(
+#     #     step_fn,
+#     #     (state, key_unroll),
+#     #     None,
+#     #     length=self.episode_length,
+#     # )
+    
+#     rollout_frames = jp.zeros((self.n_cameras, self.episode_length, self.height, self.width, 3))  #TODO: allow for different render modes, e.g. RGB-D?
+#     state, key, num_steps, rollout_frames = jax.lax.while_loop(
+#         cond_fn,
+#         step_fn,
+#         (state, key_unroll, 0, rollout_frames),
+#     )
+
+#     return rollout_frames
+
+#   def progress_eval_video(self, current_step, make_policy, params):
+#     raise ValueError  #TODO: this attempt to run jitted rendering does not work, as we can neither store all states in jax arrays for later rendering, nor render directly on traced arrays
+#     # Log to Weights & Biases
+
+#     # Rollout trajectory
+#     # rollout = evaluate_policy(checkpoint_path=self.checkpoint_path, env_name=env_name)
+#     frames = self.rollout_traj_frames(make_policy=make_policy, params=params)
+    
+#     fps = 1.0 / self.eval_env.dt
+#     for camera_id, camera in enumerate(self.cameras):
+#         camera_frames = frames[camera_id]
+#         if camera is None:
+#             camera_suffix = ""
+#         else:
+#             camera_suffix = "_" + camera
+#         media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", camera_frames, fps=fps)
+#         wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+
+class ProgressEvalLogger:
   def __init__(self, logdir, eval_env,
                seed=123,
                deterministic=True,
-               n_episodes=10,
-               ep_length=None,
-               height=480,
-               width=640,
-               cameras=[None],
-               ):
-    self.logdir = logdir
-    ckpt_path = logdir / "checkpoints"
-    ckpt_path.mkdir(parents=True, exist_ok=True)
-    self.checkpoint_path = ckpt_path
-    self.eval_env = eval_env
-    self.seed = seed
-    self.eval_key = jax.random.PRNGKey(seed)
-    self.deterministic = deterministic
-    self.n_episodes = n_episodes
-
-    if ep_length is None:
-        ep_length = int(eval_env._config.task_config.max_duration / eval_env._config.ctrl_dt)
-    self.episode_length = ep_length
-
-    self.height = height
-    self.width = width
-    self.cameras = cameras
-    self.n_cameras = len(cameras)
-
-  def rollout_traj_frames(self, make_policy, params):
-    rollout = []
-    # TODO: use jax.lax.scan instead of for-loop
-    for ep_id in range(self.n_episodes):
-      traj_frames = self._rollout(make_policy, params)
-      rollout.extend(traj_frames)
-    return rollout
-
-  def _rollout(self, make_policy, params):
-    ## code is partially based on rscope.BraxRolloutSaver class
-
-    key_unroll, key_reset = jax.random.split(self.eval_key)
-    policy = make_policy(params, deterministic=self.deterministic)
-    state = self.eval_env.reset(key_reset)
-
-    # Collect complete rollout
-    def step_fn(c):
-      state, key, i, rollout_frames = c
-      key, key_ctrl = jax.random.split(key)
-      ctrl, _ = policy(state.obs, key_ctrl)
-      state = self.eval_env.step(state, ctrl)
-      for camera_id, camera in enumerate(self.cameras):
-        frames = self.eval_env.render_array(self.eval_env.mj_model, state, height=self.height, width=self.width, camera=camera)
-        rollout_frames = rollout_frames.at[camera_id, i].set(frames)
-      # return (state, key), jax.tree.map(lambda x: x[: self.rscope_envs], full_ret)
-      return (state, key, i+1, rollout_frames)
-    
-    def cond_fn(c):
-      state, key, i, rollout_frames = c
-      return ~state.done.all()
-    
-    # _, rollout = jax.lax.scan(
-    #     step_fn,
-    #     (state, key_unroll),
-    #     None,
-    #     length=self.episode_length,
-    # )
-    
-    rollout_frames = jp.zeros((self.n_cameras, self.episode_length, self.height, self.width, 3))  #TODO: allow for different render modes, e.g. RGB-D?
-    state, key, num_steps, rollout_frames = jax.lax.while_loop(
-        cond_fn,
-        step_fn,
-        (state, key_unroll, 0, rollout_frames),
-    )
-
-    return rollout_frames
-
-  def progress_eval_video(self, current_step, make_policy, params):
-    raise ValueError  #TODO: this attempt to run jitted rendering does not work, as we can neither store all states in jax arrays for later rendering, nor render directly on traced arrays
-    # Log to Weights & Biases
-
-    # Rollout trajectory
-    # rollout = evaluate_policy(checkpoint_path=self.checkpoint_path, env_name=env_name)
-    frames = self.rollout_traj_frames(make_policy=make_policy, params=params)
-    
-    fps = 1.0 / self.eval_env.dt
-    for camera_id, camera in enumerate(self.cameras):
-        camera_frames = frames[camera_id]
-        if camera is None:
-            camera_suffix = ""
-        else:
-            camera_suffix = "_" + camera
-        media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", camera_frames, fps=fps)
-        wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
-
-class ProgressEvalVideoLogger:
-  def __init__(self, logdir, eval_env,
-               seed=123,
-               deterministic=True,
+               log_wandb_checkpoints=False,
                n_episode_runs=10,
+               n_episodes_video=10,
                ep_length=None,
                eval_metrics_keys={},
                height=480,
@@ -136,6 +141,8 @@ class ProgressEvalVideoLogger:
     # self.eval_key, reset_prepare_keys = jax.random.split(eval_key)
     self.deterministic = deterministic
 
+    self.log_wandb_checkpoints = log_wandb_checkpoints
+
     # Prepare evaluation episodes
     self.eval_env, self.n_randomizations = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed)
     if self.n_randomizations is not None:
@@ -145,6 +152,8 @@ class ProgressEvalVideoLogger:
     else:
        n_episodes = n_episode_runs
     self.n_episodes = n_episodes
+
+    self.n_episodes_video = n_episodes_video
 
     if ep_length is None:
         ep_length = int(self.eval_env._config.task_config.max_duration / self.eval_env._config.ctrl_dt)
@@ -167,7 +176,7 @@ class ProgressEvalVideoLogger:
     # Rollout trajectory
     # make_policy(params, deterministic=True)
     jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
-    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
+    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes_video)[0]
     if self.eval_env.vision:
        rollouts = rollouts[0]
     
@@ -189,7 +198,11 @@ class ProgressEvalVideoLogger:
     # TODO: move this code to separate function?
     rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
 
-    task_metrics = self.eval_env.calculate_metrics(rollouts, self.eval_metrics_keys)
+    # # run more rollouts that only store information relevant for computing task metrics
+    # (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
+    # task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
+    ### NOTE: moved to checkpoint callback function, which is called more frequently, such that this videologger callback is reserved for "full" rollouts
+    task_metrics = {}
 
     # Create video that can be uploaded to Weights & Biases
     video_metrics = self.progress_eval_video(rollouts, current_step)
@@ -199,6 +212,34 @@ class ProgressEvalVideoLogger:
     print({**rollout_metrics, **task_metrics})
 
     return metrics
+  
+  # Define policy parameters function for saving checkpoints
+  def progress_save_and_eval_run_minimal(self, current_step, make_policy, params):
+        """Function to save policy parameters and calculate SL metrics based on more efficient rollouts."""
+
+        # store checkpoint locally
+        orbax_checkpointer = ocp.PyTreeCheckpointer()
+        save_args = orbax_utils.save_args_from_target(params)
+        path = self.checkpoint_path / f"{current_step}"
+        orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+
+        # upload checkpoint to wandb
+        if self.log_wandb_checkpoints:
+            exp_name = self.logdir.name
+            artifact = wandb.Artifact(
+                name=f'{exp_name}-checkpoints',  
+                type="model"
+            )
+            artifact.add_dir(str(self.checkpoint_path))
+            artifact.save()
+        
+        # do n_episodes (efficient) rollouts and calculate and log SL metrics
+        if self.n_episodes > 0:
+            jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
+            (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
+            task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
+            print(task_metrics)
+            wandb.log(task_metrics, step=current_step)
 
   def progress_eval_video(self, rollouts, current_step):
     # Create video that can be uploaded to Weights & Biases
@@ -311,27 +352,7 @@ def train_or_load_checkpoint(env_name,
         env_cfg.vision.render_batch_size = ppo_params.num_envs
         env_cfg.vision.num_worlds = ppo_params.num_envs
     env = registry.load(env_name, config=env_cfg)
-
-    if policy_params_fn_checkpoints is None:
-        from orbax import checkpoint as ocp
-        from flax.training import orbax_utils
-
-        # Define policy parameters function for saving checkpoints
-        def policy_params_fn_checkpoints(current_step, make_policy, params):
-            """Function to save policy parameters."""
-            orbax_checkpointer = ocp.PyTreeCheckpointer()
-            save_args = orbax_utils.save_args_from_target(params)
-            path = ckpt_path / f"{current_step}"
-            orbax_checkpointer.save(path, params, force=True, save_args=save_args)
-            if log_wandb_checkpoints:
-                exp_name = logdir.name
-                artifact = wandb.Artifact(
-                    name=f'{exp_name}-checkpoints',  
-                    type="model"
-                )
-                artifact.add_dir(str(ckpt_path))
-                artifact.save()
-                
+    
 
     training_params = dict(ppo_params)
     if "network_factory" in training_params:
@@ -404,6 +425,7 @@ def train_or_load_checkpoint(env_name,
         None if vision else registry.load(env_name, config=env_cfg)
     )    
     # eval_env = env
+    progress_eval_logger = None
     if rscope_envs:
         # Interactive visualisation of policy checkpoints
         from rscope import brax as rscope_utils
@@ -443,16 +465,51 @@ def train_or_load_checkpoint(env_name,
             rscope_handle.dump_rollout(params)
     else:
         if log_wandb_videos:
-            progress_eval_video_logger = ProgressEvalVideoLogger(logdir=logdir, eval_env=eval_env,
+            progress_eval_logger = ProgressEvalLogger(logdir=logdir, eval_env=eval_env,
                                                                 seed=config.run.eval_seed,
+                                                                log_wandb_checkpoints=log_wandb_checkpoints,
                                                                 n_episode_runs=10,
+                                                                n_episodes_video=10,
                                                                 #ep_length=80,
                                                                 cameras=["fixed-eye", None]
                                                                 )
-            policy_params_fn = progress_eval_video_logger.progress_eval_run
+            policy_params_fn = progress_eval_logger.progress_eval_run
         else:
             policy_params_fn = lambda *args: None
     
+    if policy_params_fn_checkpoints is None:
+        if progress_eval_logger is None:
+            progress_eval_logger = ProgressEvalLogger(logdir=logdir, eval_env=eval_env,
+                                                                seed=config.run.eval_seed,
+                                                                log_wandb_checkpoints=log_wandb_checkpoints,
+                                                                n_episode_runs=10,
+                                                                n_episodes_video=10,
+                                                                #ep_length=80,
+                                                                cameras=["fixed-eye", None]
+                                                                )
+        policy_params_fn_checkpoints = progress_eval_logger.progress_save_and_eval_run_minimal
+
+        # # Define policy parameters function for saving checkpoints
+        # def policy_params_fn_checkpoints(current_step, make_policy, params):
+        #     """Function to save policy parameters."""
+        #     orbax_checkpointer = ocp.PyTreeCheckpointer()
+        #     save_args = orbax_utils.save_args_from_target(params)
+        #     path = ckpt_path / f"{current_step}"
+        #     orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+        #     if log_wandb_checkpoints:
+        #         exp_name = logdir.name
+        #         artifact = wandb.Artifact(
+        #             name=f'{exp_name}-checkpoints',  
+        #             type="model"
+        #         )
+        #         artifact.add_dir(str(ckpt_path))
+        #         artifact.save()
+            
+        #     # do short rollouts and calculate SL metrics
+        #     (movement_times, rollout_states) = evaluate_policy(eval_env=eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes)[0]
+        #     task_metrics = eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
+        #     wandb.log(task_metrics, step=current_step)
+
     if not eval_mode:
         print("Starting to JIT compile...")
         

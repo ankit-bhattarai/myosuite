@@ -35,7 +35,7 @@ def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, 
         if ct < ep_length:
             all_completion_times.append(ct*eval_env.dt)
             all_states.append(st)
-    return completion_times, all_states
+    return (all_completion_times, all_states), "SL_info"
     
 
 def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):

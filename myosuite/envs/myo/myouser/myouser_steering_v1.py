@@ -1098,7 +1098,8 @@ class MyoUserMenuSteering(MyoUserBase):
         self.SL_tunnel_infos_keys = SL_tunnel_infos_keys - {"tunnel_extras", "tunnel_angle_interp"}
         self.SL_tunnel_infos = SL_tunnel_infos
         self.SL_tunnel_infos_keys_extra = SL_tunnel_infos_keys_extra
-        return len(SL_tunnel_infos_list)
+        self.n_randomizations = len(SL_tunnel_infos_list)
+        return self.n_randomizations
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
@@ -1261,10 +1262,10 @@ class MyoUserMenuSteering(MyoUserBase):
         mj_model.site("refpos_1").pos[1:] = nodes[-1] - screen_pos[1:]
         mj_model.site("refpos_1").rgba[:] = np.array([0., 0., 1., 0.8])
 
-    def calculate_metrics(self, rollout, eval_metrics_keys={}, task_type=None):
+    def calculate_metrics(self, movement_times, rollout_states, task_type=None, average_r2=True):
         if task_type is None:
             task_type = self._config.task_config.type
 
-        eval_metrics = calculate_steering_laws(rollout, task_type)
+        eval_metrics = calculate_steering_laws(movement_times=movement_times, rollout_states=rollout_states, task=task_type, average_r2=average_r2)
 
         return eval_metrics
