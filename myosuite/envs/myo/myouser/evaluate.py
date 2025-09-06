@@ -26,7 +26,11 @@ def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, 
             break
     stacked_states = jax.tree_util.tree_map(lambda *leaves: jax.numpy.stack(leaves, axis=1), 
                               *history)
-    completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.done)
+    #completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.done)
+    ## TODO: specify/streamline key requirements (atm: info["phase_1_completed_steps"] and metrics["completed_phase_0"])
+    completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.info["phase_1_completed_steps"]) - \
+                    jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.metrics["completed_phase_0"])
+    completion_times = jp.maximum(completion_times, 0) + (completion_times < 0) * stacked_states.metrics["completed_phase_0"].shape[1]
     unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
     states = [unvmap(state, i) for i in range(n_episodes)]
     all_completion_times = []
