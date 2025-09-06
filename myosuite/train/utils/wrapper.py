@@ -203,6 +203,13 @@ class EpisodeWrapper(Wrapper):
     super().__init__(env)
     self.episode_length = episode_length
     self.action_repeat = action_repeat
+    try: 
+      non_accumulation_metrics = env.non_accumulation_metrics
+      print(f"Found non-accumulation metrics: {non_accumulation_metrics}")
+    except AttributeError:
+      print("No non-accumulation metrics found")
+      non_accumulation_metrics = []
+    self.non_accumulation_metrics = non_accumulation_metrics
 
   def reset(self, rng: jax.Array) -> State:
     state = self.env.reset(rng)
@@ -243,9 +250,12 @@ class EpisodeWrapper(Wrapper):
     state.info['episode_metrics']['length'] += self.action_repeat
     state.info['episode_metrics']['length'] *= (1 - prev_done)
     for metric_name in state.metrics.keys():
-      if metric_name != 'reward':
+      if (metric_name != 'reward') and (metric_name not in self.non_accumulation_metrics):
         state.info['episode_metrics'][metric_name] += state.metrics[metric_name]
         state.info['episode_metrics'][metric_name] *= (1 - prev_done)
+      if metric_name in self.non_accumulation_metrics:
+        print(f"Setting non-accumulation metric: {metric_name} to the current value")
+        state.info['episode_metrics'][metric_name] = state.metrics[metric_name]
     state.info['episode_done'] = done
     return state.replace(done=done)
 
