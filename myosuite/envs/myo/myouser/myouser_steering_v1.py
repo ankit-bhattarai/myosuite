@@ -69,8 +69,8 @@ class MenuSteeringTaskConfig:
     rectangle_min_size: float = 0.02
     rectangle_max_size: float = 0.1
     menu_min_width: float = 0.05
-    menu_max_width: float = 0.1
-    menu_min_height: float = 0.02
+    menu_max_width: float = 0.2
+    menu_min_height: float = 0.01
     menu_max_height: float = 0.08
     menu_min_items: int = 2
     menu_max_items: int = 6
@@ -676,7 +676,7 @@ class MyoUserMenuSteering(MyoUserBase):
             # Store additional information
             tunnel_extras = {}
         elif task_type == "menu_2":
-            screen_margin = jp.array([0.1, 0.75])  #lower screen margin for vertical axis, as we do not display/consider the upper half of the first item, which adds another effective margin in this direction
+            screen_margin = jp.array([0.1, 0.075])  #lower screen margin for vertical axis, as we do not display/consider the upper half of the first item, which adds another effective margin in this direction
             screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
 
             min_item_width, max_item_width = self.menu_min_width, self.menu_max_width
@@ -731,7 +731,7 @@ class MyoUserMenuSteering(MyoUserBase):
             # Sample tunnel length and size
             if circle_radius is None:
                 rng, rng_radius = jax.random.split(rng, 2)
-                circle_radius = min_radius + jax.random.uniform(rng_radius) * (max_radius - min_radius)  #default: 0.75
+                circle_radius = min_radius + jax.random.uniform(rng_radius) * (max_radius - min_radius)  #default: 0.075
                 # tunnel_length = circle_radius*(2*jp.pi)
             if tunnel_size is None:
                 rng, rng_width = jax.random.split(rng, 2)
@@ -899,19 +899,29 @@ class MyoUserMenuSteering(MyoUserBase):
                 if _attempts == max_attempts_per_tunnel:
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "menu_2":
-            ## vary lengths for fixed width and number of menu items
-            IDs = [5, 5.5, 6, 6.5, 7, 7.5, 8]  #based on Ahlström steering law!
-            W = 0.075
-            n_menu_items = 4
+            IDs = [3, 4, 5, 6, 7, 8, 9, 10]
+            
+            # TODO: ensure that same values as in self.get_custom_tunnel() are used!
+            screen_size = self.mj_model.site(self.screen_id).size[1:]
+            screen_margin = jp.array([0.1, 0.075])  #lower screen margin for vertical axis, as we do not display/consider the upper half of the first item, which adds another effective margin in this direction
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
 
             for ID in IDs:
                 combos = 0
                 _attempts = 0
                 while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
                     rng, rng2 = jax.random.split(rng, 2)
-                    if (n_menu_items < (ID**2 - 4 * n_menu_items)):  #otherwise we cannot find an appropriate height!
-                        H = 2 * W / (jp.sqrt(ID**2 - 4 * n_menu_items))  #based on Accot and Zhai menu steering law!
-                        if (self.menu_min_height <= H <= self.menu_max_height):
+                    rng, rng_height = jax.random.split(rng, 2)
+                    H = jax.random.uniform(rng_height, minval=self.menu_min_height, maxval=self.menu_max_height)
+                    max_items_permitted = jp.floor(screen_size_with_margin[1] / H).astype(jp.int32)
+                    rng, rng_n_menu_items = jax.random.split(rng, 2)
+                    # n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, jp.minimum(max_n_menu_items, max_items_permitted).astype(jp.int32) + 1))  #default: 4
+                    n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(self.menu_min_items, self.menu_max_items + 1))  #default: 4
+                    n_menu_items = jp.minimum(n_menu_items, max_items_permitted).astype(jp.int32)  #TODO: warning: larger values of n_menu_items might be assigned higher probability, due to clipping after random choice (which is required to avoid dynamic indexing)
+
+                    if (n_menu_items < ID**2 / 4):  #otherwise we cannot find an appropriate height!
+                        W = H * (ID + jp.sqrt(ID**2 - 4 * n_menu_items)) / 2  #based on Accot and Zhai menu steering law!
+                        if (self.menu_min_width <= W <= self.menu_max_width):
                             anchor_pos = None  #fixed: screen_pos_center; random: None
                             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
                                                                 random_start_pos=random_start_pos,
