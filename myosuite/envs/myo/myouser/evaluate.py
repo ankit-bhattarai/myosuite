@@ -28,9 +28,12 @@ def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, 
                               *history)
     #completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.done)
     ## TODO: specify/streamline key requirements (atm: info["phase_1_completed_steps"] and metrics["completed_phase_0"])
-    completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.info["phase_1_completed_steps"]) - \
-                    jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.metrics["completed_phase_0"])
-    completion_times = jp.maximum(completion_times, 0) + (completion_times < 0) * stacked_states.metrics["completed_phase_0"].shape[1]
+    end_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.info["phase_1_completed_steps"])
+    start_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.metrics["completed_phase_0"])
+    completion_times = end_times - start_times
+    ## remove invalid entries, e.g., when end time or start time was set to len(arr) by find_first_one(), by setting those entries to a value >= ep_length (i.e., they will be ignored below)
+    completion_times = (end_times < stacked_states.metrics["completed_phase_0"].shape[1]) * (start_times < end_times) * completion_times + \
+                    ((end_times >= stacked_states.metrics["completed_phase_0"].shape[1]) + (start_times >= end_times)) * ep_length
     unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
     states = [unvmap(state, i) for i in range(n_episodes)]
     all_completion_times = []
