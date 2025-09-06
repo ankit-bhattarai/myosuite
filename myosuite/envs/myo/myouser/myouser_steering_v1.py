@@ -294,7 +294,8 @@ class MyoUserMenuSteering(MyoUserBase):
         self.phase_0_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_0 / self._config.ctrl_dt).astype(int), 1)
         self.min_dwell_phase_1 = self._config.task_config.min_dwell_phase_1
         self.phase_1_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_1 / self._config.ctrl_dt).astype(int), 1)
-        self.non_accumulation_metrics = ['completed_phase_0', 'completed_phase_1', 'dist', 'distance_phase_0', 'distance_phase_1', 'phase_1_x_dist', 'dist_to_start_line', 'dist_to_end_line', 'path_length', 'percentage_achieved']
+        print(f"phase_1_completed_min_steps: {self.phase_1_completed_min_steps}")
+        self.non_accumulation_metrics = ['completed_phase_0', 'completed_phase_1', 'dist', 'distance_phase_0', 'distance_phase_1', 'phase_1_x_dist', 'dist_to_start_line', 'dist_to_end_line', 'path_length', 'percentage_achieved'] + [f'crossed_checkpoint_{cp}' for cp in self._config.task_config.spiral_checkpoints]
 
 
     # def _prepare_after_init(self, data):
@@ -359,7 +360,9 @@ class MyoUserMenuSteering(MyoUserBase):
 
         theta_closest = 0.5 * (theta_closest_left + theta_closest_right)  #TODO: ensure this also works when out of bounds! (e.g., take theta of closer boundary only, depending on task rules)
         obs_dict["path_percentage"] = theta_closest * completed_phase_0
-
+        for cp in self._config.task_config.spiral_checkpoints:
+            obs_dict[f'crossed_checkpoint_{cp}'] = (theta_closest >= cp) * completed_phase_0
+        
         # start_line = obs_dict['start_line']
         # end_line = obs_dict['end_line']
         # bottom_line_z = obs_dict['bottom_line'][2]
@@ -1034,6 +1037,8 @@ class MyoUserMenuSteering(MyoUserBase):
             'tunnel_reward': 0.0,
             'not_touching': 0.0,
         }
+        for cp in self._config.task_config.spiral_checkpoints:
+            metrics[f'crossed_checkpoint_{cp}'] = 0.0
         
         return State(data, obs, reward, done, metrics, info)
     
@@ -1146,6 +1151,7 @@ class MyoUserMenuSteering(MyoUserBase):
         # This is basically completed phase 0 or completed phase 1
         completed_phase_0_metric = obs_dict["completed_phase_0"] + obs_dict["completed_phase_1"] - (obs_dict["completed_phase_0"] * obs_dict["completed_phase_1"])
 
+        crossed_cp_dict = {key: obs_dict[key] for key in obs_dict.keys() if key.startswith('crossed_checkpoint_')}
         state.metrics.update(
             completed_phase_0 = completed_phase_0_metric,
             completed_phase_1 = obs_dict["completed_phase_1"],
@@ -1171,7 +1177,8 @@ class MyoUserMenuSteering(MyoUserBase):
             bonus_reward = rwd_dict['bonus_1']*self.weighted_reward_keys['bonus_1'],
             touch_reward = rwd_dict['phase_1_touch']*self.weighted_reward_keys['phase_1_touch'],
             #tunnel_reward = rwd_dict['phase_1_tunnel']*self.weighted_reward_keys['phase_1_tunnel'],
-            tunnel_reward = self.weighted_reward_keys['phase_1_tunnel']*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**self.weighted_reward_keys['power_for_softcons']) + (1.-obs_dict['completed_phase_0'])*(-1.)))
+            tunnel_reward = self.weighted_reward_keys['phase_1_tunnel']*(1.*(1.-obs_dict['completed_phase_1'])*(obs_dict['completed_phase_0']*(-obs_dict['softcons_for_bounds']**self.weighted_reward_keys['power_for_softcons']) + (1.-obs_dict['completed_phase_0'])*(-1.))),
+            **crossed_cp_dict,
         )
 
         # return self.forward(**kwargs)
