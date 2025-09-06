@@ -55,6 +55,8 @@ def calculate_steering_laws(movement_times, rollout_states, task, average_r2=Tru
         elif task in ('menu_0', 'menu_1', 'menu_2'):
             r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data.copy(), average_r2)
             metrics = {'r2': r2, 'r2_ahlstroem': r2_ahlstroem}
+        else:
+            metrics = {'r2': r2}
         return metrics
 
 def calculate_nancel_steering_law(sl_data, average_r2=True):
