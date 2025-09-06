@@ -51,12 +51,12 @@ def calculate_steering_laws(movement_times, rollout_states, task, average_r2=Tru
             r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), average_r2)
             r2_yamanaka, sl_data2 = calculate_yamanaka_steering_law(sl_data.copy(), average_r2)
             r2_liu, sl_data3 = calculate_liu_steering_law(sl_data.copy(), average_r2)
-            metrics = {'r2': r2, 'b': b, 'len(ID_means)': len(sl_data0['ID_means']),'r2_nancel': r2_nancel, 'r2_yamanaka': r2_yamanaka, 'r2_liu': r2_liu}
+            metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel, 'SL/r2_yamanaka': r2_yamanaka, 'SL/r2_liu': r2_liu}
         elif task in ('menu_0', 'menu_1', 'menu_2'):
             r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data.copy(), average_r2)
-            metrics = {'r2': r2, 'b': b, 'len(ID_means)': len(sl_data0['ID_means']), 'r2_ahlstroem': r2_ahlstroem}
+            metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']), 'SL/r2_ahlstroem': r2_ahlstroem}
         else:
-            metrics = {'r2': r2, 'b': b, 'len(ID_means)': len(sl_data0['ID_means'])}
+            metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means'])}
         return metrics
 
 def calculate_nancel_steering_law(sl_data, average_r2=True):
