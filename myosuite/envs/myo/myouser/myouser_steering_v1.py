@@ -594,7 +594,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
                     anchor_pos = screen_pos_topleft - 0.5 * jp.array([0, tunnel_size]) - jp.array([start_width_offset, start_height_offset])
                 else:
-                    anchor_pos = screen_pos_center - 0.5 * jp.array([tunnel_length, 0])
+                    anchor_pos = screen_pos_center + 0.5 * jp.array([tunnel_length, 0])
 
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
@@ -632,7 +632,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
                     anchor_pos = screen_pos_topleft - 0.5 * jp.array([1.5*width, height]) - jp.array([start_width_offset, start_height_offset])
                 else:
-                    anchor_pos = screen_pos_center - 0.5 * jp.array([0.3, -0.3]) - 0.5 * jp.array([1.5*width, height])
+                    anchor_pos = screen_pos_center + 0.5 * jp.array([0.3, 0.3]) #- 0.5 * jp.array([1.5*width, -height])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -669,7 +669,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
                     anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
                 else:
-                    anchor_pos = screen_pos_center - 0.5 * jp.array([0.2, -0.15]) - 0.5 * jp.array([width, height])
+                    anchor_pos = screen_pos_center + 0.5 * jp.array([0.2, 0.15]) #- 0.5 * jp.array([width, -height])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
@@ -712,9 +712,9 @@ class MyoUserMenuSteering(MyoUserBase):
                     start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
                     rng, rng_height_offset = jax.random.split(rng, 2)
                     start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
-                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, -(n_menu_items-1)*height]) - jp.array([start_width_offset, start_height_offset])
+                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([width, height]) - jp.array([start_width_offset, start_height_offset])
                 else:
-                    anchor_pos = screen_pos_center - 0.5 * jp.array([0.2, -0.15]) - 0.5 * jp.array([width, height])
+                    anchor_pos = screen_pos_center + 0.5 * jp.array([width, (n_menu_items-1)*height]) #- 0.5 * jp.array([width, -height])
 
             tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
         
