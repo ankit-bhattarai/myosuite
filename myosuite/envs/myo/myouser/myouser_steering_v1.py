@@ -65,9 +65,9 @@ class MenuSteeringTaskConfig:
     max_trials: int = 1
     reset_type: str = "epsilon_uniform"
     rectangle_min_length: float = 0.05
-    rectangle_max_length: float = 0.3
-    rectangle_min_size: float = 0.02
-    rectangle_max_size: float = 0.1
+    rectangle_max_length: float = 0.5
+    rectangle_min_size: float = 0.03
+    rectangle_max_size: float = 0.15
     menu_min_width: float = 0.05
     menu_max_width: float = 0.2
     menu_min_height: float = 0.01
@@ -75,9 +75,9 @@ class MenuSteeringTaskConfig:
     menu_min_items: int = 2
     menu_max_items: int = 6
     circle_min_radius: float = 0.05
-    circle_max_radius: float = 0.16
-    circle_min_width: float = 0.03
-    circle_max_width: float = 0.2
+    circle_max_radius: float = 0.2
+    circle_min_width: float = 0.05
+    circle_max_width: float = 0.25
     circle_sample_points: int = 21
     terminate_out_of_bounds: float = 1.0
     min_dwell_phase_0: float = 0.4
@@ -854,46 +854,69 @@ class MyoUserMenuSteering(MyoUserBase):
         
         if task_type == "rectangle_0":
             ## vary lengths for fixed width
-            IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-            W = 0.05
+            # IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            # W = 0.05
+
+            # for ID in IDs:
+            #     combos = 0
+            #     _attempts = 0
+            #     while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         L = ID * W
+            #         if self.rectangle_min_length <= L <= self.rectangle_max_length:
+            #             anchor_pos = None  #fixed: screen_pos_center; random: None
+            #             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+            #                                                  random_start_pos=random_start_pos,
+            #                                                  tunnel_length=L, tunnel_size=W,
+            #                                                  anchor_pos=anchor_pos)
+            #             combos += 1
+            #             _attempts = 0
+            #             # for i in range(10):
+            #             tunnels_total.append(tunnel_info)
+            #             print(f"Added path for ID {ID}, L {L}, W {W}")
+            #         _attempts +=1
+            #     if _attempts == max_attempts_per_tunnel:
+            #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+
+            # ## vary widths for fixed length
+            # IDs = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+            # L = 0.5
+
+            # for ID in IDs:
+            #     combos = 0
+            #     _attempts = 0
+            #     while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         W = L/ID
+            #         if self.rectangle_min_size <= W <= self.rectangle_max_size:
+            #             anchor_pos = None  #fixed: screen_pos_center; random: None
+            #             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+            #                                                  random_start_pos=random_start_pos,
+            #                                                  width=L, height=W,
+            #                                                  anchor_pos=anchor_pos)
+            #             combos += 1
+            #             _attempts = 0
+            #             # for i in range(10):
+            #             tunnels_total.append(tunnel_info)
+            #             print(f"Added path for ID {ID}, L {L}, W {W}")
+            #         _attempts +=1
+            #     if _attempts == max_attempts_per_tunnel:
+            #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+            IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
             for ID in IDs:
                 combos = 0
                 _attempts = 0
                 while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
                     rng, rng2 = jax.random.split(rng, 2)
+                    W = jax.random.uniform(rng, minval=self.rectangle_min_size, maxval=self.rectangle_max_size)
                     L = ID * W
                     if self.rectangle_min_length <= L <= self.rectangle_max_length:
-                        anchor_pos = None  #fixed: screen_pos_center; random: None
+                        anchor_pos = screen_pos_center  #fixed: screen_pos_center; random: None
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
-                                                             random_start_pos=random_start_pos,
-                                                             tunnel_length=L, tunnel_size=W,
-                                                             anchor_pos=anchor_pos)
-                        combos += 1
-                        _attempts = 0
-                        # for i in range(10):
-                        tunnels_total.append(tunnel_info)
-                        print(f"Added path for ID {ID}, L {L}, W {W}")
-                    _attempts +=1
-                if _attempts == max_attempts_per_tunnel:
-                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
-
-            ## vary widths for fixed length
-            IDs = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-            L = 0.5
-
-            for ID in IDs:
-                combos = 0
-                _attempts = 0
-                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
-                    rng, rng2 = jax.random.split(rng, 2)
-                    W = L/ID
-                    if self.rectangle_min_size <= W <= self.rectangle_max_size:
-                        anchor_pos = None  #fixed: screen_pos_center; random: None
-                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
-                                                             random_start_pos=random_start_pos,
-                                                             width=L, height=W,
-                                                             anchor_pos=anchor_pos)
+                                                              random_start_pos=random_start_pos,
+                                                              tunnel_length=L, tunnel_size=W,
+                                                              anchor_pos=anchor_pos)
                         combos += 1
                         _attempts = 0
                         # for i in range(10):
@@ -940,7 +963,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 if _attempts == max_attempts_per_tunnel:
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "circle_0":
-            IDs = [6, 7, 8, 9, 10, 11, 12]
+            IDs = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23]
 
             for ID in IDs:
                 combos = 0
