@@ -294,6 +294,8 @@ class MyoUserMenuSteering(MyoUserBase):
         self.phase_0_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_0 / self._config.ctrl_dt).astype(int), 1)
         self.min_dwell_phase_1 = self._config.task_config.min_dwell_phase_1
         self.phase_1_completed_min_steps = max(np.ceil(self._config.task_config.min_dwell_phase_1 / self._config.ctrl_dt).astype(int), 1)
+        self.non_accumulation_metrics = ['completed_phase_0', 'completed_phase_1', 'dist', 'distance_phase_0', 'distance_phase_1', 'phase_1_x_dist', 'dist_to_start_line', 'dist_to_end_line', 'path_length', 'percentage_achieved']
+
 
     # def _prepare_after_init(self, data):
     #     super()._prepare_after_init(data)
@@ -427,9 +429,11 @@ class MyoUserMenuSteering(MyoUserBase):
         phase_1_distance = dist_to_end_line
         dist = completed_phase_0 * phase_1_distance + (1. - completed_phase_0) * phase_0_distance
         
+        obs_dict['dist_to_start_line'] = (1 - completed_phase_0) * dist_to_start_line
+        obs_dict['dist_to_end_line'] = dist_to_end_line 
         obs_dict["path_length"] = path_length
         obs_dict["distance_phase_0"] = (1. - completed_phase_0) * phase_0_distance
-        obs_dict["distance_phase_1"] = completed_phase_0 * phase_1_distance
+        obs_dict["distance_phase_1_metric"] = phase_1_distance
         obs_dict["dist"] = dist
         obs_dict["phase_1_x_dist"] = phase_1_x_dist
 
@@ -1011,6 +1015,9 @@ class MyoUserMenuSteering(MyoUserBase):
             'distance_phase_0': 0.0,
             'distance_phase_1': 0.0,
             'phase_1_x_dist': 0.0,
+            'dist_to_start_line': 0.0,
+            'dist_to_end_line': 0.0,
+            'path_length': 0.0,
             #'con_0_close_to_start_pos: 0.0,
             #'con_0_touching_screen': 0.0,
             #'con_1_touching_screen': 0.0,
@@ -1136,21 +1143,24 @@ class MyoUserMenuSteering(MyoUserBase):
         
         # auxiliary variables used to aggregate certain metrics at the last step of an episode only
         # #TODO: allow for option in EpisodeWrapper to log final/mean/sum metrics
-        truncated_timeout = data.time >= self.max_duration
-        last_step_of_episode = jp.logical_or(done, truncated_timeout)
+        # This is basically completed phase 0 or completed phase 1
+        completed_phase_0_metric = obs_dict["completed_phase_0"] + obs_dict["completed_phase_1"] - (obs_dict["completed_phase_0"] * obs_dict["completed_phase_1"])
 
         state.metrics.update(
-            completed_phase_0 = obs_dict["completed_phase_0"],
+            completed_phase_0 = completed_phase_0_metric,
             completed_phase_1 = obs_dict["completed_phase_1"],
             dist = obs_dict["dist"],
             distance_phase_0 = obs_dict["distance_phase_0"],
-            distance_phase_1 = obs_dict["distance_phase_1"],
+            distance_phase_1 = obs_dict["distance_phase_1_metric"],
             phase_1_x_dist = obs_dict["phase_1_x_dist"],
+            dist_to_start_line = obs_dict["dist_to_start_line"],
+            dist_to_end_line = obs_dict["dist_to_end_line"],
+            path_length = obs_dict["path_length"],
             #con_0_close_to_start_pos = obs_dict["con_0_close_to_start_pos"],
             #con_0_touching_screen = obs_dict["con_0_touching_screen"],
             #con_1_touching_screen = obs_dict["con_1_touching_screen"],
             #con_1_crossed_line_y = obs_dict["con_1_crossed_line_y"],
-            percentage_achieved = last_step_of_episode * obs_dict["path_percentage"],
+            percentage_achieved = obs_dict["path_percentage"],
             distance_to_tunnel_bounds = obs_dict["distance_to_tunnel_bounds"],
             softcons_for_bounds = obs_dict["softcons_for_bounds"],
             out_of_bounds = 1.-obs_dict["con_0_1_within_tunnel_limits"],
