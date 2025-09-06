@@ -330,6 +330,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
         # End-effector and target position - read current position from data instead of cached info
         obs_dict['fingertip'] = data.site_xpos[self.fingertip_id]
+        obs_dict['fingertip_past'] = info['fingertip_past']
         obs_dict['screen_pos'] = data.site_xpos[self.screen_id]
 
         # # # Read positions directly from current data instead of stale info
@@ -460,7 +461,7 @@ class MyoUserMenuSteering(MyoUserBase):
         info['last_ctrl'] = obs_dict['last_ctrl']
         # info['qacc'] = obs_dict['qacc']
         # info['motor_act'] = obs_dict['motor_act']
-        info['fingertip'] = obs_dict['fingertip']
+        info['fingertip_past'] = obs_dict['fingertip']
         info["path_percentage"] = obs_dict["path_percentage"]
         info["phase_0_completed_steps"] = obs_dict["phase_0_completed_steps"]
         info["phase_1_completed_steps"] = obs_dict["phase_1_completed_steps"]
@@ -988,6 +989,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 "last_ctrl": last_ctrl,
                 # "qacc": qacc,
                 "fingertip": data.site_xpos[self.fingertip_id],
+                "fingertip_past": data.site_xpos[self.fingertip_id],
                 "path_percentage": 0.0,
                 "phase_0_completed_steps": 0,
                 "phase_1_completed_steps": 0,
