@@ -912,7 +912,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     W = jax.random.uniform(rng, minval=self.rectangle_min_size, maxval=self.rectangle_max_size)
                     L = ID * W
                     if self.rectangle_min_length <= L <= self.rectangle_max_length:
-                        anchor_pos = screen_pos_center  #fixed: screen_pos_center; random: None
+                        anchor_pos = None  #fixed: screen_pos_center; random: None
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
                                                               random_start_pos=random_start_pos,
                                                               tunnel_length=L, tunnel_size=W,
