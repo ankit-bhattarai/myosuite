@@ -815,7 +815,6 @@ class MyoUserMenuSteering(MyoUserBase):
                 'r_outer': r_outer,
                 'multiplier': multiplier,
             }
-            tunnel_extras = {}
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
@@ -1093,8 +1092,10 @@ class MyoUserMenuSteering(MyoUserBase):
         tunnel_extras = {}
         for k in self.SL_tunnel_infos_keys_extra:
             _val = self.SL_tunnel_infos[k].at[eval_id].get()
-            if not jp.all(jp.isnan(_val)):  #a single jp.nan value is used for eval_ids that lack a specific key in tunnel_extras
-                tunnel_extras[k] = _val
+            # if not jp.all(jp.isnan(_val)):
+            ##NOTE: a single jp.nan value is used for eval_ids that lack a specific key in tunnel_extras
+            ##UPDATED NOTE: we need to set all keys at any time due to traced arrays, so nvm...
+            tunnel_extras[k] = _val
         tunnel_infos["tunnel_extras"] = tunnel_extras
 
         if ("tunnel_angle_theta" in self.SL_tunnel_infos_keys) and ("tunnel_angle" in self.SL_tunnel_infos_keys):

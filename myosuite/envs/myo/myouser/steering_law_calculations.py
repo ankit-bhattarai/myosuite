@@ -27,9 +27,10 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
     elif task in ('spiral_0',):
         Ds = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes"][1:] - r.info["tunnel_nodes"][:-1]), axis=-1) for r in rollout_states])
         Ws = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes_left"] - r.info["tunnel_nodes_right"]), axis=-1)[1:] for r in rollout_states])
+        Rs = np.array([0.5*(r.info["tunnel_extras"]["r_inner"] + r.info["tunnel_extras"]["r_outer"])[1:] for r in rollout_states])
         IDs = np.sum(Ds / Ws, axis=-1).reshape(-1, 1)
         sl_data = {"ID": IDs, "MT_ref": movement_times,
-                    "D": Ds, "W": Ws}
+                    "D": Ds, "W": Ws, "R": Rs}
     elif task in ('rectangle_0',):
         Ds = np.array([np.abs(r.info["tunnel_nodes"][-1, 0] - r.info["tunnel_nodes"][0, 0]) for r in rollout_states])
         Ws = np.array([np.abs(r.info["tunnel_nodes_right"][0, 1] - r.info["tunnel_nodes_left"][0, 1]) for r in rollout_states])
