@@ -803,7 +803,10 @@ class MyoUserMenuSteering(MyoUserBase):
             if flip:
                 tunnel_size = jp.flip(tunnel_size)
             if anchor_pos is None:
-                anchor_pos = screen_pos_center
+                if random_start_pos:
+                    raise NotImplementedError()
+                else:
+                    anchor_pos = screen_pos_center
             tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
             
             # Store additional information
@@ -912,11 +915,10 @@ class MyoUserMenuSteering(MyoUserBase):
                     W = jax.random.uniform(rng, minval=self.rectangle_min_size, maxval=self.rectangle_max_size)
                     L = ID * W
                     if self.rectangle_min_length <= L <= self.rectangle_max_length:
-                        anchor_pos = None  #fixed: screen_pos_center; random: None
+                        # anchor_pos = None
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
                                                               random_start_pos=random_start_pos,
-                                                              tunnel_length=L, tunnel_size=W,
-                                                              anchor_pos=anchor_pos)
+                                                              tunnel_length=L, tunnel_size=W)
                         combos += 1
                         _attempts = 0
                         # for i in range(10):
@@ -949,11 +951,10 @@ class MyoUserMenuSteering(MyoUserBase):
                     if (n_menu_items < ID**2 / 4):  #otherwise we cannot find an appropriate height!
                         W = H * (ID + jp.sqrt(ID**2 - 4 * n_menu_items)) / 2  #based on Accot and Zhai menu steering law!
                         if (self.menu_min_width <= W <= self.menu_max_width):
-                            anchor_pos = None  #fixed: screen_pos_center; random: None
+                            # anchor_pos = None
                             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
                                                                 random_start_pos=random_start_pos,
-                                                                width=W, height=H, n_menu_items=n_menu_items,
-                                                                anchor_pos=anchor_pos)
+                                                                width=W, height=H, n_menu_items=n_menu_items)
                             combos += 1
                             _attempts = 0
                             # for i in range(10):
@@ -974,11 +975,10 @@ class MyoUserMenuSteering(MyoUserBase):
                     L = ID * W
                     circle_radius = (L) / (2 * jp.pi)
                     if self.circle_min_radius <= circle_radius <= self.circle_max_radius:
-                        anchor_pos = screen_pos_center  #fixed: screen_pos_center; random: None
+                        # anchor_pos = screen_pos_center
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
                                                              random_start_pos=random_start_pos,
-                                                             circle_radius=circle_radius, tunnel_size=W,
-                                                             anchor_pos=anchor_pos)
+                                                             circle_radius=circle_radius, tunnel_size=W)
                         combos += 1
                         _attempts = 0
                         # for i in range(10):
@@ -997,7 +997,9 @@ class MyoUserMenuSteering(MyoUserBase):
                 for spiral_width in spiral_widths:
                     for _ in range(n_tunnels_per_ID):
                         rng, rng2 = jax.random.split(rng, 2)
+                        # anchor_pos = screen_pos_center
                         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type,
+                                                             random_start_pos=random_start_pos,
                                                              spiral_end=spiral_end, spiral_width=spiral_width)
                         tunnels_total.append(tunnel_info)
                         print(f"Added path for spiral_end {spiral_end}, spiral_width {spiral_width}")
