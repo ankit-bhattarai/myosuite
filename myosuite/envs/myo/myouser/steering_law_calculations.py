@@ -37,8 +37,10 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
         Ds = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes"][1:] - r.info["tunnel_nodes"][:-1]), axis=-1) for r in rollout_states])
         Ws = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes_left"] - r.info["tunnel_nodes_right"]), axis=-1)[1:] for r in rollout_states])
         IDs = np.sum(Ds / Ws, axis=-1).reshape(-1, 1)
+        Xs = np.array([r.info["tunnel_nodes"][:,0] for r in rollout_states])
+        Ys = np.array([r.info["tunnel_nodes"][:,1] for r in rollout_states])
         sl_data = {"ID": IDs, "MT_ref": movement_times,
-                    "D": Ds, "W": Ws}
+                    "D": Ds, "W": Ws, "X": Xs, "Y": Ys}
     elif task in ('rectangle_0',):
         Ds = np.array([np.abs(r.info["tunnel_nodes"][-1, 0] - r.info["tunnel_nodes"][0, 0]) for r in rollout_states])
         Ws = np.array([np.abs(r.info["tunnel_nodes_right"][0, 1] - r.info["tunnel_nodes_left"][0, 1]) for r in rollout_states])
@@ -48,6 +50,23 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
     else:
         raise NotImplementedError()
     return sl_data
+
+def calculate_curvature(sl_data):
+    # Approximate 1st Derivative
+    dx = np.diff(sl_data["X"], axis=-1)     # (N, M-1)
+    dy = np.diff(sl_data["Y"], axis=-1)     # (N, M-1)
+    # Approximate 2nd Derivative
+    ddx = np.diff(sl_data["X"], n=2, axis=-1)  # (N, M-2)
+    ddy = np.diff(sl_data["Y"], n=2, axis=-1)  # (N, M-2)
+    ds = np.sqrt(dx**2 + dy**2)  # (N, M-1)
+    #same length
+    dx = dx[:, :-1]
+    dy = dy[:, :-1]
+    ds = ds[:, :-1]
+
+    # curvature
+    kappa = np.abs(dx * ddy - dy * ddx) / (ds**3)
+    return kappa, ds
 
 def calculate_steering_laws(movement_times, rollout_states, task, average_r2=True):
     sl_data = preprocess_steering_law_rollouts(movement_times=movement_times, rollout_states=rollout_states, task=task)
@@ -66,27 +85,19 @@ def calculate_steering_laws(movement_times, rollout_states, task, average_r2=Tru
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']), 'SL/r2_ahlstroem': r2_ahlstroem}
         elif task in ('spiral_0'):
             r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2)
+            #r2_chen,sl_data2 = calculate_steering_law_chen(sl_data.copy(), average_r2)
+            metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel}#,'SL/r2_chen': r2_chen}
+        elif task in ('sinusoidal_0'):
+            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2)
             r2_chen,sl_data2 = calculate_steering_law_chen(sl_data.copy(), average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel,'SL/r2_chen': r2_chen}
+
         else:
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means'])}
         return metrics
 
 def calculate_steering_law_chen(sl_data, average_r2=True):
-    # Approximate 1st Derivative
-    dx = np.diff(sl_data["X"], axis=-1)     # (N, M-1)
-    dy = np.diff(sl_data["Y"], axis=-1)     # (N, M-1)
-    # Approximate 2nd Derivative
-    ddx = np.diff(sl_data["X"], n=2, axis=-1)  # (N, M-2)
-    ddy = np.diff(sl_data["Y"], n=2, axis=-1)  # (N, M-2)
-    ds = np.sqrt(dx**2 + dy**2)  # (N, M-1)
-    #same length
-    dx = dx[:, :-1]
-    dy = dy[:, :-1]
-    ds = ds[:, :-1]
-
-    # curvature
-    kappa = np.abs(dx * ddy - dy * ddx) / (ds**3)
+    kappa, ds = calculate_curvature(sl_data)
     Ks = np.sum(kappa * ds, axis=-1)
 
     sl_data['D'] = np.sum(sl_data['D'], axis=-1)
@@ -132,13 +143,18 @@ def calculate_steering_law_chen(sl_data, average_r2=True):
 def calculate_nancel_steering_law(sl_data, task='circle_0', average_r2=True):
     if task == 'circle_0':
         IDs = ((np.power(sl_data['R'], 1/3) / sl_data['W'])*sl_data['D']).reshape(-1, 1)
-    elif task == 'spiral_0':
+    elif task in ('spiral_0', 'sinusoidal_0'):
         dx = np.diff(sl_data["X"], axis=-1)     # (N, M-1)
         dy = np.diff(sl_data["Y"], axis=-1)     # (N, M-1)
         ds = np.sqrt(dx**2 + dy**2)  # (N, M-1)
         Ws = sl_data['W']
-        Rs = sl_data['R']
-        f_vals = 1 / (Ws * np.power(Rs, 1/3))
+        if task == "spiral_0":
+            Rs = sl_data['R']
+            f_vals = 1 / (Ws * np.power(Rs, 1/3))
+        else:
+            kappa, ds = calculate_curvature(sl_data)
+            Rs = 1/kappa
+            f_vals = 1 / (Ws[:,:-1] * np.power(Rs, 1/3))
         IDs = np.sum(f_vals * ds, axis=-1)
     else:
         print(f"Not implemented for this task {task}")
