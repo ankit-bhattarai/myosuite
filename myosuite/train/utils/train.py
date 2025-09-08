@@ -119,7 +119,10 @@ from myosuite.envs.myo.myouser.utils import render_traj
 #         media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", camera_frames, fps=fps)
 #         wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
 
-def log_r2_plots_to_wandb(task_metrics, step):
+def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
+    if plots_path is not None:
+        step_plot_path = plots_path / f"{step}"
+        step_plot_path.mkdir(parents=True, exist_ok=True)
     # Always plot original 
     if "plot_original" in task_metrics:
         plt.figure()
@@ -129,6 +132,9 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.title(f"Original Steering Law - Average R^2$={r2_value:.2g}")
         plt.xlabel("ID")
         plt.ylabel("MT")
+        plt.tight_layout()
+        if plots_path is not None:
+            plt.savefig(step_plot_path / "original_steering_law.pdf")
         wandb.log({"chart/original_steering_law": wandb.Image(plt)}, step=step)
     if "plot_nancel" in task_metrics:
         plt.figure()
@@ -138,6 +144,9 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.title(f"Nancel Steering Law - Average R$^2$={r2_value:.2g}")
         plt.xlabel(r'$\int_S \frac{1}{W(s)R(s)^\frac{1}{3}}$')
         plt.ylabel("MT")
+        plt.tight_layout()
+        if plots_path is not None:
+            plt.savefig(step_plot_path / "nancel_steering_law.pdf")
         wandb.log({"chart/nancel_steering_law": wandb.Image(plt)}, step=step)
     if "plot_chen" in task_metrics:
         plt.figure()
@@ -148,6 +157,9 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.xlabel("D + c/b*log2(K+1) + d/bDK")
         plt.xlabel(r'$D + \frac{c}{b}log2(K+1) + \frac{d}{b}DK$')
         plt.ylabel("MT")
+        plt.tight_layout()
+        if plots_path is not None:
+            plt.savefig(step_plot_path / "chen_steering_law.pdf")
         wandb.log({"chart/chen_steering_law": wandb.Image(plt)}, step=step)
     if "plot_liu" in task_metrics:
         plt.figure()
@@ -157,6 +169,9 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.title(f"Liu Steering Law - Average R$^2$={r2_value:.2g}")
         plt.xlabel(r'$log(\frac{D}{W}) + \frac{c}{b}\frac{1}{r} + \frac{d}{b}log(D/W)$')
         plt.ylabel("log(MT)")
+        plt.tight_layout()
+        if plots_path is not None:
+            plt.savefig(step_plot_path / "liu_steering_law.pdf")
         wandb.log({"chart/liu_steering_law": wandb.Image(plt)}, step=step)
     if "plot_ahlstroem" in task_metrics:
         plt.figure()
@@ -166,6 +181,9 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.title(f"Ahlström Steering Law - Average R$^2$={r2_value:.2g}")
         plt.xlabel(r'$ID_T$')
         plt.ylabel("MT")
+        plt.tight_layout()
+        if plots_path is not None:
+            plt.savefig(step_plot_path / "ahlstroem_steering_law.pdf")
         wandb.log({"chart/ahlstroem_steering_law": wandb.Image(plt)}, step=step)
     if "plot_yamanaka" in task_metrics:
         plt.figure()
@@ -176,6 +194,9 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.xlabel(r'$\frac{A}{W+ c \frac{1}{r} +dW\frac{1}{r}}$')
         plt.xlabel("A/(W + c(1/R) + dW(1/R))")
         plt.ylabel("MT")
+        plt.tight_layout()
+        if plots_path is not None:
+            plt.savefig(step_plot_path / "yamanaka_steering_law.pdf")
         wandb.log({"chart/yamanaka_steering_law": wandb.Image(plt)}, step=step)
 
 class ProgressEvalLogger:
@@ -196,6 +217,9 @@ class ProgressEvalLogger:
         ckpt_path = logdir / "checkpoints"
         ckpt_path.mkdir(parents=True, exist_ok=True)
         self.checkpoint_path = ckpt_path
+        plots_path = logdir / "plots"
+        plots_path.mkdir(parents=True, exist_ok=True)
+        self.plots_path = plots_path
 
     self.seed = seed
     # eval_key = jax.random.PRNGKey(seed)
@@ -301,7 +325,7 @@ class ProgressEvalLogger:
             task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states, plot_data=True) #, eval_metrics_keys=self.eval_metrics_keys)
             non_plot_metrics = {key: value for key, value in task_metrics.items() if "plot" not in key}
             print(non_plot_metrics)
-            log_r2_plots_to_wandb(task_metrics, current_step)
+            log_r2_plots_to_wandb(task_metrics, current_step, plots_path=self.plots_path)
             wandb.log(non_plot_metrics, step=current_step)
             
 
