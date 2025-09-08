@@ -127,12 +127,56 @@ def log_r2_plots_to_wandb(task_metrics, step):
         plt.plot(task_metrics["plot_original"]["ID_means"], task_metrics["plot_original"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_original"]["r2"]
         plt.title(f"Original Steering Law - Average R^2$={r2_value:.2g}")
+        plt.xlabel("ID")
+        plt.ylabel("MT")
         wandb.log({"chart/original_steering_law": wandb.Image(plt)}, step=step)
-
-    # plt.figure()
-    # plt.scatter(sl_data0["ID_means"], sl_data0["MT_means_ref"])
-    # plt.plot(sl_data0["ID_means"], sl_data0["MT_pred"], "--", color="red")
-    # plt.title(f"Original Steering Law - Average R$^2$={r2:.2g}")
+    if "plot_nancel" in task_metrics:
+        plt.figure()
+        plt.scatter(task_metrics["plot_nancel"]["x_values"], task_metrics["plot_nancel"]["MT_means_ref"])
+        plt.plot(task_metrics["plot_nancel"]["x_values"], task_metrics["plot_nancel"]["MT_pred"], "--", color="red")
+        r2_value = task_metrics["plot_nancel"]["r2"]
+        plt.title(f"Nancel Steering Law - Average R$^2$={r2_value:.2g}")
+        plt.xlabel(r'$\int_S \frac{1}{W(s)R(s)^\frac{1}{3}}$')
+        plt.ylabel("MT")
+        wandb.log({"chart/nancel_steering_law": wandb.Image(plt)}, step=step)
+    if "plot_chen" in task_metrics:
+        plt.figure()
+        plt.scatter(task_metrics["plot_chen"]["x_values"], task_metrics["plot_chen"]["MT_means_ref"])
+        plt.plot(task_metrics["plot_chen"]["x_values"], task_metrics["plot_chen"]["MT_pred"], "--", color="red")
+        r2_value = task_metrics["plot_chen"]["r2"]
+        plt.title(f"Chen Steering Law - Average R$^2$={r2_value:.2g}")
+        plt.xlabel("D + c/b*log2(K+1) + d/bDK")
+        plt.xlabel(r'$D + \frac{c}{b}log2(K+1) + \frac{d}{b}DK$')
+        plt.ylabel("MT")
+        wandb.log({"chart/chen_steering_law": wandb.Image(plt)}, step=step)
+    if "plot_liu" in task_metrics:
+        plt.figure()
+        plt.scatter(task_metrics["plot_liu"]["x_values"], task_metrics["plot_liu"]["MT_means_ref"])
+        plt.plot(task_metrics["plot_liu"]["x_values"], task_metrics["plot_liu"]["MT_pred"], "--", color="red")
+        r2_value = task_metrics["plot_liu"]["r2"]
+        plt.title(f"Liu Steering Law - Average R$^2$={r2_value:.2g}")
+        plt.xlabel(r'$log(\frac{D}{W}) + \frac{c}{b}\frac{1}{r} + \frac{d}{b}log(D/W)$')
+        plt.ylabel("log(MT)")
+        wandb.log({"chart/liu_steering_law": wandb.Image(plt)}, step=step)
+    if "plot_ahlstroem" in task_metrics:
+        plt.figure()
+        plt.scatter(task_metrics["plot_ahlstroem"]["x_values"], task_metrics["plot_ahlstroem"]["MT_means_ref"])
+        plt.plot(task_metrics["plot_ahlstroem"]["x_values"], task_metrics["plot_ahlstroem"]["MT_pred"], "--", color="red")
+        r2_value = task_metrics["plot_ahlstroem"]["r2"]
+        plt.title(f"Ahlström Steering Law - Average R$^2$={r2_value:.2g}")
+        plt.xlabel(r'$ID_T$')
+        plt.ylabel("MT")
+        wandb.log({"chart/ahlstroem_steering_law": wandb.Image(plt)}, step=step)
+    if "plot_yamanaka" in task_metrics:
+        plt.figure()
+        plt.scatter(task_metrics["plot_yamanaka"]["x_values"], task_metrics["plot_yamanaka"]["MT_means_ref"])
+        plt.plot(task_metrics["plot_yamanaka"]["x_values"], task_metrics["plot_yamanaka"]["MT_pred"], "--", color="red")
+        r2_value = task_metrics["plot_yamanaka"]["r2"]
+        plt.title(f"Yamanaka Steering Law - Average R$^2$={r2_value:.2g}")
+        plt.xlabel(r'$\frac{A}{W+ c \frac{1}{r} +dW\frac{1}{r}}$')
+        plt.xlabel("A/(W + c(1/R) + dW(1/R))")
+        plt.ylabel("MT")
+        wandb.log({"chart/yamanaka_steering_law": wandb.Image(plt)}, step=step)
 
 class ProgressEvalLogger:
   def __init__(self, logdir, eval_env,
