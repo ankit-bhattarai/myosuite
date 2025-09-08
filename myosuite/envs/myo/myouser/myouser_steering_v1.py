@@ -92,6 +92,7 @@ class MenuSteeringTaskConfig:
     spiral_eval_endings: List[float] = field(default_factory=lambda: [9, 10, 11])
     spiral_eval_widths: List[float] = field(default_factory=lambda: [2, 10, 20])
     sinusoidal_flip: bool = False
+    varying_width_points: int = 100
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -213,6 +214,9 @@ class MyoUserMenuSteering(MyoUserBase):
         elif self._config.task_config.type in ["circle_0", "spiral_0", "sinusoidal_0"]:
             circle_sample_points = self._config.task_config.circle_sample_points
             n_lines = 2 * (circle_sample_points - 1)
+        elif self._config.task_config.type in ["varying_width"]:
+            varying_width_points = self._config.task_config.varying_width_points
+            n_lines = 2 * (varying_width_points - 1)
         print(f"Added {n_lines}")
         for i in range(n_lines):
             screen.add_site(pos=[-0.01, 0.25, 0.2], size=[0.001, 0.005, 0.01], name=f"line_{i}", rgba=[0, 0, 0, 0], type=mujoco._enums.mjtGeom(6), euler=[np.pi/2, 0, 0])
@@ -563,7 +567,7 @@ class MyoUserMenuSteering(MyoUserBase):
     def get_custom_tunnel(self, rng: jax.Array, screen_pos_center: jax.Array,
                           task_type="menu_0", random_start_pos=False,
                           width=None, height=None, n_menu_items=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None,
-                          spiral_end=None, spiral_width=None, phase=None, frequencies=None) -> dict[str, jax.Array]:
+                          spiral_end=None, spiral_width=None, phase=None, frequencies=None, tunnel_size_start=None, tunnel_size_end=None) -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
@@ -606,6 +610,49 @@ class MyoUserMenuSteering(MyoUserBase):
         
             # Store additional information
             tunnel_extras = {}
+        elif task_type == "varying_width":
+            screen_margin = jp.array([0.05, 0.05])
+            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
+
+            min_length, max_length = self.rectangle_min_length, self.rectangle_max_length
+            min_size, max_size = self.rectangle_min_size, self.rectangle_max_size
+
+            # Sample tunnel size
+            if tunnel_length is None:
+                rng, rng_lenth = jax.random.split(rng, 2)
+                tunnel_length = min_length + jax.random.uniform(rng_lenth) * (max_length - min_length)
+            if (tunnel_size_start is None) or (tunnel_size_end is None):
+                rng, rng_size_start, rng_size_end = jax.random.split(rng, 3)
+                tunnel_size_start = jax.random.uniform(rng_size_start, minval=min_size, maxval=max_size)
+                tunnel_size_end = jax.random.uniform(rng_size_end, minval=min_size, maxval=max_size)
+                tunnel_size = jp.linspace(tunnel_size_start, tunnel_size_end, self._config.task_config.varying_width_points)
+
+            ID = tunnel_length / (tunnel_size_end - tunnel_size_start) * jp.log(tunnel_size_end / tunnel_size_start)
+
+            x_values = jp.linspace(0, tunnel_length, self._config.task_config.varying_width_points)
+            y_values = jp.zeros_like(x_values)
+            nodes_rel = jp.stack([x_values, y_values], axis=-1)
+            width_height_constraints = None
+            total_size = jp.linalg.norm(nodes_rel, axis=0, ord=jp.inf) + 0.5 * jp.array([0, tunnel_size_start])
+            norm_ord = jp.inf  #use max-norm for distance computations/path normalisation
+
+            if anchor_pos is None:
+                if random_start_pos:
+                    # Sample start pos (centred around screen_pos_topleft)
+                    remaining_size = screen_size_with_margin - total_size
+                    rng, rng_width_offset = jax.random.split(rng, 2)
+                    start_width_offset = jax.random.uniform(rng_width_offset) * remaining_size[0]
+                    rng, rng_height_offset = jax.random.split(rng, 2)
+                    start_height_offset = jax.random.uniform(rng_height_offset) * remaining_size[1]
+                    anchor_pos = screen_pos_topleft - 0.5 * jp.array([0, tunnel_size]) - jp.array([start_width_offset, start_height_offset])
+                else:
+                    anchor_pos = screen_pos_center + 0.5 * jp.array([tunnel_length, 0])
+
+
+            tunnel_checkpoints = jp.array([1.0])  #no intermediate checkpoints required for this task, i.e. theta can take any value between 0 and 1 during the entire episode
+        
+            # Store additional information
+            tunnel_extras = {"ID": ID}   
         elif task_type == "menu_0":
             screen_margin = jp.array([0.05, 0.05])
             screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner

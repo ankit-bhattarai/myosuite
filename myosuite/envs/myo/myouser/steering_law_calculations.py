@@ -47,6 +47,9 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task):
         IDs = (Ds / Ws).reshape(-1, 1)
         sl_data = {"ID": IDs, "MT_ref": movement_times,
                     "D": Ds, "W": Ws}
+    elif task in ('varying_width',):
+        IDs = np.array([r.info["tunnel_extras"]["ID"] for r in rollout_states])
+        sl_data = {"ID": IDs, "MT_ref": movement_times}
     else:
         raise NotImplementedError()
     return sl_data
