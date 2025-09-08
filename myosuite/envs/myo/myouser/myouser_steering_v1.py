@@ -91,6 +91,7 @@ class MenuSteeringTaskConfig:
     spiral_angle_rot: bool = False
     spiral_eval_endings: List[float] = field(default_factory=lambda: [9, 10, 11])
     spiral_eval_widths: List[float] = field(default_factory=lambda: [2, 10, 20])
+    sinusoidal_flip: bool = False
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -830,9 +831,10 @@ class MyoUserMenuSteering(MyoUserBase):
             for i in range(components):
                 y += y_max * jp.sin(2*jp.pi*frequencies[i]*x + phase[i]) / components
             x, y, _ = normalise_to_max(x, y, y_max)
-            flip = jax.random.choice(flip_rng, a=jp.array([0, 1]), shape=(1,))[0]
             nodes_rel = jp.stack([x, y], axis=-1)
-            nodes_rel = jax.lax.select(flip, nodes_rel[::-1], nodes_rel)
+            if self._config.task_config.sinusoidal_flip:
+                flip = jax.random.choice(flip_rng, a=jp.array([0, 1]), shape=(1,))[0]
+                nodes_rel = jax.lax.select(flip, nodes_rel[::-1], nodes_rel)
             width_height_constraints = None
             norm_ord = 2
             tunnel_size = 0.05
