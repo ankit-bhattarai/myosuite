@@ -1093,6 +1093,14 @@ class MyoUserMenuSteering(MyoUserBase):
                     tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
                     tunnels_total.append(tunnel_info)
 
+        elif task_type == "varying_width":
+            #TODO: add proper eval code here
+            N = 30
+            for _ in range(N):
+                for _ in range(n_tunnels_per_ID):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+                    tunnels_total.append(tunnel_info)
         print(f"Added {len(tunnels_total)} tunnels in total.")
 
         return tunnels_total
