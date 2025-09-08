@@ -829,8 +829,8 @@ class MyoUserMenuSteering(MyoUserBase):
             y = jp.zeros_like(x)
             for i in range(components):
                 y += y_max * jp.sin(2*jp.pi*frequencies[i]*x + phase[i]) / components
-            rot_angle = jax.random.uniform(rot_rng, minval=0, maxval=2*jp.pi, shape=(1,))
-            x, y = rotate(x, y, rot_angle)
+            # rot_angle = jax.random.uniform(rot_rng, minval=0, maxval=2*jp.pi, shape=(1,))
+            # x, y = rotate(x, y, rot_angle)
             x, y, _ = normalise_to_max(x, y, y_max)
             nodes_rel = jp.stack([x, y], axis=-1)
             width_height_constraints = None
