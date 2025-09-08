@@ -209,7 +209,7 @@ class MyoUserMenuSteering(MyoUserBase):
         screen = find_body_by_name(spec, "screen")
         if self._config.task_config.type in ["rectangle_0", "menu_0", "menu_1", "menu_2"]:
             n_lines = 12  #TODO: set lower number for "menu_1", "menu_2" and "rectangle_0"
-        elif self._config.task_config.type in ["circle_0", "spiral_0"]:
+        elif self._config.task_config.type in ["circle_0", "spiral_0", "sinusoidal_0"]:
             circle_sample_points = self._config.task_config.circle_sample_points
             n_lines = 2 * (circle_sample_points - 1)
         print(f"Added {n_lines}")
@@ -562,7 +562,7 @@ class MyoUserMenuSteering(MyoUserBase):
     def get_custom_tunnel(self, rng: jax.Array, screen_pos_center: jax.Array,
                           task_type="menu_0", random_start_pos=False,
                           width=None, height=None, n_menu_items=None, tunnel_length=None, circle_radius=None, tunnel_size=None, anchor_pos=None,
-                          spiral_end=None, spiral_width=None) -> dict[str, jax.Array]:
+                          spiral_end=None, spiral_width=None, phase=None, frequencies=None) -> dict[str, jax.Array]:
         
         screen_size = self.mj_model.site(self.screen_id).size[1:]
         screen_pos_topleft = screen_pos_center + 0.5*screen_size  #top-left corner of screen is used as anchor [0, 0] in nodes_rel below
@@ -815,6 +815,39 @@ class MyoUserMenuSteering(MyoUserBase):
                 'r_outer': r_outer,
                 'multiplier': multiplier,
             }
+        elif task_type == "sinusoidal_0":
+            phase_rng, frequency_rng, rot_rng = jax.random.split(rng, 3)
+            n_sample_points = self.circle_sample_points
+            components = 3
+            x_range = [-0.3, 0.3]
+            y_max = 0.25
+            if phase is None:
+                phase = jax.random.uniform(phase_rng, minval=0, maxval=2*jp.pi, shape=(components,))
+            if frequencies is None:
+                frequencies = jax.random.uniform(frequency_rng, minval=0.1, maxval=2.25, shape=(components,))
+            x = jp.linspace(x_range[0], x_range[1], n_sample_points)
+            y = jp.zeros_like(x)
+            for i in range(components):
+                y += y_max * jp.sin(2*jp.pi*frequencies[i]*x + phase[i]) / components
+            rot_angle = jax.random.uniform(rot_rng, minval=0, maxval=2*jp.pi, shape=(1,))
+            x, y = rotate(x, y, rot_angle)
+            x, y, _ = normalise_to_max(x, y, y_max)
+            nodes_rel = jp.stack([x, y], axis=-1)
+            width_height_constraints = None
+            norm_ord = 2
+            tunnel_size = 0.03
+            if anchor_pos is None:
+                if random_start_pos:
+                    raise NotImplementedError()
+                else:
+                    anchor_pos = screen_pos_center
+            tunnel_checkpoints = jp.array(self._config.task_config.spiral_checkpoints)
+            
+            # Store additional information
+            tunnel_extras = {
+                'phase': phase,
+                'frequencies': frequencies,
+            }
         else:
             raise NotImplementedError(f"Task type {task_type} not implemented.")
 
@@ -1002,6 +1035,15 @@ class MyoUserMenuSteering(MyoUserBase):
                                                              spiral_end=spiral_end, spiral_width=spiral_width)
                         tunnels_total.append(tunnel_info)
                         print(f"Added path for spiral_end {spiral_end}, spiral_width {spiral_width}")
+
+        elif task_type == "sinusoidal_0":
+            N = 30
+            for _ in range(N):
+                for _ in range(n_tunnels_per_ID):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+                    tunnels_total.append(tunnel_info)
+
         print(f"Added {len(tunnels_total)} tunnels in total.")
 
         return tunnels_total
