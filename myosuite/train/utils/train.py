@@ -13,6 +13,7 @@ import mediapy as media
 
 from orbax import checkpoint as ocp
 from flax.training import orbax_utils
+import matplotlib.pyplot as plt
 
 # from brax.training.agents.ppo import networks as ppo_networks
 # from brax.training.agents.ppo import networks_vision as ppo_networks_vision
@@ -117,6 +118,21 @@ from myosuite.envs.myo.myouser.utils import render_traj
 #             camera_suffix = "_" + camera
 #         media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", camera_frames, fps=fps)
 #         wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+
+def log_r2_plots_to_wandb(task_metrics, step):
+    # Always plot original 
+    if "plot_original" in task_metrics:
+        plt.figure()
+        plt.scatter(task_metrics["plot_original"]["ID_means"], task_metrics["plot_original"]["MT_means_ref"])
+        plt.plot(task_metrics["plot_original"]["ID_means"], task_metrics["plot_original"]["MT_pred"], "--", color="red")
+        r2_value = task_metrics["plot_original"]["r2"]
+        plt.title(f"Original Steering Law - Average R^2$={r2_value:.2g}")
+        wandb.log({"chart/original_steering_law": wandb.Image(plt)}, step=step)
+
+    # plt.figure()
+    # plt.scatter(sl_data0["ID_means"], sl_data0["MT_means_ref"])
+    # plt.plot(sl_data0["ID_means"], sl_data0["MT_pred"], "--", color="red")
+    # plt.title(f"Original Steering Law - Average R$^2$={r2:.2g}")
 
 class ProgressEvalLogger:
   def __init__(self, logdir, eval_env,
@@ -238,9 +254,12 @@ class ProgressEvalLogger:
         if self.n_episodes > 0:
             jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
             (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes, log_MT_only=True)[0]
-            task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
-            print(task_metrics)
-            wandb.log(task_metrics, step=current_step)
+            task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states, plot_data=True) #, eval_metrics_keys=self.eval_metrics_keys)
+            non_plot_metrics = {key: value for key, value in task_metrics.items() if "plot" not in key}
+            print(non_plot_metrics)
+            log_r2_plots_to_wandb(task_metrics, current_step)
+            wandb.log(non_plot_metrics, step=current_step)
+            
 
   def progress_eval_video(self, rollouts, current_step):
     # Create video that can be uploaded to Weights & Biases
