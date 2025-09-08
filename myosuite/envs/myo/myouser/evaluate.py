@@ -133,7 +133,7 @@ def evaluate_policy(checkpoint_path=None, env_name=None,
         _cfg_path = os.path.join(checkpoint_path, "config.json") if checkpoint_path.rstrip("/").endswith("checkpoints") else os.path.join(checkpoint_path, "../config.json") 
         with open(_cfg_path, "r") as f:
             config = ConfigDict(json.load(f))
-        eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path)
+        eval_env, make_inference_fn, params = train_or_load_checkpoint(env_name, config, eval_mode=True, checkpoint_path=checkpoint_path, seed=config.run.seed)
         eval_env, n_randomizations = _maybe_wrap_env_for_evaluation(eval_env=eval_env, seed=seed)
         # n_episodes = 1 * n_randomizations
         # logging.info(f"Environment allows for {n_randomizations} randomized evaluation episodes.")
