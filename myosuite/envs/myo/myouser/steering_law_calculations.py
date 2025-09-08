@@ -75,7 +75,7 @@ def calculate_steering_laws(movement_times, rollout_states, task, average_r2=Tru
     sl_data = preprocess_steering_law_rollouts(movement_times=movement_times, rollout_states=rollout_states, task=task)
     a,b,r2,sl_data0 = calculate_original_steering_law(sl_data.copy(), average_r2)
     plot_metrics = {}
-    if plot_data:
+    if plot_data and isinstance(sl_data0, dict):
         plot_metrics['plot_original'] =  sl_data0.copy()
         plot_metrics['plot_original']['r2'] = r2
 
@@ -88,34 +88,41 @@ def calculate_steering_laws(movement_times, rollout_states, task, average_r2=Tru
             r2_liu, sl_data3 = calculate_liu_steering_law(sl_data.copy(), average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel, 'SL/r2_yamanaka': r2_yamanaka, 'SL/r2_liu': r2_liu}
             if plot_data:
-                plot_metrics['plot_nancel'] = sl_data1.copy()
-                plot_metrics['plot_nancel']['r2'] = r2_nancel
-                plot_metrics['plot_yamanaka'] = sl_data2.copy()
-                plot_metrics['plot_yamanaka']['r2'] = r2_yamanaka
-                plot_metrics['plot_liu'] = sl_data3.copy()
-                plot_metrics['plot_liu']['r2'] = r2_liu
+                if isinstance(sl_data1, dict):
+                    plot_metrics['plot_nancel'] = sl_data1.copy()
+                    plot_metrics['plot_nancel']['r2'] = r2_nancel
+                if isinstance(sl_data2, dict):
+                    plot_metrics['plot_yamanaka'] = sl_data2.copy()
+                    plot_metrics['plot_yamanaka']['r2'] = r2_yamanaka
+                if isinstance(sl_data3, dict):
+                    plot_metrics['plot_liu'] = sl_data3.copy()
+                    plot_metrics['plot_liu']['r2'] = r2_liu
         elif task in ('menu_0', 'menu_1', 'menu_2'):
             r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data.copy(), average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']), 'SL/r2_ahlstroem': r2_ahlstroem}
             if plot_data:
-                plot_metrics['plot_ahlstroem'] = sl_data1.copy()
-                plot_metrics['plot_ahlstroem']['r2'] = r2_ahlstroem
+                if isinstance(sl_data1, dict):
+                    plot_metrics['plot_ahlstroem'] = sl_data1.copy()
+                    plot_metrics['plot_ahlstroem']['r2'] = r2_ahlstroem
         elif task in ('spiral_0'):
             r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2)
             #r2_chen,sl_data2 = calculate_steering_law_chen(sl_data.copy(), average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel}#,'SL/r2_chen': r2_chen}
             if plot_data:
-                plot_metrics['plot_nancel'] = sl_data1.copy()
-                plot_metrics['plot_nancel']['r2'] = r2_nancel
+                if isinstance(sl_data1, dict):
+                    plot_metrics['plot_nancel'] = sl_data1.copy()
+                    plot_metrics['plot_nancel']['r2'] = r2_nancel
         elif task in ('sinusoidal_0'):
             r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2)
             r2_chen,sl_data2 = calculate_steering_law_chen(sl_data.copy(), average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel,'SL/r2_chen': r2_chen}
             if plot_data:
-                plot_metrics['plot_nancel'] = sl_data1.copy()
-                plot_metrics['plot_nancel']['r2'] = r2_nancel
-                plot_metrics['plot_chen'] = sl_data2.copy()
-                plot_metrics['plot_chen']['r2'] = r2_chen
+                if isinstance(sl_data1, dict):
+                    plot_metrics['plot_nancel'] = sl_data1.copy()
+                    plot_metrics['plot_nancel']['r2'] = r2_nancel
+                if isinstance(sl_data2, dict):
+                    plot_metrics['plot_chen'] = sl_data2.copy()
+                    plot_metrics['plot_chen']['r2'] = r2_chen
 
         else:
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means'])}
