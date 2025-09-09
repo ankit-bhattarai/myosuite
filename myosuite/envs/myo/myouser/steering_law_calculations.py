@@ -1,3 +1,4 @@
+import scipy
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
@@ -5,7 +6,6 @@ import numpy as np
 from scipy.optimize import least_squares
 import pandas as pd
 from collections import defaultdict
-from scipy.stats import trim_mean
 
 def preprocess_steering_law_rollouts(movement_times, rollout_states, task, average_r2 = True):
     movement_times = np.array(movement_times)
@@ -64,11 +64,11 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task, avera
         raise NotImplementedError()
     
     if average_r2:
-        return average_movement_times_per_path(sl_data)
+        return average_movement_times_per_path(sl_data, outlier_std=3)
     else:
         return sl_data
 
-def average_movement_times_per_path(sl_data):
+def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportiontocut=None):
     groups = defaultdict(list)
     n_episodes = sl_data["X"].shape[0]
 
@@ -80,22 +80,33 @@ def average_movement_times_per_path(sl_data):
     results["ID_means"] = []
     results["MT_ref_means"] = []
     
-
-    for key, idxs in groups.items():
+    for _, idxs in groups.items():
         idx = idxs[0]
         for k in sl_data.keys():
-            if k == "MT_ref":
-                mt_vals = np.array(sl_data["MT_ref"])[idxs]
-                mt_mean = trim_mean(mt_vals, proportiontocut=0.05)
-                results["MT_ref_means"].append(mt_mean)
-                results["MT_ref"].append(np.array(sl_data["MT_ref"])[idxs])
-            elif k == "ID":
-                id_vals = sl_data["ID"][idxs]
-                id_mean = trim_mean(id_vals, proportiontocut=0.05)
-                results["ID_means"].append(id_mean)
-                results["ID"].append(sl_data["ID"][idxs])
-            else:
+            if k not in ("MT_ref", "ID"):
                 results[k].append(np.array(sl_data[k][idx]))
+        
+        mt_vals = np.array(sl_data["MT_ref"])[idxs]
+        if outlier_std is not None:
+            mt_vals_wo_outliers = mt_vals[abs(scipy.stats.zscore(mt_vals)) <= outlier_std]
+        else:
+            mt_vals_wo_outliers = mt_vals.copy()
+        if outlier_proportiontocut is not None:
+            mt_vals_wo_outliers = scipy.stats.trimboth(mt_vals_wo_outliers, proportiontocut=outlier_proportiontocut)
+        mt_mean = np.mean(mt_vals_wo_outliers)
+        results["MT_ref_means"].append(mt_mean)
+        results["MT_ref"].append(np.array(sl_data["MT_ref"])[idxs])
+
+        id_vals = sl_data["ID"][idxs]
+        if outlier_std is not None:
+            id_vals_wo_outliers = id_vals[abs(scipy.stats.zscore(mt_vals)) <= outlier_std]
+        else:
+            id_vals_wo_outliers = id_vals.copy()
+        if outlier_proportiontocut is not None:
+            id_vals_wo_outliers = scipy.stats.trimboth(id_vals_wo_outliers, proportiontocut=outlier_proportiontocut)  #TODO: fix (only works if all entries of id_vals_wo_outliers are the same)!
+        id_mean = np.mean(id_vals_wo_outliers)
+        results["ID_means"].append(id_mean)
+        results["ID"].append(sl_data["ID"][idxs])
     return results
 
 def calculate_curvature(Xs, Ys):
@@ -115,9 +126,9 @@ def calculate_curvature(Xs, Ys):
     kappa = np.abs(dx * ddy - dy * ddx) / (ds**3)
     return kappa, ds
 
-def calculate_steering_laws(movement_times, rollout_states, task, plot_data=False):
-    sl_data = preprocess_steering_law_rollouts(movement_times=movement_times, rollout_states=rollout_states, task=task)
-    a,b,r2,sl_data0 = calculate_original_steering_law(sl_data.copy())
+def calculate_steering_laws(movement_times, rollout_states, task, plot_data=False, average_r2=True):
+    sl_data = preprocess_steering_law_rollouts(movement_times=movement_times, rollout_states=rollout_states, task=task, average_r2=average_r2)
+    a,b,r2,sl_data0 = calculate_original_steering_law(sl_data.copy(), average_r2=average_r2)
     plot_metrics = {}
     if plot_data and isinstance(sl_data0, dict):
         plot_metrics['plot_original'] =  sl_data0.copy()
@@ -127,9 +138,9 @@ def calculate_steering_laws(movement_times, rollout_states, task, plot_data=Fals
         return {}
     else:
         if task in ('circle_0',):
-            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task)
-            r2_yamanaka, sl_data2 = calculate_yamanaka_steering_law(sl_data.copy())
-            r2_liu, sl_data3 = calculate_liu_steering_law(sl_data.copy())
+            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2=average_r2)
+            r2_yamanaka, sl_data2 = calculate_yamanaka_steering_law(sl_data.copy(), average_r2=average_r2)
+            r2_liu, sl_data3 = calculate_liu_steering_law(sl_data.copy(), average_r2=average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel, 'SL/r2_yamanaka': r2_yamanaka, 'SL/r2_liu': r2_liu}
             if plot_data:
                 if isinstance(sl_data1, dict):
@@ -142,23 +153,23 @@ def calculate_steering_laws(movement_times, rollout_states, task, plot_data=Fals
                     plot_metrics['plot_liu'] = sl_data3.copy()
                     plot_metrics['plot_liu']['r2'] = r2_liu
         elif task in ('menu_0', 'menu_1', 'menu_2'):
-            r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data.copy())
+            r2_ahlstroem, sl_data1 = calculate_ahlstroem_steering_law(sl_data.copy(), average_r2=average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']), 'SL/r2_ahlstroem': r2_ahlstroem}
             if plot_data:
                 if isinstance(sl_data1, dict):
                     plot_metrics['plot_ahlstroem'] = sl_data1.copy()
                     plot_metrics['plot_ahlstroem']['r2'] = r2_ahlstroem
         elif task in ('spiral_0'):
-            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task)
-            #r2_chen,sl_data2 = calculate_steering_law_chen(sl_data.copy())
+            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2=average_r2)
+            #r2_chen,sl_data2 = calculate_chen_steering_law(sl_data.copy())
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel}#,'SL/r2_chen': r2_chen}
             if plot_data:
                 if isinstance(sl_data1, dict):
                     plot_metrics['plot_nancel'] = sl_data1.copy()
                     plot_metrics['plot_nancel']['r2'] = r2_nancel
         elif task in ('sinusoidal_0'):
-            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task)
-            r2_chen,sl_data2 = calculate_steering_law_chen(sl_data.copy())
+            r2_nancel,sl_data1 = calculate_nancel_steering_law(sl_data.copy(), task, average_r2=average_r2)
+            r2_chen,sl_data2 = calculate_chen_steering_law(sl_data.copy(), average_r2=average_r2)
             metrics = {'SL/r2': r2, 'SL/b': b, 'SL/len(ID_means)': len(sl_data0['ID_means']),'SL/r2_nancel': r2_nancel,'SL/r2_chen': r2_chen}
             if plot_data:
                 if isinstance(sl_data1, dict):
