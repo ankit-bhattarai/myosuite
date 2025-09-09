@@ -20,16 +20,16 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task, avera
         sl_data = {"ID": IDs, "MT_ref": movement_times,
                     "D": Ds, "W": Ws, "R": Rs, "X": Xs, "Y": Ys}
     elif task in ('menu_0', 'menu_1', 'menu_2'):
-        Ds = np.array([np.abs(-r.info["tunnel_nodes_left"][1:,1] + r.info["tunnel_nodes_right"][:-1,1]) for r in rollout_states])
-        Ws = np.array([np.abs(r.info["tunnel_nodes_left"][:-1,0] - r.info["tunnel_nodes_right"][1:,0]) for r in rollout_states])
-        IDs = np.stack([
-            Ds[:, i] / Ws[:, i] if (i % 2 == 0) else Ws[:, i] / Ds[:, i]
-            for i in range(Ds.shape[1])
-        ], axis=1).sum(axis=1).reshape(-1, 1) if len(Ds) > 0 else np.array([])
+        Ds = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes"][1:] - r.info["tunnel_nodes"][:-1]), axis=-1) for r in rollout_states])
+        Ws = np.array([np.abs(r.info["tunnel_nodes_right"][1, 0] - r.info["tunnel_nodes_left"][1, 0]) for r in rollout_states]).reshape(-1, 1)
+        Hs = np.array([np.abs(r.info["tunnel_nodes_right"][2, 1] - r.info["tunnel_nodes_left"][2, 1]) for r in rollout_states]).reshape(-1, 1)
+        _vertical_distance = np.array([(np.abs(r.info["tunnel_nodes_left"][1, 1] - r.info["tunnel_nodes_left"][0, 1])) for r in rollout_states]).reshape(-1, 1)
+        N_ITEMSs = _vertical_distance/Hs + 0.5
+        IDs = (N_ITEMSs*Hs/Ws + Ws/Hs).reshape(-1, 1)
         Xs = np.array([r.info["tunnel_nodes"][:,0] for r in rollout_states])
         Ys = np.array([r.info["tunnel_nodes"][:,1] for r in rollout_states])
         sl_data = {"ID": IDs, "MT_ref": movement_times,
-                    "D": Ds, "W": Ws, "X": Xs, "Y": Ys}
+                    "D": Ds, "W": Ws, "H": Hs, "N_ITEMS": N_ITEMSs, "X": Xs, "Y": Ys}
     elif task in ('spiral_0'):
         Ds = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes"][1:] - r.info["tunnel_nodes"][:-1]), axis=-1) for r in rollout_states])
         Ws = np.array([np.linalg.vector_norm(np.abs(r.info["tunnel_nodes_left"] - r.info["tunnel_nodes_right"]), axis=-1)[1:] for r in rollout_states])
@@ -342,13 +342,16 @@ def calculate_ahlstroem_steering_law(sl_data, average_r2=True):
     else:
         MTs = sl_data["MT_ref"]
     
-    Ds = np.array(sl_data['D'])
+    # Ds = np.array(sl_data['D'])
     Ws = np.array(sl_data['W'])
+    Hs = np.array(sl_data['H'])
+    N_ITEMSs = np.array(sl_data['N_ITEMS'])
 
-    IDs = np.stack([
-            np.log2(Ds[:, i] / Ws[:, i]+1) if i % 2 == 0 else 0.5*Ws[:, i] / Ds[:, i]
-            for i in range(Ds.shape[1])
-        ], axis=1).sum(axis=1).reshape(-1, 1)
+    IDs = (np.sum(np.log2(N_ITEMSs), axis=1) + np.sum(0.5*Ws/Hs, axis=1)).reshape(-1, 1)
+    # IDs = np.stack([
+    #         np.log2(Ds[:, i] / Ws[:, i]+1) if i % 2 == 0 else 0.5*Ws[:, i] / Ds[:, i]
+    #         for i in range(Ds.shape[1])
+    #     ], axis=1).sum(axis=1).reshape(-1, 1)
     a, b, r2, y_pred= fit_model(IDs, MTs)
 
     x_values = IDs
