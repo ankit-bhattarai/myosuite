@@ -189,3 +189,38 @@ def normalise(x, y, multiplier):
 
 def rotate(x, y, angle):
     return x * jp.cos(angle) - y * jp.sin(angle), x * jp.sin(angle) + y * jp.cos(angle)
+
+def _check_rollout_for_undesired_loops(rollout):
+    """Returns true if no weird loop behaviour as observed for some evals with circle_0 policies has been found."""
+
+    _eepos = jp.array([r.info["fingertip_past"][1:] for r in rollout if r.metrics["completed_phase_0"] and (r.metrics["percentage_achieved"] >= 0.05) and (r.metrics["percentage_achieved"] <= 0.95)])
+    # _fwd_deltas = _eepos[1:] - _eepos[:-1]
+    # fwd_angle = np.array([(jp.arctan2(-(cross2d(_fwd_delta, rel_vec)), jp.dot(_fwd_delta, rel_vec)) + jp.pi) % (2*jp.pi) - jp.pi for _fwd_delta in _fwd_deltas])
+    
+    _fwd_deltas = _eepos[2:] - _eepos[1:-1]
+    _bwd_deltas = _eepos[1:-1] - _eepos[:-2]
+    fwd_angle = jp.array([(jp.arctan2(-(cross2d(_fwd_delta, _bwd_delta)), jp.dot(_fwd_delta, _bwd_delta)) + jp.pi) % (2*jp.pi) - jp.pi for _fwd_delta, _bwd_delta in zip(_fwd_deltas, _bwd_deltas)])
+
+    fwd_angle_integrated = jp.trapezoid(fwd_angle)
+    no_undesired_loops = fwd_angle_integrated < 1.5 * (2*jp.pi)  #more than 1.5 full circles are suspicious...
+    
+    return no_undesired_loops
+
+def _check_stacked_states_for_undesired_loops(stacked_states):
+    """Returns true if no weird loop behaviour as observed for some evals with circle_0 policies has been found."""
+
+    # _eepos = jp.array([r.info["fingertip_past"][1:] for r in rollout if r.metrics["completed_phase_0"] and (r.metrics["percentage_achieved"] >= 0.05) and (r.metrics["percentage_achieved"] <= 0.95)])
+    batch_size, max_length = stacked_states.info["fingertip_past"][..., 1:].shape[:2]
+    _eepos = stacked_states.info["fingertip_past"][..., 1:] * (stacked_states.metrics["completed_phase_0"] * (stacked_states.metrics["percentage_achieved"] >= 0.05) * (stacked_states.metrics["percentage_achieved"] <= 0.95)).reshape(batch_size, max_length, 1)
+    # _fwd_deltas = _eepos[1:] - _eepos[:-1]
+    # fwd_angle = np.array([(jp.arctan2(-(cross2d(_fwd_delta, rel_vec)), jp.dot(_fwd_delta, rel_vec)) + jp.pi) % (2*jp.pi) - jp.pi for _fwd_delta in _fwd_deltas])
+    
+    _fwd_deltas = _eepos[:, 2:] - _eepos[:, 1:-1]
+    _bwd_deltas = _eepos[:, 1:-1] - _eepos[:, :-2]
+    # print(_fwd_deltas.shape, _bwd_deltas.shape, _eepos.shape, batch_size, max_length)
+    fwd_angle = (jp.arctan2(-(cross2d(_fwd_deltas, _bwd_deltas)), jp.sum(_fwd_deltas * _bwd_deltas, axis=-1)) + jp.pi) % (2*jp.pi) - jp.pi
+
+    fwd_angle_integrated = jp.trapezoid(fwd_angle, axis=-1)
+    undesired_loops = fwd_angle_integrated >= 1.5 * (2*jp.pi)  #more than 1.5 full circles are suspicious...
+    
+    return undesired_loops

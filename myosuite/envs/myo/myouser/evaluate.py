@@ -4,13 +4,15 @@ from ml_collections import ConfigDict
 import json
 import jax.numpy as jp
 
+from myosuite.envs.myo.myouser.utils_steering import _check_stacked_states_for_undesired_loops
 from myosuite.train.utils.wrapper import _maybe_wrap_env_for_evaluation
 
 def find_first_one(arr):
 # Returns the index of first 1, or len(arr) if no 1 exists
     return jp.argmax(jp.concatenate([arr, jp.array([1])]))
 
-def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):
+def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={},
+                                         remove_weird_looping_trials=False):
     eval_key = jax.random.PRNGKey(seed)
     eval_key, reset_keys = jax.random.split(eval_key)
     state = jit_reset(reset_keys, eval_id=jp.arange(n_episodes, dtype=jp.int32), **reset_info_kwargs)
@@ -28,18 +30,24 @@ def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, 
                               *history)
     #completion_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.done)
     ## TODO: specify/streamline key requirements (atm: info["phase_1_completed_steps"] and metrics["completed_phase_0"])
-    end_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.info["phase_1_completed_steps"])
-    start_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.metrics["completed_phase_0"])
+    episode_mask = jp.tile(jp.arange(stacked_states.done.shape[1]), (stacked_states.done.shape[0], 1)) <= jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.done).reshape(-1, 1)
+    end_times = jp.apply_along_axis(find_first_one, axis=1, arr=(stacked_states.info["phase_1_completed_steps"] > 0) * (jax.lax.cummin(stacked_states.info["phase_1_completed_steps"] + ~episode_mask, axis=1, reverse=True) >= 1) * episode_mask)
+    start_times = jp.apply_along_axis(find_first_one, axis=1, arr=stacked_states.metrics["completed_phase_0"] * episode_mask)
     completion_times = end_times - start_times
     ## remove invalid entries, e.g., when end time or start time was set to len(arr) by find_first_one(), by setting those entries to a value >= ep_length (i.e., they will be ignored below)
     completion_times = (end_times < stacked_states.metrics["completed_phase_0"].shape[1]) * (start_times < end_times) * completion_times + \
                     ((end_times >= stacked_states.metrics["completed_phase_0"].shape[1]) + (start_times >= end_times)) * ep_length
+    if remove_weird_looping_trials:
+        weird_looping_behaviour = _check_stacked_states_for_undesired_loops(stacked_states)
+        print(f"Omit {sum(weird_looping_behaviour)} out of {len(weird_looping_behaviour)} trajectories due to weird looping behaviour.")
+    else:
+        weird_looping_behaviour = jp.full(completion_times.shape, False)
     unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
     states = [unvmap(state, i) for i in range(n_episodes)]
     all_completion_times = []
     all_states = []
-    for ct, st in zip(completion_times, states):
-        if ct < ep_length:
+    for ct, st, wl in zip(completion_times, states, weird_looping_behaviour):
+        if (ct < ep_length) and not wl:
             all_completion_times.append(ct*eval_env.dt)
             all_states.append(st)
     return (all_completion_times, all_states), "SL_info"

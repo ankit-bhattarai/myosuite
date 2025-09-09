@@ -1045,6 +1045,7 @@ class MyoUserMenuSteering(MyoUserBase):
                 if _attempts == max_attempts_per_tunnel:
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "circle_0":
+            ## VARIANT A: fixed IDs, fixed length per ID (for n_tunnels_per_ID=1)
             IDs = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23]
 
             for ID in IDs:
@@ -1068,6 +1069,42 @@ class MyoUserMenuSteering(MyoUserBase):
                     _attempts +=1
                 if _attempts == max_attempts_per_tunnel:
                     print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+
+            # ## VARIANT B: totally random tunnels, as during training
+            # N = 250
+            # for _ in range(N):
+            #     for _ in range(n_tunnels_per_ID):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+            #         tunnels_total.append(tunnel_info)
+
+            # ## VARIANT C: random IDs and widths
+            # N = 250
+            # ID_range = [5, 23]
+            # rng, rng2 = jax.random.split(rng, 2)
+            # IDs = jax.random.uniform(rng2, shape=(N,), minval=ID_range[0], maxval=ID_range[1])
+
+            # for ID in IDs:
+            #     combos = 0
+            #     _attempts = 0
+            #     while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         W = jax.random.uniform(rng, minval=self.circle_min_width, maxval=self.circle_max_width)
+            #         L = ID * W
+            #         circle_radius = (L) / (2 * jp.pi)
+            #         if self.circle_min_radius + 0.0 * (self.circle_max_radius - self.circle_min_radius) <= circle_radius <= self.circle_max_radius - 0.0 * (self.circle_max_radius - self.circle_min_radius):
+            #             # anchor_pos = screen_pos_center
+            #             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+            #                                                  random_start_pos=random_start_pos,
+            #                                                  circle_radius=circle_radius, tunnel_size=W)
+            #             combos += 1
+            #             _attempts = 0
+            #             # for i in range(10):
+            #             tunnels_total.append(tunnel_info)
+            #             print(f"Added path for ID {ID}, L {L}, W {W}")
+            #         _attempts +=1
+            #     if _attempts == max_attempts_per_tunnel:
+            #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
 
         #print(f"tunnels_total", tunnels_total)
         elif task_type == "spiral_0":
@@ -1101,6 +1138,7 @@ class MyoUserMenuSteering(MyoUserBase):
                     rng, rng2 = jax.random.split(rng, 2)
                     tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
                     tunnels_total.append(tunnel_info)
+        
         print(f"Added {len(tunnels_total)} tunnels in total.")
 
         return tunnels_total
