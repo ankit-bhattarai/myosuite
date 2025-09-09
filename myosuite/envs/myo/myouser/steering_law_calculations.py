@@ -114,6 +114,9 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
         id_mean = np.mean(id_vals_wo_outliers)
         results["ID_means"].append(id_mean)
         results["ID"].append(sl_data["ID"][idxs])
+
+    results["ID_means"] = np.array(results["ID_means"]).reshape(-1, 1)
+
     return results
 
 def calculate_curvature(Xs, Ys):
