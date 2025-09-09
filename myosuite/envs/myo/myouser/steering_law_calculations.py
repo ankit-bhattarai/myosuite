@@ -56,7 +56,7 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task, avera
         sl_data = {"ID": IDs, "MT_ref": movement_times,
                     "D": Ds, "W": Ws, "X": Xs, "Y": Ys}
     elif task in ('varying_width',):
-        IDs = np.array([r.info["tunnel_extras"]["ID"] for r in rollout_states])
+        IDs = np.array([np.abs(r.info["tunnel_extras"]["ID"]) for r in rollout_states])
         Xs = np.array([r.info["tunnel_nodes"][:,0] for r in rollout_states])
         Ys = np.array([r.info["tunnel_nodes"][:,1] for r in rollout_states])
         sl_data = {"ID": IDs, "MT_ref": movement_times, "X": Xs, "Y": Ys}
@@ -227,7 +227,8 @@ def calculate_nancel_steering_law(sl_data, task='circle_0', average_r2=True):
         else:
             kappa, ds = calculate_curvature(sl_data["X"], sl_data["Y"])
             Rs = 1/kappa
-            f_vals = 1 / (Ws[:,:-1] * np.power(Rs, 1/3))
+            # To Do: W überarbeiten
+            f_vals = 1 / (Ws[:-1] * np.power(Rs, 1/3))
         IDs = np.sum(f_vals * ds, axis=-1).reshape(1, -1)
     else:
         print(f"Not implemented for this task {task}")
