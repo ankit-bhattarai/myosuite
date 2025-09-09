@@ -88,7 +88,9 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
         
         mt_vals = np.array(sl_data["MT_ref"])[idxs]
         if outlier_std is not None:
-            mt_vals_wo_outliers = mt_vals[abs(scipy.stats.zscore(mt_vals)) <= outlier_std]
+            z_scores = scipy.stats.zscore(mt_vals)
+            z_scores[np.isnan(z_scores)] = 0
+            mt_vals_wo_outliers = mt_vals[abs(z_scores) <= outlier_std]
         else:
             mt_vals_wo_outliers = mt_vals.copy()
         if outlier_proportiontocut is not None:
@@ -99,7 +101,9 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
 
         id_vals = sl_data["ID"][idxs]
         if outlier_std is not None:
-            id_vals_wo_outliers = id_vals[abs(scipy.stats.zscore(mt_vals)) <= outlier_std]
+            z_scores = scipy.stats.zscore(mt_vals)
+            z_scores[np.isnan(z_scores)] = 0
+            id_vals_wo_outliers = id_vals[abs(z_scores) <= outlier_std]
         else:
             id_vals_wo_outliers = id_vals.copy()
         if outlier_proportiontocut is not None:
