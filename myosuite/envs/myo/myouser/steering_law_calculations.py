@@ -56,7 +56,7 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task, avera
         sl_data = {"ID": IDs, "MT_ref": movement_times,
                     "D": Ds, "W": Ws, "X": Xs, "Y": Ys}
     elif task in ('varying_width',):
-        IDs = np.array([r.info["tunnel_extras"]["ID"] for r in rollout_states])
+        IDs = np.array([np.abs(r.info["tunnel_extras"]["ID"]) for r in rollout_states]).reshape(-1, 1)
         Xs = np.array([r.info["tunnel_nodes"][:,0] for r in rollout_states])
         Ys = np.array([r.info["tunnel_nodes"][:,1] for r in rollout_states])
         sl_data = {"ID": IDs, "MT_ref": movement_times, "X": Xs, "Y": Ys}
@@ -79,7 +79,7 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
     results = {k: [] for k in sl_data.keys()}
     results["ID_means"] = []
     results["MT_ref_means"] = []
-    
+
     for _, idxs in groups.items():
         idx = idxs[0]
         for k in sl_data.keys():
@@ -87,27 +87,34 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
                 results[k].append(np.array(sl_data[k][idx]))
         
         mt_vals = np.array(sl_data["MT_ref"])[idxs]
-        if outlier_std is not None:
-            z_scores = scipy.stats.zscore(mt_vals)
-            z_scores[np.isnan(z_scores)] = 0
-            mt_vals_wo_outliers = mt_vals[abs(z_scores) <= outlier_std]
+        if mt_vals.size > 2:
+            if outlier_std is not None:
+                z_scores = scipy.stats.zscore(mt_vals)
+                z_scores[np.isnan(z_scores)] = 0
+                mt_vals_wo_outliers = mt_vals[abs(z_scores) <= outlier_std]
+            else:
+                mt_vals_wo_outliers = mt_vals.copy()
+            if outlier_proportiontocut is not None:
+                mt_vals_wo_outliers = scipy.stats.trimboth(mt_vals_wo_outliers, proportiontocut=outlier_proportiontocut)
         else:
-            mt_vals_wo_outliers = mt_vals.copy()
-        if outlier_proportiontocut is not None:
-            mt_vals_wo_outliers = scipy.stats.trimboth(mt_vals_wo_outliers, proportiontocut=outlier_proportiontocut)
+            mt_vals_wo_outliers = mt_vals
+
         mt_mean = np.mean(mt_vals_wo_outliers)
         results["MT_ref_means"].append(mt_mean)
         results["MT_ref"].append(np.array(sl_data["MT_ref"])[idxs])
 
         id_vals = sl_data["ID"][idxs]
-        if outlier_std is not None:
-            z_scores = scipy.stats.zscore(mt_vals)
-            z_scores[np.isnan(z_scores)] = 0
-            id_vals_wo_outliers = id_vals[abs(z_scores) <= outlier_std]
+        if id_vals.size > 2:
+            if outlier_std is not None:
+                z_scores = scipy.stats.zscore(mt_vals)
+                z_scores[np.isnan(z_scores)] = 0
+                id_vals_wo_outliers = id_vals[abs(z_scores) <= outlier_std]
+            else:
+                id_vals_wo_outliers = id_vals.copy()
+            if outlier_proportiontocut is not None:
+                id_vals_wo_outliers = scipy.stats.trimboth(id_vals_wo_outliers, proportiontocut=outlier_proportiontocut)  #TODO: fix (only works if all entries of id_vals_wo_outliers are the same)!
         else:
-            id_vals_wo_outliers = id_vals.copy()
-        if outlier_proportiontocut is not None:
-            id_vals_wo_outliers = scipy.stats.trimboth(id_vals_wo_outliers, proportiontocut=outlier_proportiontocut)  #TODO: fix (only works if all entries of id_vals_wo_outliers are the same)!
+            id_vals_wo_outliers = id_vals
         id_mean = np.mean(id_vals_wo_outliers)
         results["ID_means"].append(id_mean)
         results["ID"].append(sl_data["ID"][idxs])
@@ -245,7 +252,8 @@ def calculate_nancel_steering_law(sl_data, task='circle_0', average_r2=True):
         else:
             kappa, ds = calculate_curvature(sl_data["X"], sl_data["Y"])
             Rs = 1/kappa
-            f_vals = 1 / (Ws[:,:-1] * np.power(Rs, 1/3))
+            # To Do: W überarbeiten
+            f_vals = 1 / (Ws[:-1] * np.power(Rs, 1/3))
         IDs = np.sum(f_vals * ds, axis=-1).reshape(1, -1)
     else:
         print(f"Not implemented for this task {task}")
@@ -360,7 +368,7 @@ def calculate_original_steering_law(sl_data, average_r2=True):
     if len(IDs) == 0 or len(MTs) == 0:
         return np.nan, np.nan, np.nan, np.nan
     
-    a, b, r2, y_pred = fit_model(IDs, MTs)
+    a, b, r2, y_pred = fit_model(np.array(IDs).reshape(-1,1), np.array(MTs))
 
     print(f"R^2: {r2}, a,b: {a},{b}")
 
