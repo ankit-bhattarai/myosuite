@@ -332,7 +332,7 @@ def calculate_liu_steering_law(sl_data, average_r2=True):
 
     x_values = x1 + c/b * x2 + d/b * x3
 
-    sl_data.update({"MT_pred": np.exp(y_pred), "x_values": x_values})
+    sl_data.update({"MT_pred": np.exp(y_pred), "x_values": x_values, "y_pred": y_pred})
 
     return r2, sl_data
 
