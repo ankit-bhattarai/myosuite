@@ -253,7 +253,7 @@ def calculate_nancel_steering_law(sl_data, task='circle_0', average_r2=True):
             kappa, ds = calculate_curvature(sl_data["X"], sl_data["Y"])
             Rs = 1/kappa
             # To Do: W überarbeiten
-            f_vals = 1 / (Ws[:-1] * np.power(Rs, 1/3))
+            f_vals = 1 / (Ws[:,:-1] * np.power(Rs, 1/3))
         IDs = np.sum(f_vals * ds, axis=-1).reshape(1, -1)
     else:
         print(f"Not implemented for this task {task}")
