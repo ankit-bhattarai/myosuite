@@ -101,7 +101,7 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
 
         mt_mean = np.mean(mt_vals_wo_outliers)
         results["MT_ref_means"].append(mt_mean)
-        results["MT_ref"].append(np.array(sl_data["MT_ref"])[idxs])
+        results["MT_ref"].extend(mt_vals_wo_outliers.tolist())
 
         id_vals = sl_data["ID"][idxs]
         if id_vals.size > 2:
@@ -117,7 +117,7 @@ def average_movement_times_per_path(sl_data, outlier_std=None, outlier_proportio
             id_vals_wo_outliers = id_vals
         id_mean = np.mean(id_vals_wo_outliers)
         results["ID_means"].append(id_mean)
-        results["ID"].append(sl_data["ID"][idxs])
+        results["ID"].extend(id_vals_wo_outliers.tolist())
 
     results["ID_means"] = np.array(results["ID_means"]).reshape(-1, 1)
 
@@ -229,8 +229,9 @@ def calculate_chen_steering_law(sl_data, average_r2=True):
     x_values = x1 + c/b * x2 + d/b * x3
 
     r2 = r2_score(MTs, MT_pred)
+    print(f"Chen: R^2: {r2}, a,b,c,d: {a},{b},{c},{d}")
 
-    sl_data.update({"MT_pred": MT_pred, "x_values": x_values})
+    sl_data.update({"MT_pred": MT_pred, "x_values": x_values, "R^2_chen": r2, "a_chen": a, "b_chen": b, "c_chen": c, "d_chen": d})
     return r2, sl_data
         
 def calculate_nancel_steering_law(sl_data, task='circle_0', average_r2=True):
@@ -262,9 +263,9 @@ def calculate_nancel_steering_law(sl_data, task='circle_0', average_r2=True):
     IDs = IDs.ravel().reshape(-1, 1)
     MTs = MTs.ravel()
     a, b, r2, y_pred = fit_model(IDs, MTs)
-    print(f"R^2: {r2}, a,b: {a},{b}")
+    print(f"Nancel: R^2: {r2}, a,b: {a},{b}")
 
-    sl_data.update({"MT_pred": y_pred, "x_values": IDs})
+    sl_data.update({"MT_pred": y_pred, "x_values": IDs, "R^2_nancel": r2, "a_nancel": a, "b_nancel": b})
     return r2,sl_data
 
 def calculate_yamanaka_steering_law(sl_data, average_r2=True):
@@ -293,8 +294,9 @@ def calculate_yamanaka_steering_law(sl_data, average_r2=True):
     MT_pred = a + b * IDs
 
     r2 = r2_score(MTs, MT_pred)
+    print(f"Yamanaka: R^2: {r2}, a,b,c,d: {a},{b},{c},{d}")
 
-    sl_data.update({"MT_pred": MT_pred, "x_values": IDs})
+    sl_data.update({"MT_pred": MT_pred, "x_values": IDs, "R^2_yamanaka": r2, "a_yamanaka": a, "b_yamanaka": b, "c_yamanaka": c, "d_yamanaka": d})
     return r2, sl_data
 
 def calculate_liu_steering_law(sl_data, average_r2=True):
@@ -331,8 +333,9 @@ def calculate_liu_steering_law(sl_data, average_r2=True):
     r2 = r2_score(y, y_pred)
 
     x_values = x1 + c/b * x2 + d/b * x3
+    print(f"Liu: R^2: {r2}, a,b,c,d: {a},{b},{c},{d}")
 
-    sl_data.update({"MT_pred": np.exp(y_pred), "x_values": x_values, "y_pred": y_pred})
+    sl_data.update({"MT_pred": np.exp(y_pred), "x_values": x_values, "y_pred": y_pred, "R^2_liu": r2, "a_liu": a, "b_liu": b, "c_liu": c, "d_liu": d})
 
     return r2, sl_data
 
@@ -356,7 +359,9 @@ def calculate_ahlstroem_steering_law(sl_data, average_r2=True):
 
     x_values = IDs
 
-    sl_data.update({"MT_pred": y_pred, "x_values": x_values})
+    print(f"Ahlstroem: R^2: {r2}, a,b: {a},{b}")
+
+    sl_data.update({"MT_pred": y_pred, "x_values": x_values, "R^2_ahlstroem": r2, "a_ahlstroem": a, "b_ahlstroem": b})
 
     return r2,sl_data
     
@@ -373,9 +378,9 @@ def calculate_original_steering_law(sl_data, average_r2=True):
     
     a, b, r2, y_pred = fit_model(np.array(IDs).reshape(-1,1), np.array(MTs))
 
-    print(f"R^2: {r2}, a,b: {a},{b}")
+    print(f"Original: R^2: {r2}, a,b: {a},{b}")
 
-    sl_data.update({"MT_pred": y_pred})
+    sl_data.update({"MT_pred": y_pred, "R^2_original": r2, "a_original": a, "b_original": b})
 
     return a,b,r2,sl_data
 
