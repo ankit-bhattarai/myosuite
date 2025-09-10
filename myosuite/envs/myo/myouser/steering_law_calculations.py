@@ -347,7 +347,7 @@ def calculate_ahlstroem_steering_law(sl_data, average_r2=True):
     Hs = np.array(sl_data['H'])
     N_ITEMSs = np.array(sl_data['N_ITEMS'])
 
-    IDs = (np.sum(np.log2(N_ITEMSs), axis=1) + np.sum(0.5*Ws/Hs, axis=1)).reshape(-1, 1)
+    IDs = (np.sum(np.log2(N_ITEMSs), axis=1) + np.sum(Ws/Hs, axis=1)).reshape(-1, 1)
     # IDs = np.stack([
     #         np.log2(Ds[:, i] / Ws[:, i]+1) if i % 2 == 0 else 0.5*Ws[:, i] / Ds[:, i]
     #         for i in range(Ds.shape[1])
