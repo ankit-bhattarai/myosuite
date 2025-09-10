@@ -808,7 +808,8 @@ class MyoUserMenuSteering(MyoUserBase):
                 else:
                     anchor_pos = screen_pos_center
 
-            tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
+            # tunnel_checkpoints = jp.array([0.5, 1.])  #make sure to reach lower part of circle (theta=0.5) before task can be successfully completed
+            tunnel_checkpoints = jp.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
         
             # Store additional information
             # tunnel_extras = {"tunnel_center": anchor_pos,
