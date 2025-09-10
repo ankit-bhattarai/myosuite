@@ -937,6 +937,12 @@ class MyoUserMenuSteering(MyoUserBase):
         max_attempts_per_tunnel = 50
         
         if task_type == "rectangle_0":
+            N = 20
+            for _ in range(N):
+                for _ in range(n_tunnels_per_ID):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+                    tunnels_total.append(tunnel_info)
             ## vary lengths for fixed width
             # IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
             # W = 0.05
@@ -986,97 +992,103 @@ class MyoUserMenuSteering(MyoUserBase):
             #         _attempts +=1
             #     if _attempts == max_attempts_per_tunnel:
             #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
-            IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+            # IDs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
-            for ID in IDs:
-                combos = 0
-                _attempts = 0
-                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
-                    rng, rng2 = jax.random.split(rng, 2)
-                    W = jax.random.uniform(rng, minval=self.rectangle_min_size, maxval=self.rectangle_max_size)
-                    L = ID * W
-                    if self.rectangle_min_length <= L <= self.rectangle_max_length:
-                        # anchor_pos = None
-                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
-                                                              random_start_pos=random_start_pos,
-                                                              tunnel_length=L, tunnel_size=W)
-                        combos += 1
-                        _attempts = 0
-                        # for i in range(10):
-                        tunnels_total.append(tunnel_info)
-                        print(f"Added path for ID {ID}, L {L}, W {W}")
-                    _attempts +=1
-                if _attempts == max_attempts_per_tunnel:
-                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+            # for ID in IDs:
+            #     combos = 0
+            #     _attempts = 0
+            #     while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         W = jax.random.uniform(rng, minval=self.rectangle_min_size, maxval=self.rectangle_max_size)
+            #         L = ID * W
+            #         if self.rectangle_min_length <= L <= self.rectangle_max_length:
+            #             # anchor_pos = None
+            #             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+            #                                                   random_start_pos=random_start_pos,
+            #                                                   tunnel_length=L, tunnel_size=W)
+            #             combos += 1
+            #             _attempts = 0
+            #             # for i in range(10):
+            #             tunnels_total.append(tunnel_info)
+            #             print(f"Added path for ID {ID}, L {L}, W {W}")
+            #         _attempts +=1
+            #     if _attempts == max_attempts_per_tunnel:
+            #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "menu_2":
-            IDs = [3, 4, 5, 6, 7, 8, 9, 10]
-            
-            # TODO: ensure that same values as in self.get_custom_tunnel() are used!
-            screen_size = self.mj_model.site(self.screen_id).size[1:]
-            screen_margin = jp.array([0.1, 0.075])  #lower screen margin for vertical axis, as we do not display/consider the upper half of the first item, which adds another effective margin in this direction
-            screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
-
-            for ID in IDs:
-                combos = 0
-                _attempts = 0
-                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            N = 20
+            for _ in range(N):
+                for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
-                    rng, rng_height = jax.random.split(rng, 2)
-                    H = jax.random.uniform(rng_height, minval=self.menu_min_height, maxval=self.menu_max_height)
-                    max_items_permitted = jp.floor(screen_size_with_margin[1] / H).astype(jp.int32)
-                    rng, rng_n_menu_items = jax.random.split(rng, 2)
-                    # n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, jp.minimum(max_n_menu_items, max_items_permitted).astype(jp.int32) + 1))  #default: 4
-                    n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(self.menu_min_items, self.menu_max_items + 1))  #default: 4
-                    n_menu_items = jp.minimum(n_menu_items, max_items_permitted).astype(jp.int32)  #TODO: warning: larger values of n_menu_items might be assigned higher probability, due to clipping after random choice (which is required to avoid dynamic indexing)
+                    tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+                    tunnels_total.append(tunnel_info)
+            # IDs = [3, 4, 5, 6, 7, 8, 9, 10]
+            
+            # # TODO: ensure that same values as in self.get_custom_tunnel() are used!
+            # screen_size = self.mj_model.site(self.screen_id).size[1:]
+            # screen_margin = jp.array([0.1, 0.075])  #lower screen margin for vertical axis, as we do not display/consider the upper half of the first item, which adds another effective margin in this direction
+            # screen_size_with_margin = screen_size - screen_margin  #here, margin is completely used for top-left corner
 
-                    if (n_menu_items < ID**2 / 4):  #otherwise we cannot find an appropriate height!
-                        W = H * (ID + jp.sqrt(ID**2 - 4 * n_menu_items)) / 2  #based on Accot and Zhai menu steering law!
-                        if (self.menu_min_width <= W <= self.menu_max_width):
-                            # anchor_pos = None
-                            tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
-                                                                random_start_pos=random_start_pos,
-                                                                width=W, height=H, n_menu_items=n_menu_items)
-                            combos += 1
-                            _attempts = 0
-                            # for i in range(10):
-                            tunnels_total.append(tunnel_info)
-                            print(f"Added path for ID {ID}, W {W}, H {H}, N ITEMS {n_menu_items}")
-                    _attempts +=1
-                if _attempts == max_attempts_per_tunnel:
-                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+            # for ID in IDs:
+            #     combos = 0
+            #     _attempts = 0
+            #     while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         rng, rng_height = jax.random.split(rng, 2)
+            #         H = jax.random.uniform(rng_height, minval=self.menu_min_height, maxval=self.menu_max_height)
+            #         max_items_permitted = jp.floor(screen_size_with_margin[1] / H).astype(jp.int32)
+            #         rng, rng_n_menu_items = jax.random.split(rng, 2)
+            #         # n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(min_n_menu_items, jp.minimum(max_n_menu_items, max_items_permitted).astype(jp.int32) + 1))  #default: 4
+            #         n_menu_items = jax.random.choice(rng_n_menu_items, jp.arange(self.menu_min_items, self.menu_max_items + 1))  #default: 4
+            #         n_menu_items = jp.minimum(n_menu_items, max_items_permitted).astype(jp.int32)  #TODO: warning: larger values of n_menu_items might be assigned higher probability, due to clipping after random choice (which is required to avoid dynamic indexing)
+
+            #         if (n_menu_items < ID**2 / 4):  #otherwise we cannot find an appropriate height!
+            #             W = H * (ID + jp.sqrt(ID**2 - 4 * n_menu_items)) / 2  #based on Accot and Zhai menu steering law!
+            #             if (self.menu_min_width <= W <= self.menu_max_width):
+            #                 # anchor_pos = None
+            #                 tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+            #                                                     random_start_pos=random_start_pos,
+            #                                                     width=W, height=H, n_menu_items=n_menu_items)
+            #                 combos += 1
+            #                 _attempts = 0
+            #                 # for i in range(10):
+            #                 tunnels_total.append(tunnel_info)
+            #                 print(f"Added path for ID {ID}, W {W}, H {H}, N ITEMS {n_menu_items}")
+            #         _attempts +=1
+            #     if _attempts == max_attempts_per_tunnel:
+            #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "circle_0":
             ## VARIANT A: fixed IDs, fixed length per ID (for n_tunnels_per_ID=1)
-            IDs = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23]
+            # IDs = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23]
 
-            for ID in IDs:
-                combos = 0
-                _attempts = 0
-                while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
-                    rng, rng2 = jax.random.split(rng, 2)
-                    W = jax.random.uniform(rng, minval=self.circle_min_width, maxval=self.circle_max_width)
-                    L = ID * W
-                    circle_radius = (L) / (2 * jp.pi)
-                    if self.circle_min_radius <= circle_radius <= self.circle_max_radius:
-                        # anchor_pos = screen_pos_center
-                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
-                                                             random_start_pos=random_start_pos,
-                                                             circle_radius=circle_radius, tunnel_size=W)
-                        combos += 1
-                        _attempts = 0
-                        # for i in range(10):
-                        tunnels_total.append(tunnel_info)
-                        print(f"Added path for ID {ID}, L {L}, W {W}")
-                    _attempts +=1
-                if _attempts == max_attempts_per_tunnel:
-                    print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
+            # for ID in IDs:
+            #     combos = 0
+            #     _attempts = 0
+            #     while (combos < n_tunnels_per_ID) and (_attempts < max_attempts_per_tunnel):
+            #         rng, rng2 = jax.random.split(rng, 2)
+            #         W = jax.random.uniform(rng, minval=self.circle_min_width, maxval=self.circle_max_width)
+            #         L = ID * W
+            #         circle_radius = (L) / (2 * jp.pi)
+            #         if self.circle_min_radius <= circle_radius <= self.circle_max_radius:
+            #             # anchor_pos = screen_pos_center
+            #             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=self.task_type,
+            #                                                  random_start_pos=random_start_pos,
+            #                                                  circle_radius=circle_radius, tunnel_size=W)
+            #             combos += 1
+            #             _attempts = 0
+            #             # for i in range(10):
+            #             tunnels_total.append(tunnel_info)
+            #             print(f"Added path for ID {ID}, L {L}, W {W}")
+            #         _attempts +=1
+            #     if _attempts == max_attempts_per_tunnel:
+            #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
 
             # ## VARIANT B: totally random tunnels, as during training
-            # N = 250
-            # for _ in range(N):
-            #     for _ in range(n_tunnels_per_ID):
-            #         rng, rng2 = jax.random.split(rng, 2)
-            #         tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
-            #         tunnels_total.append(tunnel_info)
+            N = 20
+            for _ in range(N):
+                for _ in range(n_tunnels_per_ID):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+                    tunnels_total.append(tunnel_info)
 
             # ## VARIANT C: random IDs and widths
             # N = 250
@@ -1108,22 +1120,28 @@ class MyoUserMenuSteering(MyoUserBase):
 
         #print(f"tunnels_total", tunnels_total)
         elif task_type == "spiral_0":
-            spiral_endings = self._config.task_config.spiral_eval_endings
-            spiral_widths = self._config.task_config.spiral_eval_widths
+            N = 20
+            for _ in range(N):
+                for _ in range(n_tunnels_per_ID):
+                    rng, rng2 = jax.random.split(rng, 2)
+                    tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type)
+                    tunnels_total.append(tunnel_info)
+            # spiral_endings = self._config.task_config.spiral_eval_endings
+            # spiral_widths = self._config.task_config.spiral_eval_widths
 
-            for spiral_end in spiral_endings:
-                for spiral_width in spiral_widths:
-                    for _ in range(n_tunnels_per_ID):
-                        rng, rng2 = jax.random.split(rng, 2)
-                        # anchor_pos = screen_pos_center
-                        tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type,
-                                                             random_start_pos=random_start_pos,
-                                                             spiral_end=spiral_end, spiral_width=spiral_width)
-                        tunnels_total.append(tunnel_info)
-                        print(f"Added path for spiral_end {spiral_end}, spiral_width {spiral_width}")
+            # for spiral_end in spiral_endings:
+            #     for spiral_width in spiral_widths:
+            #         for _ in range(n_tunnels_per_ID):
+            #             rng, rng2 = jax.random.split(rng, 2)
+            #             # anchor_pos = screen_pos_center
+            #             tunnel_info = self.get_custom_tunnel(rng2, screen_pos_center=screen_pos_center, task_type=task_type,
+            #                                                  random_start_pos=random_start_pos,
+            #                                                  spiral_end=spiral_end, spiral_width=spiral_width)
+            #             tunnels_total.append(tunnel_info)
+            #             print(f"Added path for spiral_end {spiral_end}, spiral_width {spiral_width}")
 
         elif task_type == "sinusoidal_0":
-            N = 30
+            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
@@ -1132,7 +1150,7 @@ class MyoUserMenuSteering(MyoUserBase):
 
         elif task_type == "varying_width":
             #TODO: add proper eval code here
-            N = 30
+            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
