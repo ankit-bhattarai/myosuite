@@ -395,6 +395,6 @@ def plot_steering_law(sl_data, r2, law_name='Original', average_r2=True):
         plt.plot(sl_data["ID"], sl_data["MT_pred"],  color="red")
         plt.title(f"R^2={r2:.2g} for {law_name} steering law")
     else:
-        plt.scatter(sl_data["ID_means"], sl_data["MT_means_ref"])
+        plt.scatter(sl_data["ID_means"], sl_data["MT_ref_means"])
         plt.plot(sl_data["ID_means"], sl_data["MT_pred"], "--", color="red")
         plt.title(f"Average R^2={r2:.2g} for {law_name} steering law")

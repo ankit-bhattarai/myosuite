@@ -126,7 +126,7 @@ def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
     # Always plot original 
     if "plot_original" in task_metrics:
         plt.figure()
-        plt.scatter(task_metrics["plot_original"]["ID_means"], task_metrics["plot_original"]["MT_means_ref"])
+        plt.scatter(task_metrics["plot_original"]["ID_means"], task_metrics["plot_original"]["MT_ref_means"])
         plt.plot(task_metrics["plot_original"]["ID_means"], task_metrics["plot_original"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_original"]["r2"]
         plt.title(f"Original Steering Law - Average R^2$={r2_value:.2g}")
@@ -138,7 +138,7 @@ def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
         wandb.log({"chart/original_steering_law": wandb.Image(plt)}, step=step)
     if "plot_nancel" in task_metrics:
         plt.figure()
-        plt.scatter(task_metrics["plot_nancel"]["x_values"], task_metrics["plot_nancel"]["MT_means_ref"])
+        plt.scatter(task_metrics["plot_nancel"]["x_values"], task_metrics["plot_nancel"]["MT_ref_means"])
         plt.plot(task_metrics["plot_nancel"]["x_values"], task_metrics["plot_nancel"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_nancel"]["r2"]
         plt.title(f"Nancel Steering Law - Average R$^2$={r2_value:.2g}")
@@ -150,7 +150,7 @@ def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
         wandb.log({"chart/nancel_steering_law": wandb.Image(plt)}, step=step)
     if "plot_chen" in task_metrics:
         plt.figure()
-        plt.scatter(task_metrics["plot_chen"]["x_values"], task_metrics["plot_chen"]["MT_means_ref"])
+        plt.scatter(task_metrics["plot_chen"]["x_values"], task_metrics["plot_chen"]["MT_ref_means"])
         plt.plot(task_metrics["plot_chen"]["x_values"], task_metrics["plot_chen"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_chen"]["r2"]
         plt.title(f"Chen Steering Law - Average R$^2$={r2_value:.2g}")
@@ -163,7 +163,7 @@ def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
         wandb.log({"chart/chen_steering_law": wandb.Image(plt)}, step=step)
     if "plot_liu" in task_metrics:
         plt.figure()
-        plt.scatter(task_metrics["plot_liu"]["x_values"], task_metrics["plot_liu"]["MT_means_ref"])
+        plt.scatter(task_metrics["plot_liu"]["x_values"], task_metrics["plot_liu"]["MT_ref_means"])
         plt.plot(task_metrics["plot_liu"]["x_values"], task_metrics["plot_liu"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_liu"]["r2"]
         plt.title(f"Liu Steering Law - Average R$^2$={r2_value:.2g}")
@@ -175,7 +175,7 @@ def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
         wandb.log({"chart/liu_steering_law": wandb.Image(plt)}, step=step)
     if "plot_ahlstroem" in task_metrics:
         plt.figure()
-        plt.scatter(task_metrics["plot_ahlstroem"]["x_values"], task_metrics["plot_ahlstroem"]["MT_means_ref"])
+        plt.scatter(task_metrics["plot_ahlstroem"]["x_values"], task_metrics["plot_ahlstroem"]["MT_ref_means"])
         plt.plot(task_metrics["plot_ahlstroem"]["x_values"], task_metrics["plot_ahlstroem"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_ahlstroem"]["r2"]
         plt.title(f"Ahlström Steering Law - Average R$^2$={r2_value:.2g}")
@@ -187,7 +187,7 @@ def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
         wandb.log({"chart/ahlstroem_steering_law": wandb.Image(plt)}, step=step)
     if "plot_yamanaka" in task_metrics:
         plt.figure()
-        plt.scatter(task_metrics["plot_yamanaka"]["x_values"], task_metrics["plot_yamanaka"]["MT_means_ref"])
+        plt.scatter(task_metrics["plot_yamanaka"]["x_values"], task_metrics["plot_yamanaka"]["MT_ref_means"])
         plt.plot(task_metrics["plot_yamanaka"]["x_values"], task_metrics["plot_yamanaka"]["MT_pred"], "--", color="red")
         r2_value = task_metrics["plot_yamanaka"]["r2"]
         plt.title(f"Yamanaka Steering Law - Average R$^2$={r2_value:.2g}")
