@@ -877,7 +877,7 @@ class MyoUserMenuSteering(MyoUserBase):
             x = jp.linspace(x_range[0], x_range[1], n_sample_points)
             y = jp.zeros_like(x)
             for i in range(components):
-                y += y_max * jp.sin(2*jp.pi*frequencies[i]*x + phase[i]) / components
+                y += y_max * jp.sin(2*jp.pi*frequencies[i]*(x + phase[i])) / components
             x, y, _ = normalise_to_max(x, y, y_max)
             nodes_rel = jp.stack([x, y], axis=-1)
             if self._config.task_config.sinusoidal_flip:
