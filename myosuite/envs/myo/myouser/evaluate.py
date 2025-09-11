@@ -37,6 +37,7 @@ def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, 
     ## remove invalid entries, e.g., when end time or start time was set to len(arr) by find_first_one(), by setting those entries to a value >= ep_length (i.e., they will be ignored below)
     completion_times = (end_times < stacked_states.metrics["completed_phase_0"].shape[1]) * (start_times < end_times) * completion_times + \
                     ((end_times >= stacked_states.metrics["completed_phase_0"].shape[1]) + (start_times >= end_times)) * ep_length
+    out_of_bounds_nsteps = jp.sum(stacked_states.metrics["completed_phase_0"]*stacked_states.metrics["out_of_bounds"]*episode_mask, axis=1)
     if remove_weird_looping_trials:
         weird_looping_behaviour = _check_stacked_states_for_undesired_loops(stacked_states)
         print(f"Omit {sum(weird_looping_behaviour)} out of {len(weird_looping_behaviour)} trajectories due to weird looping behaviour.")
@@ -45,12 +46,14 @@ def evaluate_non_vision_completion_times(eval_env, jit_inference_fn, jit_reset, 
     unvmap = lambda x, i : jax.tree.map(lambda x: x[i], x)
     states = [unvmap(state, i) for i in range(n_episodes)]
     all_completion_times = []
+    all_out_of_bounds_nsteps = []
     all_states = []
-    for ct, st, wl in zip(completion_times, states, weird_looping_behaviour):
+    for ct, oob, st, wl in zip(completion_times, out_of_bounds_nsteps, states, weird_looping_behaviour):
         if (ct < ep_length) and not wl:
             all_completion_times.append(ct*eval_env.dt)
+            all_out_of_bounds_nsteps.append(oob)
             all_states.append(st)
-    return (all_completion_times, all_states), "SL_info"
+    return (all_completion_times, all_out_of_bounds_nsteps, all_states), "SL_info"
     
 
 def evaluate_non_vision(eval_env, jit_inference_fn, jit_reset, jit_step, seed=123, n_episodes=1, ep_length=None, reset_info_kwargs={}):

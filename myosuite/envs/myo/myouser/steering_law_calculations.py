@@ -57,9 +57,13 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task, avera
                     "D": Ds, "W": Ws, "X": Xs, "Y": Ys}
     elif task in ('varying_width',):
         IDs = np.array([np.abs(r.info["tunnel_extras"]["ID"]) for r in rollout_states]).reshape(-1, 1)
+        Ds = np.array([np.linalg.norm(r.info["tunnel_nodes"][-1] - r.info["tunnel_nodes"][0]) for r in rollout_states])
+        Ws_start = np.array([np.abs(r.info["tunnel_nodes_left"][0, 1] - r.info["tunnel_nodes_right"][0, 1]) for r in rollout_states])
+        Ws_end = np.array([np.abs(r.info["tunnel_nodes_left"][-1, 1] - r.info["tunnel_nodes_right"][-1, 1]) for r in rollout_states])
         Xs = np.array([r.info["tunnel_nodes"][:,0] for r in rollout_states])
         Ys = np.array([r.info["tunnel_nodes"][:,1] for r in rollout_states])
-        sl_data = {"ID": IDs, "MT_ref": movement_times, "X": Xs, "Y": Ys}
+        sl_data = {"ID": IDs, "MT_ref": movement_times,
+                   "D": Ds, "W_start": Ws_start, "W_end": Ws_end, "X": Xs, "Y": Ys}
     else:
         raise NotImplementedError()
     

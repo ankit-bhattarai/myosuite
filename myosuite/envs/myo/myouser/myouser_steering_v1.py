@@ -93,6 +93,8 @@ class MenuSteeringTaskConfig:
     spiral_eval_widths: List[float] = field(default_factory=lambda: [2, 10, 20])
     sinusoidal_flip: bool = False
     varying_width_points: int = 100
+    checkpoint_look_ahead: float = 0.05
+    checkpoint_look_behind: float = 0.25
 
 @dataclass
 class MenuSteeringEnvConfig(BaseEnvConfig):
@@ -352,8 +354,10 @@ class MyoUserMenuSteering(MyoUserBase):
         current_checkpoint_theta = info["tunnel_checkpoints"][info["current_checkpoint_segment_id"]]
         previous_checkpoint_theta = 0. + (info["current_checkpoint_segment_id"] > 0) * info["tunnel_checkpoints"][info["current_checkpoint_segment_id"] - 1]
         #TODO: move these theta_range values (0.05, -0.25) to config!
-        tunnel_current_theta_max = jp.minimum(current_checkpoint_theta + 0.05, 1.)  #allow for 5% more, to ensure that checkpoint condition "theta_closest >= current_checkpoint_theta" can be satisfied below
-        tunnel_current_theta_min = jp.maximum(previous_checkpoint_theta - 0.25, 0.)  #set lower bound to 25% less, as soon as checkpoint condition "theta_closest >= current_checkpoint_theta" has been satisfied below (provides better distance rewards when going the way back)
+        checkpoint_look_ahead = self._config.task_config.checkpoint_look_ahead
+        checkpoint_look_behind = self._config.task_config.checkpoint_look_behind
+        tunnel_current_theta_max = jp.minimum(current_checkpoint_theta + checkpoint_look_ahead, 1.)  #allow for checkpoint_look_ahead% more, to ensure that checkpoint condition "theta_closest >= current_checkpoint_theta" can be satisfied below
+        tunnel_current_theta_min = jp.maximum(previous_checkpoint_theta - checkpoint_look_behind, 0.)  #set lower bound to checkpoint_look_behind% less, as soon as checkpoint condition "theta_closest >= current_checkpoint_theta" has been satisfied below (provides better distance rewards when going the way back)
 
         # if self.opt_warmstart:
         #     distance_to_tunnel_bounds, theta_closest_left, theta_closest_right = distance_to_tunnel(ee_pos[1:], _interp_fct_left=info['tunnel_boundary_left'], _interp_fct_right=info['tunnel_boundary_right'], theta_init=info['path_percentage'])
