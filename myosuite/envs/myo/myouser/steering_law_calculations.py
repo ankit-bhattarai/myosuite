@@ -7,7 +7,7 @@ from scipy.optimize import least_squares
 import pandas as pd
 from collections import defaultdict
 
-def preprocess_steering_law_rollouts(movement_times, rollout_states, task, average_r2 = True):
+def preprocess_steering_law_rollouts(movement_times, rollout_states, task, average_r2 = True, remove_oob=False, out_of_bounds_nsteps=None):
     movement_times = np.array(movement_times)
 
     if task in ("circle_0",):
@@ -67,6 +67,10 @@ def preprocess_steering_law_rollouts(movement_times, rollout_states, task, avera
     else:
         raise NotImplementedError()
     
+    if remove_oob:
+        for k in sl_data.keys():
+            sl_data[k] = np.array(sl_data[k])[np.array(out_of_bounds_nsteps) == 0]
+
     if average_r2:
         return average_movement_times_per_path(sl_data, outlier_std=3)
     else:
