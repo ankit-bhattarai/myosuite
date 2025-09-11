@@ -627,8 +627,8 @@ class MyoUserMenuSteering(MyoUserBase):
                 tunnel_length = min_length + jax.random.uniform(rng_lenth) * (max_length - min_length)
             if (tunnel_size_start is None) or (tunnel_size_end is None):
                 rng, rng_size_start, rng_size_end = jax.random.split(rng, 3)
-                tunnel_size_start = jax.random.uniform(rng_size_start, minval=min_size, maxval=max_size)
-                tunnel_size_end = jax.random.uniform(rng_size_end, minval=min_size, maxval=max_size)
+                tunnel_size_start = jax.random.uniform(rng_size_start, minval=2*min_size, maxval=max_size)
+                tunnel_size_end = jax.random.uniform(rng_size_end, minval=min_size, maxval=tunnel_size_start)
                 tunnel_size = jp.linspace(tunnel_size_start, tunnel_size_end, self._config.task_config.varying_width_points)
 
             ID = tunnel_length / (tunnel_size_end - tunnel_size_start) * jp.log(tunnel_size_end / tunnel_size_start)
@@ -872,7 +872,7 @@ class MyoUserMenuSteering(MyoUserBase):
             phase_rng, frequency_rng, flip_rng = jax.random.split(rng, 3)
             n_sample_points = self.circle_sample_points
             components = 3
-            x_range = [-0.3, 0.3]
+            x_range = [-0.25, 0.25]
             y_max = 0.25
             if phase is None:
                 phase = jax.random.uniform(phase_rng, minval=0, maxval=2*jp.pi, shape=(components,))
@@ -882,7 +882,7 @@ class MyoUserMenuSteering(MyoUserBase):
             y = jp.zeros_like(x)
             for i in range(components):
                 y += y_max * jp.sin(2*jp.pi*frequencies[i]*(x + phase[i])) / components
-            x, y, _ = normalise_to_max(x, y, y_max)
+            # x, y, _ = normalise_to_max(x, y, y_max)
             nodes_rel = jp.stack([x, y], axis=-1)
             if self._config.task_config.sinusoidal_flip:
                 flip = jax.random.choice(flip_rng, a=jp.array([0, 1]), shape=(1,))[0]
