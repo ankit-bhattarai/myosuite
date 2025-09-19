@@ -940,9 +940,9 @@ class MyoUserMenuSteering(MyoUserBase):
                                        task_type: str ="menu_0", random_start_pos: bool = False, n_tunnels_per_ID: int = 1) -> dict[str, jax.Array]:
         tunnels_total = []
         max_attempts_per_tunnel = 50
+        N = 50
         
         if task_type == "rectangle_0":
-            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
@@ -1020,7 +1020,6 @@ class MyoUserMenuSteering(MyoUserBase):
             #     if _attempts == max_attempts_per_tunnel:
             #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
         elif task_type == "menu_2":
-            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
@@ -1088,7 +1087,6 @@ class MyoUserMenuSteering(MyoUserBase):
             #         print(f"WARNING: Could not find any tunnel of ID {ID} that satisfies the size/width/... constraints from config file.")
 
             # ## VARIANT B: totally random tunnels, as during training
-            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
@@ -1125,7 +1123,6 @@ class MyoUserMenuSteering(MyoUserBase):
 
         #print(f"tunnels_total", tunnels_total)
         elif task_type == "spiral_0":
-            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
@@ -1146,7 +1143,6 @@ class MyoUserMenuSteering(MyoUserBase):
             #             print(f"Added path for spiral_end {spiral_end}, spiral_width {spiral_width}")
 
         elif task_type == "sinusoidal_0":
-            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
@@ -1155,7 +1151,6 @@ class MyoUserMenuSteering(MyoUserBase):
 
         elif task_type == "varying_width":
             #TODO: add proper eval code here
-            N = 20
             for _ in range(N):
                 for _ in range(n_tunnels_per_ID):
                     rng, rng2 = jax.random.split(rng, 2)
