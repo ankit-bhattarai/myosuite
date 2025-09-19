@@ -21,6 +21,9 @@
           <geom name="fixed-eye" quat="0.7106 0.25537 0.616985 0.221728" type="mesh" rgba="1 1 1 1" mesh="eye"/>
           <camera name="fixed-eye" pos="0 0 0" fovy="120"/>
         </body>
+        <body name='alt_camera' pos="0.25 -0.27 0.993" quat="-0.5 -0.5 0.5 0.5">
+          <camera name='alt_camera' pos="0 0 0" fovy="120"/>
+        </body>
     </worldbody>
 
     <!-- Adding sensor for the steering task -->
