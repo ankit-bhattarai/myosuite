@@ -24,7 +24,7 @@
   </default>
 
   <asset>
-    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="0.6 0.8 1" width="256" height="1536"/>
+    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 0.8 0.6" width="256" height="1536"/>
     <material name="MatSkin" specular="0.2" shininess=".1" reflectance="0.5" rgba="0.9 .7 .5 1"/>
     <mesh name="thorax" file="assets/thorax.stl"/>
     <mesh name="clavicle" file="assets/clavicle.stl"/>
