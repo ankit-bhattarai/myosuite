@@ -33,12 +33,6 @@ from typing import List, Dict, Union, Any
 class ReachSettings:
     ref_site: str = "humphant"
     target_origin_rel: List[float] = field(default_factory=lambda: [0., 0., 0.])
-    target_pos_range: Dict[str, List[List[float]]] = field(default_factory=lambda: {
-        "fingertip": [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]],
-    })
-    target_radius_range: Dict[str, List[float]] = field(default_factory=lambda: {
-        "fingertip": [0.05, 0.05],
-    })
 
 
 @dataclass
