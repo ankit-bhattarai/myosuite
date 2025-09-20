@@ -125,8 +125,19 @@ class MyoUserUniversal(MyoUserBase):
 
     def _setup(self):
         super()._setup()
-        self.target_body_ids = [self.mj_model.body(name).id for name in self.target_body_names]
-        self.target_geom_ids = [self.mj_model.geom(name).id for name in self.target_geom_names]
+        
+        self.obs_keys = self._config.task_config.obs_keys
+        self.omni_keys = self._config.task_config.omni_keys
+        
+        if not self._config.vision.enabled:
+            print(f"No vision, so adding {self.omni_keys} to obs_keys")
+            self.obs_keys.extend(self.omni_keys)
+        else:
+            print(f"Vision, so not adding {self.omni_keys} to obs_keys")
+        print(f"Obs keys: {self.obs_keys}")
+
+        self.target_body_ids = jp.array([self.mj_model.body(name).id for name in self.target_body_names])
+        self.target_geom_ids = jp.array([self.mj_model.geom(name).id for name in self.target_geom_names])
     def auto_reset(self):
         pass
 
