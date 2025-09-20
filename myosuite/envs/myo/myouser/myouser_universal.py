@@ -48,6 +48,7 @@ class PointingTarget:
     reward_incentive: float = 0.0
     completion_bonus: float = 0.0
     dwell_duration: float = 0.25
+    rgb: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0])
 
 @dataclass
 class UniversalTaskConfig:
@@ -72,7 +73,7 @@ class UniversalTaskConfig:
     num_targets: int = 1
     targets: List[PointingTarget] = field(default_factory=lambda: [
         PointingTarget(completion_bonus=0.0),
-        PointingTarget(completion_bonus=1.0),
+        PointingTarget(completion_bonus=1.0, rgb=[0.0, 1.0, 0.0]),
     ])
 
 @dataclass
@@ -101,10 +102,13 @@ class MyoUserUniversal(MyoUserBase):
             )
             target_body_names.append(target_body_name)
             target_geom_name = f"geom_target_{i}"
+            rgba = jp.zeros(4)
+            rgba = rgba.at[:3].set(target['rgb'])
             target_geom = target_body.add_geom(
                 name=target_geom_name,
                 pos=jp.zeros(3),
-                size=target_size
+                size=target_size,
+                rgba=rgba,
             )
             target_geom_names.append(target_geom_name)
 
@@ -138,11 +142,60 @@ class MyoUserUniversal(MyoUserBase):
         # Define target origin, relative to which target positions will be generated
         self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
 
+    def get_generate_target(self, rng, phase=0):
+        target = self._config.task_config.targets[phase]
+        rng, pos_rng, size_rng = jax.random.split(rng, 3)
+        target_pos = jax.random.uniform(pos_rng, (3,), minval=jp.array(target['position'][0]), maxval=jp.array(target['position'][1]))
+        target_size = jax.random.uniform(size_rng, (3,), minval=jp.array(target['size'][0]), maxval=jp.array(target['size'][1]))
+        target_pos = self.target_coordinates_origin + target_pos
+        return target_pos, target_size
+
     def auto_reset(self):
         pass
 
-    def reset(self, rng, **kwargs):
-        pass
+    def reset(self, rng, render_token=None, add_to_info=None):
+        _, rng = jax.random.split(rng, 2)
+
+        data = self._reset_bm_model(rng)
+
+        last_ctrl = jp.zeros(self._nu)
+
+        info = {"rng": rng,
+                "last_ctrl": last_ctrl,
+                "steps_inside_target": jp.array(0.),
+                'reach_dist': jp.array(0.),
+                'target_success': jp.array(False),
+                'target_fail': jp.array(False),
+                'task_completed': jp.array(False),
+                'phase': jp.array(0),
+                'time_in_current_phase': jp.array(0.),
+                }
+        if add_to_info is not None:
+            info.update(add_to_info)
+        target_pos, target_size = self.get_generate_target(rng, phase=0)
+        info['target_pos'] = target_pos
+        info['target_size'] = target_size
+        reward, done = jp.zeros(2)
+        obs = None #TODO: implement this!
+        metrics = {} #TODO: implement this!
+        return State(data, obs, reward, done, metrics, info)
+
 
     def step(self, state: State, action: jp.ndarray) -> State:
         pass
+
+    def update_task_visuals(self, mj_model, state):
+        phase = state.info['phase']
+
+        # Show target from this phase and hide all others
+        target_body_id = self.target_body_ids[phase]
+        target_geom_id = self.target_geom_ids[phase]
+
+        for i in range(len(self._config.task_config.targets)):
+            mj_model.geom(self.target_geom_ids[i]).rgba[-1] = 0.0
+        mj_model.geom(target_geom_id).rgba[-1] = 1.0
+
+        mj_model.body_pos[target_body_id, :] = state.info['target_pos']
+        mj_model.geom_size[target_geom_id, :] = state.info['target_size']
+
+        
