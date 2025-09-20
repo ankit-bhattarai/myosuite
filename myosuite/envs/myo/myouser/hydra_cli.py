@@ -17,6 +17,7 @@ from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import CircularSteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_v1 import MenuSteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_law_v0 import SteeringLawEnvConfig
+from myosuite.envs.myo.myouser.myouser_universal import UniversalEnvConfig
 
 OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "-" + str(x))
 
@@ -159,6 +160,7 @@ cs.store(group="env", name="steering", node=SteeringEnvConfig)
 cs.store(group="env", name="circular_steering", node=CircularSteeringEnvConfig)
 cs.store(group="env", name="menu_steering", node=MenuSteeringEnvConfig)
 cs.store(group="env", name="steering_law", node=SteeringLawEnvConfig)
+cs.store(group="env", name="universal", node=UniversalEnvConfig)
 cs.store(group="rl", name="rl_config", node=RLConfig)
 cs.store(group="run", name="run", node=RunConfig)
 cs.store(group="rl/network_factory", name="vision", node=VisionNetworkConfig)

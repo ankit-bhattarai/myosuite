@@ -1,0 +1,137 @@
+# Copyright 2025 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+"""Base class for MyoUser Arm Pointing model."""
+import collections
+import tqdm
+
+import jax
+import jax.numpy as jp
+from ml_collections import config_dict
+import mujoco
+from mujoco import mjx
+from mujoco_playground import State
+
+from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
+from myosuite.envs.myo.fatigue import CumulativeFatigue
+from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
+from dataclasses import dataclass, field
+from typing import List, Dict, Union, Any
+
+@dataclass
+class ReachSettings:
+    ref_site: str = "humphant"
+    target_origin_rel: List[float] = field(default_factory=lambda: [0., 0., 0.])
+    target_pos_range: Dict[str, List[List[float]]] = field(default_factory=lambda: {
+        "fingertip": [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]],
+    })
+    target_radius_range: Dict[str, List[float]] = field(default_factory=lambda: {
+        "fingertip": [0.05, 0.05],
+    })
+
+
+@dataclass
+class PointingTarget:
+    # penetrable: bool = False
+    # Position can either be a 3d vector or a 2 x list of 3d vectors specifying the min and max values for each dimension
+    position: List[List[float]] = field(
+        default_factory=lambda: [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]])
+    shape: str = "sphere"
+    # Size can either be a single value or a list of 2 values specifying the min and max values
+    size: List[float] = field(default_factory=lambda: [0.05, 0.15])
+    # Any rewards received when inside the target
+    reward_incentive: float = 0.0
+    completion_bonus: float = 0.0
+    dwell_duration: float = 0.25
+
+@dataclass
+class UniversalTaskConfig:
+    reach_settings: ReachSettings = field(default_factory=lambda: ReachSettings())
+    obs_keys: List[str] = field(default_factory=lambda: [
+        "qpos",
+        "qvel",
+        "qacc",
+        "ee_pos",
+        "act",
+    ])
+    omni_keys: List[str] = field(default_factory=lambda: ["target_pos", "target_size", "phase"])
+    weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
+        "reach": 1,
+        "bonus": 8,
+    })
+    reach_metric: float = 10.0
+    max_duration: float = 4.
+    dwell_duration: float = 0.25
+    max_trials: int = 1
+    reset_type: str = "range_uniform"
+    num_targets: int = 1
+    targets: List[PointingTarget] = field(default_factory=lambda: [
+        PointingTarget(completion_bonus=0.0),
+        PointingTarget(completion_bonus=1.0),
+    ])
+
+@dataclass
+class UniversalEnvConfig(BaseEnvConfig):
+    env_name: str = "MyoUserUniversal"
+    model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_universal_myouser.xml"
+    task_config: UniversalTaskConfig = field(default_factory=lambda: UniversalTaskConfig())
+
+class MyoUserUniversal(MyoUserBase): 
+    
+    def add_task_relevant_geoms(self, spec: mujoco.MjSpec):
+        targets = self._config.task_config.targets
+        worldbody = spec.worldbody
+        key = jax.random.PRNGKey(1)
+        target_body_names = []
+        target_geom_names = []
+        for i, target in enumerate(targets):
+            assert target['shape'] == "sphere", "Only sphere shapes are supported for now"
+            target_body_name = f"body_target_{i}"
+            key, pos_key, size_key = jax.random.split(key, 3)
+            target_pos = jax.random.uniform(pos_key, (3,), minval=jp.array(target['position'][0]), maxval=jp.array(target['position'][1]))
+            target_size = jax.random.uniform(size_key, (3,), minval=jp.array(target['size'][0]), maxval=jp.array(target['size'][1]))
+            target_body = worldbody.add_body(
+                name=target_body_name,
+                pos=target_pos,
+            )
+            target_body_names.append(target_body_name)
+            target_geom_name = f"geom_target_{i}"
+            target_geom = target_body.add_geom(
+                name=target_geom_name,
+                pos=jp.zeros(3),
+                size=target_size
+            )
+            target_geom_names.append(target_geom_name)
+
+        self.target_body_names = target_body_names
+        self.target_geom_names = target_geom_names
+        print("Adding task relevant geoms")
+        return spec
+
+    def preprocess_spec(self, spec: mujoco.MjSpec):
+        spec = self.add_task_relevant_geoms(spec)
+        return super().preprocess_spec(spec)
+
+    def _setup(self):
+        super()._setup()
+        self.target_body_ids = [self.mj_model.body(name).id for name in self.target_body_names]
+        self.target_geom_ids = [self.mj_model.geom(name).id for name in self.target_geom_names]
+    def auto_reset(self):
+        pass
+
+    def reset(self, rng, **kwargs):
+        pass
+
+    def step(self, state: State, action: jp.ndarray) -> State:
+        pass
