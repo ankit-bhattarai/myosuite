@@ -119,7 +119,7 @@ class MyoUserUniversal(MyoUserBase):
 
     def _setup(self):
         super()._setup()
-        
+        self.reach_settings = self._config.task_config.reach_settings
         self.obs_keys = self._config.task_config.obs_keys
         self.omni_keys = self._config.task_config.omni_keys
         
@@ -132,6 +132,12 @@ class MyoUserUniversal(MyoUserBase):
 
         self.target_body_ids = jp.array([self.mj_model.body(name).id for name in self.target_body_names])
         self.target_geom_ids = jp.array([self.mj_model.geom(name).id for name in self.target_geom_names])
+
+    def _prepare_after_init(self, data):
+        super()._prepare_after_init(data)
+        # Define target origin, relative to which target positions will be generated
+        self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
+
     def auto_reset(self):
         pass
 
