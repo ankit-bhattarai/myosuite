@@ -63,7 +63,7 @@ class UniversalTaskConfig:
     omni_keys: List[str] = field(default_factory=lambda: ["target_pos", "target_size", "phase"])
     weighted_reward_keys: Dict[str, float] = field(default_factory=lambda: {
         "reach": 1,
-        "phase_bonus": 8,
+        "phase_bonus": 0,
         "done": 10,
     })
     reach_metric: float = 10.0
