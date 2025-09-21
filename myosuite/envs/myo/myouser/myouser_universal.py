@@ -257,8 +257,8 @@ class MyoUserUniversal(MyoUserBase):
             target_obj.target_body_id = self.mj_model.body(target_obj.target_body_name).id
             target_obj.target_geom_id = self.mj_model.geom(target_obj.target_geom_name).id
 
-    def auto_reset(self):
-        pass
+    def auto_reset(self, rng, info_before_reset, **kwargs):
+        return self.reset(rng)
 
     def reset(self, rng, render_token=None, add_to_info=None):
         _, rng = jax.random.split(rng, 2)
