@@ -67,7 +67,7 @@ class UniversalTaskConfig:
         "done": 10,
     })
     reach_metric: float = 10.0
-    max_duration: float = 4.
+    max_duration: float = 6.
     dwell_duration: float = 0.25
     max_trials: int = 1
     reset_type: str = "range_uniform"
