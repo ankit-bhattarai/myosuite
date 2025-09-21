@@ -175,8 +175,6 @@ class PointingTargetClass:
                 target_i_pos = info[f'phase_{i}/target_pos']
                 target_i_plus_1_pos = info[f'phase_{i+1}/target_pos']
                 extra_dist = extra_dist + jp.linalg.norm(target_i_pos - target_i_plus_1_pos, axis=-1)
-                string = f"In phase {self.phase_number}, extra_dist is "
-                jax.debug.print(string + "{extra_dist}", extra_dist=extra_dist)
         else:
             print(f"Not calculating extra dist for phase {self.phase_number}")
         reach_dist = reach_dist + extra_dist
