@@ -334,6 +334,16 @@ class MyoUserUniversal(MyoUserBase):
         info['ee_pos'] = obs_dict['ee_pos']
         return info
 
+    def task_completed_metrics(self, phase: int):
+        ### Called if task has been completed and sets all the metrics to 1
+        return {metric: 1.0 for metric in self.default_metrics(phase).keys()}
+
+    def default_metrics(self, phase: int):
+        ### Called if task hasn't been completed and sets the phase_complete_metrics according to the current phase
+        return {
+            f'phase_{i}_completed': 1.0 * (phase > i) for i in range(len(self.target_objs))
+        }
+    
     def step(self, state: State, action: jp.ndarray) -> State:
         rng = state.info['rng']
         data0 = state.data
@@ -355,12 +365,8 @@ class MyoUserUniversal(MyoUserBase):
         _, state.info['rng'] = jax.random.split(rng, 2)
         done = rwd_dict['done']
 
-        phase_complete_metrics = {
-            f'phase_{i}_completed': 1.0 * (obs_dict['phase'] > i) for i in range(len(self.target_objs))
-        }
-        last_phase = len(self.target_objs) - 1
-        # This can only be set to 1 if the task is completed
-        phase_complete_metrics[f'phase_{last_phase}_completed'] = obs_dict['task_completed']
+        metric_options = [self.default_metrics, self.task_completed_metrics]
+        phase_complete_metrics = jax.lax.switch(int(done), metric_options, obs_dict['phase'])
 
         metrics = {
             'reach_dist': obs_dict['reach_dist'],
