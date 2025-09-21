@@ -247,6 +247,9 @@ class MyoUserUniversal(MyoUserBase):
             print(f"Vision, so not adding {self.omni_keys} to obs_keys")
         print(f"Obs keys: {self.obs_keys}")
         self.ee_pos_id = self.mj_model.site('fingertip').id
+        self.non_accumulation_metrics = ['reach_dist'] + [f'phase_{i}_completed' for i in range(len(self.target_objs))]
+        self.accumulation_metrics = ['success_rate']
+
 
     def _prepare_after_init(self, data):
         super()._prepare_after_init(data)
@@ -290,7 +293,8 @@ class MyoUserUniversal(MyoUserBase):
         info['target_pos'] = info['phase_0/target_pos']
         info['target_size'] = info['phase_0/target_size']        
         reward, done = jp.zeros(2)
-        metrics = {} #TODO: implement this!
+        metrics = {metric: 0.0 for metric in self.non_accumulation_metrics}
+        metrics.update({metric: 0.0 for metric in self.accumulation_metrics})
         obs, info = self.get_obs_vec(data, info)
         return State(data, obs, reward, done, metrics, info)
 
@@ -346,15 +350,28 @@ class MyoUserUniversal(MyoUserBase):
         obs = self.obsdict2obsvec(obs_dict)
 
         rwd_funcs = [t.get_task_reward_dict for t in self.target_objs]
-        rwd_dict = jax.lax.switch(state.info['phase'], rwd_funcs, obs_dict)
+        rwd_dict = jax.lax.switch(obs_dict['phase'], rwd_funcs, obs_dict)
 
         _updated_info = self.update_info(state.info, obs_dict)
         state = state.replace(info=_updated_info)
         _, state.info['rng'] = jax.random.split(rng, 2)
         done = rwd_dict['done']
 
+        phase_complete_metrics = {
+            f'phase_{i}_completed': 1.0 * (obs_dict['phase'] > i) for i in range(len(self.target_objs))
+        }
+        last_phase = len(self.target_objs) - 1
+        # This can only be set to 1 if the task is completed
+        phase_complete_metrics[f'phase_{last_phase}_completed'] = obs_dict['task_completed']
+
+        metrics = {
+            'reach_dist': obs_dict['reach_dist'],
+            'success_rate': obs_dict['task_completed'],
+            **phase_complete_metrics,
+        }
+
         return state.replace(
-            data=data, obs=obs, reward=rwd_dict['dense'], done=done
+            data=data, obs=obs, reward=rwd_dict['dense'], done=done, metrics=metrics
         )
 
     def update_task_visuals(self, mj_model, state):
