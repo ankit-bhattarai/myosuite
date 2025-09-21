@@ -366,7 +366,7 @@ class MyoUserUniversal(MyoUserBase):
         done = rwd_dict['done']
 
         metric_options = [self.default_metrics, self.task_completed_metrics]
-        phase_complete_metrics = jax.lax.switch(int(done), metric_options, obs_dict['phase'])
+        phase_complete_metrics = jax.lax.switch(done.astype(jp.int32), metric_options, obs_dict['phase'])
 
         metrics = {
             'reach_dist': obs_dict['reach_dist'],
