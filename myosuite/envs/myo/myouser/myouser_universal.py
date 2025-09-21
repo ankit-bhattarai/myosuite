@@ -82,39 +82,86 @@ class UniversalEnvConfig(BaseEnvConfig):
     model_path: str = "myosuite/envs/myo/assets/arm/mobl_arms_index_universal_myouser.xml"
     task_config: UniversalTaskConfig = field(default_factory=lambda: UniversalTaskConfig())
 
+class PointingTargetClass:
+    def __init__(self, phase_number: int, target_pos_range: List[List[float]], target_radius_range: List[float], 
+                target_name: str = "ee_pos", shape: str = "sphere"):
+        self.phase_number = phase_number
+        self.target_coordinates_origin = jp.zeros(3) # TODO: to be set later
+        self.target_pos_range = jp.array(target_pos_range)
+        self.target_radius_range = jp.array(target_radius_range)
+        self.target_name = target_name
+        assert shape == "sphere", "Only sphere shapes are supported for now"
+        self.shape = shape
+        self.target_geom_id = None
+        self.target_body_id = None
+
+    def generate_target_pos(self, rng: jax.random.PRNGKey):
+        target_pos = jax.random.uniform(rng, (3,), minval=self.target_pos_range[0], maxval=self.target_pos_range[1])
+        target_pos = self.target_coordinates_origin + target_pos
+        return target_pos
+
+    def generate_target_size(self, rng: jax.random.PRNGKey):
+        target_size = jax.random.uniform(rng, (3,), minval=self.target_radius_range[0], maxval=self.target_radius_range[1])
+        return target_size
+
+    def generate_target(self, rng: jax.random.PRNGKey):
+        rng, pos_rng, size_rng = jax.random.split(rng, 3)
+        target_pos = self.generate_target_pos(pos_rng)
+        target_size = self.generate_target_size(size_rng)
+        return target_pos, target_size
+
+    @property
+    def target_geom_name(self):
+        return f"geom_target_{self.phase_number}"
+
+    @property
+    def target_body_name(self):
+        return f"body_target_{self.phase_number}"
+    
+    def add_to_spec(self, spec: mujoco.MjSpec, rng: jax.random.PRNGKey, rgb: List[float]):
+        worldbody = spec.worldbody
+        target_pos, target_size = self.generate_target(rng)
+        target_body = worldbody.add_body(name=self.target_body_name, pos=target_pos)
+        rgba = jp.zeros(4)
+        rgba = rgba.at[:3].set(rgb)
+        target_geom = target_body.add_geom(name=self.target_geom_name, pos=jp.zeros(3), size=target_size, rgba=rgba)
+        print(f"Added target {self.target_geom_name} to spec")
+        return spec
+
+    def reset(self, info: Dict[str, Any]):
+        rng, rng_task = jax.random.split(info['rng'], 2)
+        target_pos, target_size = self.generate_target(rng_task)
+        info[f'phase_{self.phase_number}/target_pos'] = target_pos
+        info[f'phase_{self.phase_number}/target_size'] = target_size
+        info['rng'] = rng
+        return info
+    
+    def target_step(self, state: State, action: jp.ndarray, info: Dict[str, Any]):
+        pass
+
+    def update_task_visuals(self, mj_model: mujoco.MjModel, state: State, phase: int):
+        if phase != self.phase_number:
+            mj_model.geom(self.target_geom_name).rgba[-1] = 0.0 # Hide this target
+        else:
+            mj_model.geom(self.target_geom_name).rgba[-1] = 1.0 # Show this target
+            mj_model.body_pos[self.target_body_id, :] = state.info[f'phase_{phase}/target_pos']
+            mj_model.geom_size[self.target_geom_id, :] = state.info[f'phase_{phase}/target_size']
+
 class MyoUserUniversal(MyoUserBase): 
     
     def add_task_relevant_geoms(self, spec: mujoco.MjSpec):
         targets = self._config.task_config.targets
-        worldbody = spec.worldbody
-        key = jax.random.PRNGKey(1)
-        target_body_names = []
-        target_geom_names = []
+        self.target_objs = []
+        rng = jax.random.PRNGKey(1)
         for i, target in enumerate(targets):
-            assert target['shape'] == "sphere", "Only sphere shapes are supported for now"
-            target_body_name = f"body_target_{i}"
-            key, pos_key, size_key = jax.random.split(key, 3)
-            target_pos = jax.random.uniform(pos_key, (3,), minval=jp.array(target['position'][0]), maxval=jp.array(target['position'][1]))
-            target_size = jax.random.uniform(size_key, (3,), minval=jp.array(target['size'][0]), maxval=jp.array(target['size'][1]))
-            target_body = worldbody.add_body(
-                name=target_body_name,
-                pos=target_pos,
+            rng, rng_init = jax.random.split(rng, 2)
+            target_obj = PointingTargetClass(phase_number=i,
+                target_pos_range=jp.array(target['position']),
+                target_radius_range=jp.array(target['size']),
             )
-            target_body_names.append(target_body_name)
-            target_geom_name = f"geom_target_{i}"
-            rgba = jp.zeros(4)
-            rgba = rgba.at[:3].set(target['rgb'])
-            target_geom = target_body.add_geom(
-                name=target_geom_name,
-                pos=jp.zeros(3),
-                size=target_size,
-                rgba=rgba,
-            )
-            target_geom_names.append(target_geom_name)
-
-        self.target_body_names = target_body_names
-        self.target_geom_names = target_geom_names
-        print("Adding task relevant geoms")
+            spec = target_obj.add_to_spec(spec, rng_init, target['rgb'])
+            self.target_objs.append(target_obj)
+        print(f"Added {len(self.target_objs)} targets to spec")
         return spec
 
     def preprocess_spec(self, spec: mujoco.MjSpec):
@@ -134,21 +181,14 @@ class MyoUserUniversal(MyoUserBase):
             print(f"Vision, so not adding {self.omni_keys} to obs_keys")
         print(f"Obs keys: {self.obs_keys}")
 
-        self.target_body_ids = jp.array([self.mj_model.body(name).id for name in self.target_body_names])
-        self.target_geom_ids = jp.array([self.mj_model.geom(name).id for name in self.target_geom_names])
-
     def _prepare_after_init(self, data):
         super()._prepare_after_init(data)
         # Define target origin, relative to which target positions will be generated
         self.target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, self.reach_settings.ref_site)].copy() + jp.array(self.reach_settings.target_origin_rel)  #jp.zeros(3,)
-
-    def get_generate_target(self, rng, phase=0):
-        target = self._config.task_config.targets[phase]
-        rng, pos_rng, size_rng = jax.random.split(rng, 3)
-        target_pos = jax.random.uniform(pos_rng, (3,), minval=jp.array(target['position'][0]), maxval=jp.array(target['position'][1]))
-        target_size = jax.random.uniform(size_rng, (3,), minval=jp.array(target['size'][0]), maxval=jp.array(target['size'][1]))
-        target_pos = self.target_coordinates_origin + target_pos
-        return target_pos, target_size
+        for target_obj in self.target_objs:
+            target_obj.target_coordinates_origin = self.target_coordinates_origin
+            target_obj.target_body_id = self.mj_model.body(target_obj.target_body_name).id
+            target_obj.target_geom_id = self.mj_model.geom(target_obj.target_geom_name).id
 
     def auto_reset(self):
         pass
@@ -170,11 +210,16 @@ class MyoUserUniversal(MyoUserBase):
                 'phase': jp.array(0),
                 'time_in_current_phase': jp.array(0.),
                 }
+        
         if add_to_info is not None:
             info.update(add_to_info)
-        target_pos, target_size = self.get_generate_target(rng, phase=0)
-        info['target_pos'] = target_pos
-        info['target_size'] = target_size
+        
+        for target_obj in self.target_objs:
+            update_info = target_obj.reset(info)
+            info.update(update_info)
+        
+        info['target_pos'] = info['phase_0/target_pos']
+        info['target_size'] = info['phase_0/target_size']        
         reward, done = jp.zeros(2)
         obs = None #TODO: implement this!
         metrics = {} #TODO: implement this!
@@ -186,16 +231,8 @@ class MyoUserUniversal(MyoUserBase):
 
     def update_task_visuals(self, mj_model, state):
         phase = state.info['phase']
+        for target_obj in self.target_objs:
+            target_obj.update_task_visuals(mj_model, state, phase)
 
-        # Show target from this phase and hide all others
-        target_body_id = self.target_body_ids[phase]
-        target_geom_id = self.target_geom_ids[phase]
-
-        for i in range(len(self._config.task_config.targets)):
-            mj_model.geom(self.target_geom_ids[i]).rgba[-1] = 0.0
-        mj_model.geom(target_geom_id).rgba[-1] = 1.0
-
-        mj_model.body_pos[target_body_id, :] = state.info['target_pos']
-        mj_model.geom_size[target_geom_id, :] = state.info['target_size']
 
         
