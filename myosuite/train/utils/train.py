@@ -576,9 +576,13 @@ def train_or_load_checkpoint(env_name,
                                                                     #ep_length=80,
                                                                     cameras=["fixed-eye", None]
                                                                     )
-            policy_params_fn_checkpoints = progress_eval_logger.progress_save_and_eval_run_minimal
+            if eval_env._config.env_name == "MyoUserMenuSteering":
+                policy_params_fn_checkpoints = progress_eval_logger.progress_save_and_eval_run_minimal
+            else:
+                policy_params_fn_checkpoints = progress_eval_logger.progress_eval_run
         else:
             policy_params_fn_checkpoints = lambda *args: None
+
 
         # # Define policy parameters function for saving checkpoints
         # def policy_params_fn_checkpoints(current_step, make_policy, params):
