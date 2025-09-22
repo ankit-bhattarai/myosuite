@@ -77,6 +77,7 @@ class UniversalTaskConfig:
         PointingTarget(completion_bonus=0.0, rgb=[0.0, 0.0, 1.0]),
         PointingTarget(completion_bonus=1.0, rgb=[0.0, 1.0, 0.0]),
     ])
+    show_all_targets: bool = True
 
 @dataclass
 class UniversalEnvConfig(BaseEnvConfig):
@@ -88,6 +89,7 @@ class PointingTargetClass:
     def __init__(self, phase_number: int, total_phases: int, target_pos_range: List[List[float]], target_radius_range: List[float], 
                 dwell_steps: int,
                 weighted_reward_keys: Dict[str, float],
+                show_all_targets: bool = True,
                 target_name: str = "ee_pos", shape: str = "sphere"):
         self.phase_number = phase_number
         self.total_phases = total_phases
@@ -97,6 +99,7 @@ class PointingTargetClass:
         self.target_radius_range = jp.array(target_radius_range)
         self.dwell_steps = dwell_steps
         self.weighted_reward_keys = weighted_reward_keys
+        self.show_all_targets = show_all_targets
         self.target_name = target_name
         assert shape == "sphere", "Only sphere shapes are supported for now"
         self.shape = shape
@@ -199,13 +202,30 @@ class PointingTargetClass:
         obs_dict['extra_dist'] = extra_dist
         return obs_dict
 
-    def update_task_visuals(self, mj_model: mujoco.MjModel, state: State, phase: int):
+    def update_task_visuals_all_shown(self, mj_model: mujoco.MjModel, state: State, phase: int):
+        if phase == self.phase_number:
+            rgba = jp.array([0, 1, 0, 1]) # Currently focusing on the green target
+        elif phase > self.phase_number:
+            rgba = jp.array([0, 0, 1, 0.5]) # Blue targets completed, no longer focused on
+        elif phase < self.phase_number:
+            rgba = jp.array([1, 0, 0, 0.5]) # Red targets yet to do, but not focused on
+        mj_model.geom(self.target_geom_name).rgba = rgba
+        mj_model.body_pos[self.target_body_id, :] = state.info[f'phase_{self.phase_number}/target_pos']
+        mj_model.geom_size[self.target_geom_id, :] = state.info[f'phase_{self.phase_number}/target_size']
+        
+    def update_task_visuals_one_at_a_time(self, mj_model: mujoco.MjModel, state: State, phase: int):
         if phase != self.phase_number:
             mj_model.geom(self.target_geom_name).rgba[-1] = 0.0 # Hide this target
         else:
             mj_model.geom(self.target_geom_name).rgba[-1] = 1.0 # Show this target
             mj_model.body_pos[self.target_body_id, :] = state.info[f'phase_{phase}/target_pos']
             mj_model.geom_size[self.target_geom_id, :] = state.info[f'phase_{phase}/target_size']
+
+    def update_task_visuals(self, mj_model: mujoco.MjModel, state: State, phase: int):
+        if self.show_all_targets:
+            self.update_task_visuals_all_shown(mj_model, state, phase)
+        else:
+            self.update_task_visuals_one_at_a_time(mj_model, state, phase)
 
 class MyoUserUniversal(MyoUserBase): 
     
@@ -221,7 +241,8 @@ class MyoUserUniversal(MyoUserBase):
                 target_pos_range=jp.array(target['position']),
                 target_radius_range=jp.array(target['size']),
                 dwell_steps=int(target['dwell_duration']/self.dt),
-                weighted_reward_keys=self._config.task_config.weighted_reward_keys
+                weighted_reward_keys=self._config.task_config.weighted_reward_keys,
+                show_all_targets=self._config.task_config.show_all_targets
             )
             spec = target_obj.add_to_spec(spec, rng_init, target['rgb'])
             self.target_objs.append(target_obj)
