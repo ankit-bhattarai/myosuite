@@ -38,6 +38,7 @@ class ReachSettings:
 @dataclass
 class PointingTarget:
     # penetrable: bool = False
+    name: str = "pointing_target"
     # Position can either be a 3d vector or a 2 x list of 3d vectors specifying the min and max values for each dimension
     position: List[List[float]] = field(
         default_factory=lambda: [[0.225, -0.1, -0.3], [0.35, 0.1, 0.3]])
@@ -49,6 +50,19 @@ class PointingTarget:
     completion_bonus: float = 0.0
     dwell_duration: float = 0.25
     rgb: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0])
+
+@dataclass
+class ButtonTarget:
+    position: List[float]
+    name: str = "button_target"
+    geom_size: List[float] = field(default_factory=lambda: [0.025, 0.025, 0.01])
+    site_size: List[float] = field(default_factory=lambda: [0.02, 0.02, 0.01])
+    site_pos: List[float] = field(default_factory=lambda: [0, 0, 0.01])
+    geom_margin: float = 0.001
+    completion_bonus: float = 0.0
+    min_touch_force: float = 1.0
+    rgb: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0])
+    euler: List[float] = field(default_factory=lambda: [0, -0.79, 0])
 
 @dataclass
 class UniversalTaskConfig:
@@ -72,10 +86,14 @@ class UniversalTaskConfig:
     max_trials: int = 1
     reset_type: str = "range_uniform"
     num_targets: int = 1
-    targets: List[PointingTarget] = field(default_factory=lambda: [
+    targets: List[Any] = field(default_factory=lambda: [
         PointingTarget(completion_bonus=0.0),
         PointingTarget(completion_bonus=0.0, rgb=[0.0, 0.0, 1.0]),
         PointingTarget(completion_bonus=1.0, rgb=[0.0, 1.0, 0.0]),
+        ButtonTarget(position=[0.392, -0.24, 0.843], rgb=[0.8, 0.1, 0.1]),
+        ButtonTarget(position=[0.392, -0.1, 0.843], rgb=[0.1, 0.8, 0.1]),
+        ButtonTarget(position=[0.482, -0.24, 0.943], rgb=[0.1, 0.1, 0.8]),
+        ButtonTarget(position=[0.482, -0.1, 0.943], rgb=[0.8, 0.8, 0.1]),
     ])
     show_all_targets: bool = True
 
@@ -121,6 +139,31 @@ class TargetClass:
 
     def target_step(self, state: State):
         return state
+
+    def get_task_reward_dict(self, obs_dict: Dict[str, Any]):
+        ctrl_magnitude = jp.linalg.norm(obs_dict['last_ctrl'], axis=-1)
+
+        rwd_dict = collections.OrderedDict((
+            ('reach', -1.*obs_dict['reach_dist']),
+            ('neural_effort', -1.*(ctrl_magnitude ** 2)),
+            ('phase_bonus', 1.*obs_dict['phase_completed']),
+            ('done', 1.*obs_dict['task_completed']),
+        ))
+
+        rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
+        return rwd_dict
+
+    def compute_extra_dist(self, info: Dict[str, Any]):
+        extra_dist = 0.0
+        if not self.is_last_phase:
+            print(f"Calculating extra dist for phase {self.phase_number}")
+            for i in range(self.phase_number, self.total_phases - 1):
+                target_i_pos = info[f'phase_{i}/target_pos']
+                target_i_plus_1_pos = info[f'phase_{i+1}/target_pos']
+                extra_dist = extra_dist + jp.linalg.norm(target_i_pos - target_i_plus_1_pos, axis=-1)
+        else:
+            print(f"Not calculating extra dist for phase {self.phase_number}")
+        return extra_dist
 
 class PointingTargetClass(TargetClass):
     def __init__(self, phase_number: int, total_phases: int, target_pos_range: List[List[float]], target_radius_range: List[float], 
@@ -177,35 +220,13 @@ class PointingTargetClass(TargetClass):
         info['rng'] = rng
         return info
 
-    def get_task_reward_dict(self, obs_dict: Dict[str, Any]):
-        ctrl_magnitude = jp.linalg.norm(obs_dict['last_ctrl'], axis=-1)
-
-        rwd_dict = collections.OrderedDict((
-            ('reach', -1.*obs_dict['reach_dist']),
-            ('neural_effort', -1.*(ctrl_magnitude ** 2)),
-            ('phase_bonus', 1.*obs_dict['phase_completed']),
-            ('done', 1.*obs_dict['task_completed']),
-        ))
-
-        rwd_dict['dense'] = jp.sum(jp.array([wt*rwd_dict[key] for key, wt in self.weighted_reward_keys.items()]), axis=0)
-        return rwd_dict
-        
-
     def get_task_obs_dict(self, info: Dict[str, Any], obs_dict: Dict[str, Any]):
         ee_pos = obs_dict['ee_pos']
         target_pos = info[f'phase_{self.phase_number}/target_pos']
         target_size = info[f'phase_{self.phase_number}/target_size']
         reach_dist = jp.linalg.norm(ee_pos - target_pos, axis=-1)
         inside_target = reach_dist < target_size
-        extra_dist = 0.0
-        if not self.is_last_phase:
-            print(f"Calculating extra dist for phase {self.phase_number}")
-            for i in range(self.phase_number, self.total_phases - 1):
-                target_i_pos = info[f'phase_{i}/target_pos']
-                target_i_plus_1_pos = info[f'phase_{i+1}/target_pos']
-                extra_dist = extra_dist + jp.linalg.norm(target_i_pos - target_i_plus_1_pos, axis=-1)
-        else:
-            print(f"Not calculating extra dist for phase {self.phase_number}")
+        extra_dist = self.compute_extra_dist(info)
         reach_dist = reach_dist + extra_dist
         _steps_inside_target = jp.select([inside_target], [info['steps_inside_target'] + 1], 0)
         phase_completed = 1.0 * (_steps_inside_target >= self.dwell_steps)
@@ -222,10 +243,104 @@ class PointingTargetClass(TargetClass):
         obs_dict['target_pos'] = target_pos
         obs_dict['target_size'] = target_size
         obs_dict['reach_dist'] = reach_dist
-        obs_dict['inside_target'] = inside_target
+        obs_dict['inside_target'] = 1.0 * inside_target
         obs_dict['steps_inside_target'] = _steps_inside_target
         obs_dict['phase_completed'] = phase_completed
         obs_dict['extra_dist'] = extra_dist
+        obs_dict['touch_force'] = 0.0
+        obs_dict['button_pressed'] = 0.0
+        return obs_dict
+
+class ButtonTargetClass(TargetClass):
+    def __init__(self, phase_number: int, total_phases: int,
+                position: List[float],
+                geom_size: List[float],
+                site_size: List[float],
+                site_pos: List[float],
+                geom_margin: float,
+                euler: List[float],
+                min_touch_force: float,
+                weighted_reward_keys: Dict[str, float],
+                show_all_targets: bool = True):
+        self.phase_number = phase_number
+        self.total_phases = total_phases
+        self.is_last_phase = phase_number == total_phases - 1
+        self.position = position
+        self.geom_size = geom_size
+        self.site_size = site_size
+        self.site_pos = site_pos
+        self.geom_margin = geom_margin
+        self.euler = euler
+        self.min_touch_force = min_touch_force
+        self.weighted_reward_keys = weighted_reward_keys
+        self.show_all_targets = show_all_targets
+
+    @property
+    def target_site_name(self):
+        return f"target_site_{self.phase_number}"
+
+    @property
+    def sensor_name(self):
+        return f"target_sensor_{self.phase_number}"
+    
+    def add_to_spec(self, spec: mujoco.MjSpec, rng: jax.random.PRNGKey, rgb: List[float]):
+        worldbody = spec.worldbody
+        target_body = worldbody.add_body(name=self.target_body_name, pos=self.position, euler=self.euler)
+        rgba = jp.ones(4)
+        rgba = rgba.at[:3].set(rgb)
+        target_geom = target_body.add_geom(name=self.target_geom_name, type=mujoco._enums.mjtGeom(6), size=self.geom_size, margin=self.geom_margin, rgba=rgba, contype=1, conaffinity=1)
+        target_site = target_body.add_site(name=self.target_site_name, type=mujoco._enums.mjtGeom(6), pos=self.site_pos, size=self.site_size)
+        print(f"Added target {self.target_geom_name} to spec")
+        # Add touch sensor for the button
+        sensor = spec.add_sensor(name=self.sensor_name, type=mujoco.mjtSensor.mjSENS_TOUCH, objtype=mujoco.mjtObj.mjOBJ_SITE, objname=self.target_site_name)
+        print(f"Added sensor {self.sensor_name} to spec")
+        return spec
+
+    def target_reset(self, info: Dict[str, Any]):
+        info[f'phase_{self.phase_number}/target_pos'] = self.position
+        info[f'phase_{self.phase_number}/target_size'] = self.geom_size[0] #TODO: Should be 3D size
+        return info
+
+    def get_task_obs_dict(self, info: Dict[str, Any], obs_dict: Dict[str, Any]):
+        # Set target position for reach distance calculation
+        ee_pos = obs_dict['ee_pos']
+        target_pos = info[f'phase_{self.phase_number}/target_pos']
+        reach_dist = jp.linalg.norm(ee_pos - target_pos, axis=-1)
+        extra_dist = self.compute_extra_dist(info)
+        reach_dist = reach_dist + extra_dist
+        # Get sensor data for touch detection
+        touch_force = obs_dict['sensor_data'][self.sensor_id]
+        
+        # Check if button is pressed with sufficient force
+        button_pressed = touch_force >= self.min_touch_force
+        # For button targets, we consider "inside target" as button being pressed
+        inside_target = button_pressed
+        
+        _steps_inside_target = jp.select([inside_target], [info['steps_inside_target'] + 1], 0)
+        # For buttons, we can use a shorter dwell time or immediate completion
+        dwell_steps = 1  # Immediate completion on button press
+        phase_completed = 1.0 * (_steps_inside_target >= dwell_steps)
+        
+        if self.is_last_phase:
+            obs_dict['task_completed'] = phase_completed
+            next_phase = 0
+        else:
+            obs_dict['task_completed'] = 0.0
+            next_phase = self.phase_number + 1
+        print(f"In Phase {self.phase_number}, next_phase: {next_phase}")
+        phase = jp.select([phase_completed], [next_phase], self.phase_number)
+        obs_dict['phase'] = phase
+        #TODO: Implement - max steps without hitting target
+        obs_dict['target_pos'] = target_pos
+        obs_dict['target_size'] = self.geom_size[0] #TODO: Should be 3D size
+        obs_dict['reach_dist'] = reach_dist
+        obs_dict['inside_target'] = 1.0 * inside_target
+        obs_dict['steps_inside_target'] = _steps_inside_target
+        obs_dict['phase_completed'] = phase_completed
+        obs_dict['extra_dist'] = extra_dist
+        obs_dict['touch_force'] = touch_force
+        obs_dict['button_pressed'] = 1.0 * button_pressed
+        
         return obs_dict
 
 
@@ -238,14 +353,30 @@ class MyoUserUniversal(MyoUserBase):
         rng = jax.random.PRNGKey(1)
         for i, target in enumerate(targets):
             rng, rng_init = jax.random.split(rng, 2)
-            target_obj = PointingTargetClass(phase_number=i,
-                total_phases=total_phases,
-                target_pos_range=jp.array(target['position']),
-                target_radius_range=jp.array(target['size']),
-                dwell_steps=int(target['dwell_duration']/self.dt),
-                weighted_reward_keys=self._config.task_config.weighted_reward_keys,
-                show_all_targets=self._config.task_config.show_all_targets
-            )
+            if target['name'] == "pointing_target":
+                target_obj = PointingTargetClass(phase_number=i,
+                    total_phases=total_phases,
+                    target_pos_range=jp.array(target['position']),
+                    target_radius_range=jp.array(target['size']),
+                    dwell_steps=int(target['dwell_duration']/self.dt),
+                    weighted_reward_keys=self._config.task_config.weighted_reward_keys,
+                    show_all_targets=self._config.task_config.show_all_targets
+                )
+            elif target['name'] == "button_target":
+                target_obj = ButtonTargetClass(phase_number=i,
+                    total_phases=total_phases,
+                    position=jp.array(target['position']),
+                    geom_size=jp.array(target['geom_size']),
+                    site_size=jp.array(target['site_size']),
+                    site_pos=jp.array(target['site_pos']),
+                    geom_margin=target['geom_margin'],
+                    euler=jp.array(target['euler']),
+                    min_touch_force=target['min_touch_force'],
+                    weighted_reward_keys=self._config.task_config.weighted_reward_keys,
+                    show_all_targets=self._config.task_config.show_all_targets
+                )
+            else:
+                raise ValueError(f"Unsupported target type: {target['name']}")
             spec = target_obj.add_to_spec(spec, rng_init, target['rgb'])
             self.target_objs.append(target_obj)
         print(f"Added {len(self.target_objs)} targets to spec")
@@ -280,6 +411,9 @@ class MyoUserUniversal(MyoUserBase):
             target_obj.target_coordinates_origin = self.target_coordinates_origin
             target_obj.target_body_id = self.mj_model.body(target_obj.target_body_name).id
             target_obj.target_geom_id = self.mj_model.geom(target_obj.target_geom_name).id
+            # For button targets, also get the sensor ID
+            if isinstance(target_obj, ButtonTargetClass):
+                target_obj.sensor_id = self.mj_model.sensor(target_obj.sensor_name).id
 
     def auto_reset(self, rng, info_before_reset, **kwargs):
         return self.reset(rng)
@@ -342,8 +476,11 @@ class MyoUserUniversal(MyoUserBase):
         # Store current control input
         obs_dict['last_ctrl'] = data.ctrl.copy()
         obs_dict['ee_pos'] = data.site_xpos[self.ee_pos_id]
+        obs_dict['sensor_data'] = data.sensordata
+
         obs_funcs = [t.get_task_obs_dict for t in self.target_objs]
         obs_dict = jax.lax.switch(info['phase'], obs_funcs, info, obs_dict)
+        
         return obs_dict
 
     def update_info(self, info, obs_dict):
