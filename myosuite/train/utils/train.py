@@ -258,6 +258,22 @@ class ProgressEvalLogger:
   def progress_eval_run(self, current_step, make_policy, params,
                         training_metrics={}):
     
+    # store checkpoint locally
+    orbax_checkpointer = ocp.PyTreeCheckpointer()
+    save_args = orbax_utils.save_args_from_target(params)
+    path = self.checkpoint_path / f"{current_step}"
+    orbax_checkpointer.save(path, params, force=True, save_args=save_args)
+
+    # upload checkpoint to wandb
+    if self.log_wandb_checkpoints:
+        exp_name = self.logdir.name
+        artifact = wandb.Artifact(
+            name=f'{exp_name}-checkpoints',  
+            type="model"
+        )
+        artifact.add_dir(str(self.checkpoint_path))
+        artifact.save()
+    
     # Rollout trajectory
     # make_policy(params, deterministic=True)
     jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
