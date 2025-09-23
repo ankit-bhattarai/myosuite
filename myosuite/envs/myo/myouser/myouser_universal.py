@@ -267,7 +267,7 @@ class PointingTargetClass(TargetClass):
         worldbody = spec.worldbody
         target_pos, target_size = self.generate_target(rng)
         target_body = worldbody.add_body(name=self.target_body_name, pos=target_pos)
-        rgba = jp.zeros(4)
+        rgba = jp.ones(4)
         rgba = rgba.at[:3].set(rgb)
         target_size = jp.ones(3) * target_size
         target_geom = target_body.add_geom(name=self.target_geom_name, pos=jp.zeros(3), size=target_size, rgba=rgba)
