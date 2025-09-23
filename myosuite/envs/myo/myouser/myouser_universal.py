@@ -81,7 +81,7 @@ class TargetsConfig:
 def create_target_config_class(num_targets: int) -> Type:
     """Create a dataclass with the specified number of target fields."""
     fields = [
-        (f"target_{i}", IndividualTargetConfig, field(default_factory=lambda: PointingTarget())) 
+        (f"target_{i}", IndividualTargetConfig, MISSING) 
         for i in range(num_targets)
     ]
     fields.append(("num_targets", int, num_targets))
@@ -111,6 +111,31 @@ NineTargetConfig = create_target_config_class(9)
 TenTargetConfig = create_target_config_class(10)
 
 @dataclass
+class DefaultTargetsConfig(TargetsConfig):
+    target_0: PointingTarget = field(default_factory=lambda: PointingTarget())
+    target_1: PointingTarget = field(default_factory=lambda: PointingTarget(rgb=[0.0, 0.0, 1.0]))
+    target_2: PointingTarget = field(default_factory=lambda: PointingTarget(rgb=[0.0, 1.0, 0.0]))
+    target_3: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.392, -0.24, 0.843], rgb=[0.8, 0.1, 0.1]))
+    target_4: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.392, -0.1, 0.843], rgb=[0.1, 0.8, 0.1]))
+    target_5: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.482, -0.24, 0.943], rgb=[0.1, 0.1, 0.8]))
+    target_6: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.482, -0.1, 0.943], rgb=[0.8, 0.8, 0.1]))
+    num_targets: int = 7
+
+LIST_CONFIGS = [
+    (1, "one", OneTargetConfig),
+    (2, "two", TwoTargetConfig),
+    (3, "three", ThreeTargetConfig),
+    (4, "four", FourTargetConfig),
+    (5, "five", FiveTargetConfig),
+    (6, "six", SixTargetConfig),
+    (7, "seven", SevenTargetConfig),
+    (8, "eight", EightTargetConfig),
+    (9, "nine", NineTargetConfig),
+    (10, "ten", TenTargetConfig),
+    (7, "default", DefaultTargetsConfig),
+]
+
+@dataclass
 class UniversalTaskConfig:
     reach_settings: ReachSettings = field(default_factory=lambda: ReachSettings())
     obs_keys: List[str] = field(default_factory=lambda: [
@@ -131,8 +156,7 @@ class UniversalTaskConfig:
     dwell_duration: float = 0.25
     max_trials: int = 1
     reset_type: str = "range_uniform"
-    num_targets: int = 7
-    targets: TargetsConfig = '${select_targets:${env.task_config.num_targets}}'
+    targets: TargetsConfig = MISSING
     show_all_targets: bool = True
 
 @dataclass

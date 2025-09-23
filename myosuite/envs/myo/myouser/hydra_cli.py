@@ -17,7 +17,7 @@ from myosuite.envs.myo.myouser.myouser_steering_v0 import SteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_circular_steering_v0 import CircularSteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_v1 import MenuSteeringEnvConfig
 from myosuite.envs.myo.myouser.myouser_steering_law_v0 import SteeringLawEnvConfig
-from myosuite.envs.myo.myouser.myouser_universal import UniversalEnvConfig
+from myosuite.envs.myo.myouser.myouser_universal import UniversalEnvConfig, LIST_CONFIGS, ButtonTarget, PointingTarget
 
 OmegaConf.register_new_resolver("check_string", lambda x: "" if x is None else "-" + str(x))
 
@@ -140,7 +140,7 @@ defaults = [
     {'rl': 'rl_config'},
     {'run': 'run'},
     {'rl/network_factory': '${select_network:${vision}}'},
-    # {'env/task_config/targets': '${select_targets:${env.task_config.num_targets}}'},
+    {'env/task_config/targets': 'default'},
 
 ]
 
@@ -186,19 +186,12 @@ cs.store(group="run", name="run", node=RunConfig)
 cs.store(group="rl/network_factory", name="vision", node=VisionNetworkConfig)
 cs.store(group="rl/network_factory", name="no_vision", node=NetworkConfig)
 
-# Store target configs
-from myosuite.envs.myo.myouser.myouser_universal import OneTargetConfig, TwoTargetConfig, ThreeTargetConfig, FourTargetConfig, FiveTargetConfig, SixTargetConfig, SevenTargetConfig, EightTargetConfig, NineTargetConfig, TenTargetConfig
-
-cs.store(group="env/task_config/targets", name="one", node=OneTargetConfig)
-cs.store(group="env/task_config/targets", name="two", node=TwoTargetConfig)
-cs.store(group="env/task_config/targets", name="three", node=ThreeTargetConfig)
-cs.store(group="env/task_config/targets", name="four", node=FourTargetConfig)
-cs.store(group="env/task_config/targets", name="five", node=FiveTargetConfig)
-cs.store(group="env/task_config/targets", name="six", node=SixTargetConfig)
-cs.store(group="env/task_config/targets", name="seven", node=SevenTargetConfig)
-cs.store(group="env/task_config/targets", name="eight", node=EightTargetConfig)
-cs.store(group="env/task_config/targets", name="nine", node=NineTargetConfig)
-cs.store(group="env/task_config/targets", name="ten", node=TenTargetConfig)
+for (i, name, config) in LIST_CONFIGS:
+    cs.store(group="env/task_config/targets", name=name, node=config)
+    for j in range(0, i+1):
+        cs.store(group=f"env/task_config/targets/target_{j}", name="pointing", node=PointingTarget)
+        cs.store(group=f"env/task_config/targets/target_{j}", name="button", node=ButtonTarget)
+    
 
 
 def load_config_interactive(overrides=[]):
