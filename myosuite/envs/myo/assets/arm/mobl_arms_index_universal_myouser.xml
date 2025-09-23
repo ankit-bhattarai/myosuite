@@ -14,5 +14,8 @@
           <geom name="fixed-eye" quat="0.7106 0.25537 0.616985 0.221728" type="mesh" rgba="1 1 1 1" mesh="eye"/>
           <camera name="fixed-eye" pos="0 0 0" fovy="120"/>
         </body>
+        <body name='top_camera' pos="0.25 -0.27 1.5" quat="1 0 0 0">
+          <camera name='top_camera' pos="0 0 0" fovy="120"/>
+        </body>
     </worldbody>
 </mujoco>
