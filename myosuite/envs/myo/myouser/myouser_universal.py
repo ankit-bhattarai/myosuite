@@ -410,30 +410,32 @@ class MyoUserUniversal(MyoUserBase):
     
     def add_task_relevant_geoms(self, spec: mujoco.MjSpec):
         targets = self._config.task_config.targets
+        num_targets = targets.num_targets
+        targets = [getattr(targets, f"target_{i}") for i in range(num_targets)]
         total_phases = len(targets)
         self.target_objs = []
         rng = jax.random.PRNGKey(1)
         for i, target in enumerate(targets):
             rng, rng_init = jax.random.split(rng, 2)
-            if target['name'] == "pointing_target":
+            if target.name == "pointing_target":
                 target_obj = PointingTargetClass(phase_number=i,
                     total_phases=total_phases,
-                    target_pos_range=jp.array(target['position']),
-                    target_radius_range=jp.array(target['size']),
-                    dwell_steps=int(target['dwell_duration']/self.dt),
+                    target_pos_range=jp.array(target.position),
+                    target_radius_range=jp.array(target.size),
+                    dwell_steps=int(target.dwell_duration/self.dt),
                     weighted_reward_keys=self._config.task_config.weighted_reward_keys,
                     show_all_targets=self._config.task_config.show_all_targets
                 )
-            elif target['name'] == "button_target":
+            elif target.name == "button_target":
                 target_obj = ButtonTargetClass(phase_number=i,
                     total_phases=total_phases,
-                    position=jp.array(target['position']),
-                    geom_size=jp.array(target['geom_size']),
-                    site_size=jp.array(target['site_size']),
-                    site_pos=jp.array(target['site_pos']),
-                    geom_margin=target['geom_margin'],
-                    euler=jp.array(target['euler']),
-                    min_touch_force=target['min_touch_force'],
+                    position=jp.array(target.position),
+                    geom_size=jp.array(target.geom_size),
+                    site_size=jp.array(target.site_size),
+                    site_pos=jp.array(target.site_pos),
+                    geom_margin=target.geom_margin,
+                    euler=jp.array(target.euler),
+                    min_touch_force=target.min_touch_force,
                     weighted_reward_keys=self._config.task_config.weighted_reward_keys,
                     show_all_targets=self._config.task_config.show_all_targets
                 )
