@@ -22,12 +22,13 @@ from ml_collections import config_dict
 import mujoco
 from mujoco import mjx
 from mujoco_playground import State
+from omegaconf import MISSING
 
 from mujoco_playground._src import mjx_env  # Several helper functions are only visible under _src
 from myosuite.envs.myo.fatigue import CumulativeFatigue
 from myosuite.envs.myo.myouser.base import MyoUserBase, BaseEnvConfig
-from dataclasses import dataclass, field
-from typing import List, Dict, Union, Any
+from dataclasses import dataclass, field, make_dataclass
+from typing import List, Dict, Union, Any, Type
 
 @dataclass
 class ReachSettings:
@@ -36,7 +37,12 @@ class ReachSettings:
 
 
 @dataclass
-class PointingTarget:
+class IndividualTargetConfig:
+    name: str = MISSING
+    rgb: List[float] = MISSING
+
+@dataclass
+class PointingTarget(IndividualTargetConfig):
     # penetrable: bool = False
     name: str = "pointing_target"
     # Position can either be a 3d vector or a 2 x list of 3d vectors specifying the min and max values for each dimension
@@ -52,8 +58,8 @@ class PointingTarget:
     rgb: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0])
 
 @dataclass
-class ButtonTarget:
-    position: List[float]
+class ButtonTarget(IndividualTargetConfig):
+    position: List[float] = MISSING
     name: str = "button_target"
     geom_size: List[float] = field(default_factory=lambda: [0.025, 0.025, 0.01])
     site_size: List[float] = field(default_factory=lambda: [0.02, 0.02, 0.01])
@@ -63,6 +69,46 @@ class ButtonTarget:
     min_touch_force: float = 1.0
     rgb: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0])
     euler: List[float] = field(default_factory=lambda: [0, -0.79, 0])
+
+
+@dataclass
+class TargetsConfig:
+    
+    @property
+    def targets(self):
+        return [getattr(self, f"target_{i}") for i in range(self.num_targets)]
+
+def create_target_config_class(num_targets: int) -> Type:
+    """Create a dataclass with the specified number of target fields."""
+    fields = [
+        (f"target_{i}", IndividualTargetConfig, field(default_factory=lambda: PointingTarget())) 
+        for i in range(num_targets)
+    ]
+    fields.append(("num_targets", int, num_targets))
+
+
+    num2str = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
+    
+    class_name = f"{num2str[num_targets]}TargetConfig"
+    
+    return make_dataclass(
+        class_name,
+        fields,
+        frozen=False,
+        bases=(TargetsConfig,),
+    )
+
+# # Usage
+OneTargetConfig = create_target_config_class(1)
+TwoTargetConfig = create_target_config_class(2)
+ThreeTargetConfig = create_target_config_class(3)
+FourTargetConfig = create_target_config_class(4)
+FiveTargetConfig = create_target_config_class(5)
+SixTargetConfig = create_target_config_class(6)
+SevenTargetConfig = create_target_config_class(7)
+EightTargetConfig = create_target_config_class(8)
+NineTargetConfig = create_target_config_class(9)
+TenTargetConfig = create_target_config_class(10)
 
 @dataclass
 class UniversalTaskConfig:
@@ -85,16 +131,8 @@ class UniversalTaskConfig:
     dwell_duration: float = 0.25
     max_trials: int = 1
     reset_type: str = "range_uniform"
-    num_targets: int = 1
-    targets: List[Any] = field(default_factory=lambda: [
-        PointingTarget(completion_bonus=0.0),
-        PointingTarget(completion_bonus=0.0, rgb=[0.0, 0.0, 1.0]),
-        PointingTarget(completion_bonus=1.0, rgb=[0.0, 1.0, 0.0]),
-        ButtonTarget(position=[0.392, -0.24, 0.843], rgb=[0.8, 0.1, 0.1]),
-        ButtonTarget(position=[0.392, -0.1, 0.843], rgb=[0.1, 0.8, 0.1]),
-        ButtonTarget(position=[0.482, -0.24, 0.943], rgb=[0.1, 0.1, 0.8]),
-        ButtonTarget(position=[0.482, -0.1, 0.943], rgb=[0.8, 0.8, 0.1]),
-    ])
+    num_targets: int = 7
+    targets: TargetsConfig = '${select_targets:${env.task_config.num_targets}}'
     show_all_targets: bool = True
 
 @dataclass

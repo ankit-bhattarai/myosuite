@@ -27,7 +27,26 @@ def select_network(vision_enabled):
     else:
         return "no_vision"
 
+def select_targets(num_targets):
+    from myosuite.envs.myo.myouser.myouser_universal import (
+        OneTargetConfig, TwoTargetConfig, ThreeTargetConfig, FourTargetConfig,
+        FiveTargetConfig, SixTargetConfig, SevenTargetConfig, EightTargetConfig,
+        NineTargetConfig, TenTargetConfig
+    )
+
+    target_configs = [
+        None, OneTargetConfig(), TwoTargetConfig(), ThreeTargetConfig(),
+        FourTargetConfig(), FiveTargetConfig(), SixTargetConfig(),
+        SevenTargetConfig(), EightTargetConfig(), NineTargetConfig(), TenTargetConfig()
+    ]
+
+    if 1 <= num_targets <= 10:
+        return target_configs[num_targets]
+    else:
+        raise ValueError(f"num_targets must be between 1 and 10, got {num_targets}")
+
 OmegaConf.register_new_resolver("select_network", select_network)
+OmegaConf.register_new_resolver("select_targets", select_targets)
 
 @dataclass
 class WANDBEnabledConfig:
@@ -121,6 +140,7 @@ defaults = [
     {'rl': 'rl_config'},
     {'run': 'run'},
     {'rl/network_factory': '${select_network:${vision}}'},
+    # {'env/task_config/targets': '${select_targets:${env.task_config.num_targets}}'},
 
 ]
 
@@ -166,6 +186,20 @@ cs.store(group="run", name="run", node=RunConfig)
 cs.store(group="rl/network_factory", name="vision", node=VisionNetworkConfig)
 cs.store(group="rl/network_factory", name="no_vision", node=NetworkConfig)
 
+# Store target configs
+from myosuite.envs.myo.myouser.myouser_universal import OneTargetConfig, TwoTargetConfig, ThreeTargetConfig, FourTargetConfig, FiveTargetConfig, SixTargetConfig, SevenTargetConfig, EightTargetConfig, NineTargetConfig, TenTargetConfig
+
+cs.store(group="env/task_config/targets", name="one", node=OneTargetConfig)
+cs.store(group="env/task_config/targets", name="two", node=TwoTargetConfig)
+cs.store(group="env/task_config/targets", name="three", node=ThreeTargetConfig)
+cs.store(group="env/task_config/targets", name="four", node=FourTargetConfig)
+cs.store(group="env/task_config/targets", name="five", node=FiveTargetConfig)
+cs.store(group="env/task_config/targets", name="six", node=SixTargetConfig)
+cs.store(group="env/task_config/targets", name="seven", node=SevenTargetConfig)
+cs.store(group="env/task_config/targets", name="eight", node=EightTargetConfig)
+cs.store(group="env/task_config/targets", name="nine", node=NineTargetConfig)
+cs.store(group="env/task_config/targets", name="ten", node=TenTargetConfig)
+
 
 def load_config_interactive(overrides=[]):
     """
@@ -190,7 +224,6 @@ def load_config_interactive(overrides=[]):
 
 @hydra.main(version_base=None, config_name="config")
 def my_app(cfg: Config) -> None:
-
     container = OmegaConf.to_container(cfg, throw_on_missing=True, resolve=True)
     print(OmegaConf.to_yaml(container))
 
