@@ -112,16 +112,16 @@ class TargetClass:
         elif phase < self.phase_number:
             rgba = jp.array([1, 0, 0, 0.5]) # Red targets yet to do, but not focused on
         mj_model.geom(self.target_geom_name).rgba = rgba
-        mj_model.body_pos[self.target_body_id, :] = state.info[f'phase_{self.phase_number}/target_pos']
-        mj_model.geom_size[self.target_geom_id, :] = state.info[f'phase_{self.phase_number}/target_size']
-        
+        mj_model.body_pos[self.target_body_id, :] = state.info[f'target_{self.phase_number}/target_pos']
+        mj_model.geom_size[self.target_geom_id, :] = state.info[f'target_{self.phase_number}/target_size']
+
     def update_task_visuals_one_at_a_time(self, mj_model: mujoco.MjModel, state: State, phase: int):
         if phase != self.phase_number:
             mj_model.geom(self.target_geom_name).rgba[-1] = 0.0 # Hide this target
         else:
             mj_model.geom(self.target_geom_name).rgba[-1] = 1.0 # Show this target
-            mj_model.body_pos[self.target_body_id, :] = state.info[f'phase_{phase}/target_pos']
-            mj_model.geom_size[self.target_geom_id, :] = state.info[f'phase_{phase}/target_size']
+            mj_model.body_pos[self.target_body_id, :] = state.info[f'target_{phase}/target_pos']
+            mj_model.geom_size[self.target_geom_id, :] = state.info[f'target_{phase}/target_size']
 
     def update_task_visuals(self, mj_model: mujoco.MjModel, state: State, phase: int):
         if self.show_all_targets:
@@ -156,13 +156,13 @@ class TargetClass:
     def compute_extra_dist(self, info: Dict[str, Any]):
         extra_dist = 0.0
         if not self.is_last_phase:
-            print(f"Calculating extra dist for phase {self.phase_number}")
+            #print(f"Calculating extra dist for phase {self.phase_number}")
             for i in range(self.phase_number, self.total_phases - 1):
-                target_i_pos = info[f'phase_{i}/target_pos']
-                target_i_plus_1_pos = info[f'phase_{i+1}/target_pos']
+                target_i_pos = info[f'target_{i}/target_pos']
+                target_i_plus_1_pos = info[f'target_{i+1}/target_pos']
                 extra_dist = extra_dist + jp.linalg.norm(target_i_pos - target_i_plus_1_pos, axis=-1)
-        else:
-            print(f"Not calculating extra dist for phase {self.phase_number}")
+        #else:
+            #print(f"Not calculating extra dist for phase {self.phase_number}")
         return extra_dist
 
 class PointingTargetClass(TargetClass):
@@ -209,21 +209,21 @@ class PointingTargetClass(TargetClass):
         rgba = rgba.at[:3].set(rgb)
         target_size = jp.ones(3) * target_size
         target_geom = target_body.add_geom(name=self.target_geom_name, pos=jp.zeros(3), size=target_size, rgba=rgba)
-        print(f"Added target {self.target_geom_name} to spec")
+        #print(f"Added target {self.target_geom_name} to spec")
         return spec
 
     def target_reset(self, info: Dict[str, Any]):
         rng, rng_task = jax.random.split(info['rng'], 2)
         target_pos, target_size = self.generate_target(rng_task)
-        info[f'phase_{self.phase_number}/target_pos'] = target_pos
-        info[f'phase_{self.phase_number}/target_size'] = target_size
+        info[f'target_{self.phase_number}/target_pos'] = target_pos
+        info[f'target_{self.phase_number}/target_size'] = target_size
         info['rng'] = rng
         return info
 
     def get_task_obs_dict(self, info: Dict[str, Any], obs_dict: Dict[str, Any]):
         ee_pos = obs_dict['ee_pos']
-        target_pos = info[f'phase_{self.phase_number}/target_pos']
-        target_size = info[f'phase_{self.phase_number}/target_size']
+        target_pos = info[f'target_{self.phase_number}/target_pos']
+        target_size = info[f'target_{self.phase_number}/target_size']
         reach_dist = jp.linalg.norm(ee_pos - target_pos, axis=-1)
         inside_target = reach_dist < target_size
         extra_dist = self.compute_extra_dist(info)
@@ -236,7 +236,7 @@ class PointingTargetClass(TargetClass):
         else:
             obs_dict['task_completed'] = 0.0
             next_phase = self.phase_number + 1
-        print(f"In Phase {self.phase_number}, next_phase: {next_phase}")
+        #print(f"In Phase {self.phase_number}, next_phase: {next_phase}")
         phase = jp.select([phase_completed], [next_phase], self.phase_number)
         obs_dict['phase'] = phase
         #TODO: Implement - max steps without hitting target
@@ -290,21 +290,21 @@ class ButtonTargetClass(TargetClass):
         rgba = rgba.at[:3].set(rgb)
         target_geom = target_body.add_geom(name=self.target_geom_name, type=mujoco._enums.mjtGeom(6), size=self.geom_size, margin=self.geom_margin, rgba=rgba, contype=1, conaffinity=1)
         target_site = target_body.add_site(name=self.target_site_name, type=mujoco._enums.mjtGeom(6), pos=self.site_pos, size=self.site_size)
-        print(f"Added target {self.target_geom_name} to spec")
+        #print(f"Added target {self.target_geom_name} to spec")
         # Add touch sensor for the button
         sensor = spec.add_sensor(name=self.sensor_name, type=mujoco.mjtSensor.mjSENS_TOUCH, objtype=mujoco.mjtObj.mjOBJ_SITE, objname=self.target_site_name)
-        print(f"Added sensor {self.sensor_name} to spec")
+        #print(f"Added sensor {self.sensor_name} to spec")
         return spec
 
     def target_reset(self, info: Dict[str, Any]):
-        info[f'phase_{self.phase_number}/target_pos'] = self.position
-        info[f'phase_{self.phase_number}/target_size'] = self.geom_size[0] #TODO: Should be 3D size
+        info[f'target_{self.phase_number}/target_pos'] = self.position
+        info[f'target_{self.phase_number}/target_size'] = self.geom_size[0] #TODO: Should be 3D size
         return info
 
     def get_task_obs_dict(self, info: Dict[str, Any], obs_dict: Dict[str, Any]):
         # Set target position for reach distance calculation
         ee_pos = obs_dict['ee_pos']
-        target_pos = info[f'phase_{self.phase_number}/target_pos']
+        target_pos = info[f'target_{self.phase_number}/target_pos']
         reach_dist = jp.linalg.norm(ee_pos - target_pos, axis=-1)
         extra_dist = self.compute_extra_dist(info)
         reach_dist = reach_dist + extra_dist
@@ -327,7 +327,7 @@ class ButtonTargetClass(TargetClass):
         else:
             obs_dict['task_completed'] = 0.0
             next_phase = self.phase_number + 1
-        print(f"In Phase {self.phase_number}, next_phase: {next_phase}")
+        #print(f"In Phase {self.phase_number}, next_phase: {next_phase}")
         phase = jp.select([phase_completed], [next_phase], self.phase_number)
         obs_dict['phase'] = phase
         #TODO: Implement - max steps without hitting target
@@ -379,7 +379,7 @@ class MyoUserUniversal(MyoUserBase):
                 raise ValueError(f"Unsupported target type: {target['name']}")
             spec = target_obj.add_to_spec(spec, rng_init, target['rgb'])
             self.target_objs.append(target_obj)
-        print(f"Added {len(self.target_objs)} targets to spec")
+        #print(f"Added {len(self.target_objs)} targets to spec")
         return spec
 
     def preprocess_spec(self, spec: mujoco.MjSpec):
@@ -399,7 +399,7 @@ class MyoUserUniversal(MyoUserBase):
             print(f"Vision, so not adding {self.omni_keys} to obs_keys")
         print(f"Obs keys: {self.obs_keys}")
         self.ee_pos_id = self.mj_model.site('fingertip').id
-        self.non_accumulation_metrics = ['reach_dist'] + [f'phase_{i}_completed' for i in range(len(self.target_objs))]
+        self.non_accumulation_metrics = ['distance_to_target', 'bonus_reward', 'distance_reward'] + [f'target_{i}_completed' for i in range(len(self.target_objs))] #completion_time?
         self.accumulation_metrics = ['success_rate']
 
 
@@ -445,8 +445,8 @@ class MyoUserUniversal(MyoUserBase):
             update_info = target_obj.target_reset(info)
             info.update(update_info)
         
-        info['target_pos'] = info['phase_0/target_pos']
-        info['target_size'] = info['phase_0/target_size']        
+        info['target_pos'] = info['target_0/target_pos']
+        info['target_size'] = info['target_0/target_size']        
         reward, done = jp.zeros(2)
         metrics = {metric: 0.0 for metric in self.non_accumulation_metrics}
         metrics.update({metric: 0.0 for metric in self.accumulation_metrics})
@@ -501,9 +501,31 @@ class MyoUserUniversal(MyoUserBase):
     def default_metrics(self, phase: int):
         ### Called if task hasn't been completed and sets the phase_complete_metrics according to the current phase
         return {
-            f'phase_{i}_completed': 1.0 * (phase > i) for i in range(len(self.target_objs))
+            f'target_{i}_completed': 1.0 * (phase > i) for i in range(len(self.target_objs))
         }
     
+    def eval_metrics(self, rollout):
+        results = []
+        for i in range(len(rollout)):
+            episode_rollout = rollout[i]
+
+            completed = {
+                phase_idx
+                for idx, entry in enumerate(episode_rollout)
+                for phase_idx in range(len(self.target_objs))
+                if entry.metrics.get(f"target_{phase_idx}_completed", False)
+            }
+
+            for i in range(len(self.target_objs)):
+                results.append({
+                    "success": i in completed,
+                    "target_size": episode_rollout[0].info[f"target_{i}/target_size"],
+                    "target_pos": episode_rollout[0].info[f"target_{i}/target_pos"],
+                    # "time_in_current_phase": episode_rollout[0].info["time_in_current_phase"]
+                })
+        return results
+
+
     def step(self, state: State, action: jp.ndarray) -> State:
         rng = state.info['rng']
         data0 = state.data
@@ -528,9 +550,22 @@ class MyoUserUniversal(MyoUserBase):
         metric_options = [self.default_metrics, self.task_completed_metrics]
         phase_complete_metrics = jax.lax.switch(done.astype(jp.int32), metric_options, obs_dict['phase'])
 
+        reward_weights = {
+            'reach': jp.array([t.weighted_reward_keys['reach'] for t in self.target_objs]),
+            'phase_bonus': jp.array([t.weighted_reward_keys['phase_bonus'] for t in self.target_objs]),
+            'done': jp.array([t.weighted_reward_keys['done'] for t in self.target_objs]),
+        }
+        current_weights = {
+            'reach': reward_weights['reach'][obs_dict['phase']],
+            'phase_bonus': reward_weights['phase_bonus'][obs_dict['phase']],
+            'done': reward_weights['done'][obs_dict['phase']],
+        }
+
         metrics = {
-            'reach_dist': obs_dict['reach_dist'],
+            'distance_to_target': obs_dict['reach_dist'],
             'success_rate': obs_dict['task_completed'],
+            'distance_reward': rwd_dict['reach']*current_weights['reach'],
+            'bonus_reward': rwd_dict['phase_bonus']*current_weights['phase_bonus'] + rwd_dict['done']*current_weights['done'],
             **phase_complete_metrics,
         }
 
