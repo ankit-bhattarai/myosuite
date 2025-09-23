@@ -796,6 +796,6 @@ class MyoUserBase(mjx_env.MjxEnv):
     # implemented by the child class:
     ########################################
 
-    def calculate_metrics(self, rollout, eval_metrics_keys={}):
+    def eval_metrics(self, rollout, eval_metrics_keys={}):
         """Calculate task-specific evaluation metrics (only to be used for eval logging)."""
         return {}

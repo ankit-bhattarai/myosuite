@@ -14,6 +14,8 @@ import mediapy as media
 from orbax import checkpoint as ocp
 from flax.training import orbax_utils
 import matplotlib.pyplot as plt
+from collections import defaultdict
+
 
 # from brax.training.agents.ppo import networks as ppo_networks
 # from brax.training.agents.ppo import networks_vision as ppo_networks_vision
@@ -118,6 +120,48 @@ from myosuite.envs.myo.myouser.utils import render_traj
 #             camera_suffix = "_" + camera
 #         media.write_video(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4", camera_frames, fps=fps)
 #         wandb.log({f'eval_vis/camera{camera_suffix}': wandb.Video(str(self.checkpoint_path / f"{current_step}{camera_suffix}.mp4"), format="mp4")}, step=current_step)  #, fps=fps)}, step=num_steps)
+
+def ensure_list(x):
+    if isinstance(x, (list, tuple)):
+        return x
+    return [x]
+
+def plot_eval_metrics(results, step):
+    all_sizes, all_successes = [], []
+    for entry in results:
+        sizes = ensure_list(entry["target_size"])
+        successes = ensure_list(entry["success"])
+        for s, succ in zip(sizes, successes):
+            s = float(s) if hasattr(s, "item") else s
+            all_sizes.append(s)
+            all_successes.append(int(succ))
+
+    # Plot Target size vs Success Rate
+    fig1 = plt.figure(figsize=(8,5))
+    plt.plot(all_sizes, all_successes, marker='o', linestyle='')
+    plt.xlabel("Target size")
+    plt.ylabel("Success rate")
+    plt.title("Success rate vs Target size")
+    wandb.log({"chart/success_per_target_size": wandb.Image(fig1)}, step=step)
+    plt.close(fig1)
+
+    # Plot 2: 3D target positions
+    fig = plt.figure(figsize=(8,6))
+    ax = fig.add_subplot(111, projection='3d')
+
+    for entry in results:
+        positions = ensure_list(entry["target_pos"])
+        successes = ensure_list(entry["success"])
+        for pos, succ in zip(positions, successes):
+            pos = pos.tolist() if hasattr(pos, "tolist") else pos
+            pos[1] = -pos[1]
+            ax.scatter(*pos, color="green" if succ else "red", s=50)
+
+    ax.set_xlabel('depth'); ax.set_ylabel('left-right'); ax.set_zlabel('height')
+    ax.set_title("Target positions (green=success, red=failure)")
+    ax.set_xlim(ax.get_xlim()[::-1])
+    wandb.log({"chart/target_positions": wandb.Image(fig)}, step=step)
+    plt.close()
 
 def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
     if plots_path is not None:
@@ -275,11 +319,13 @@ class ProgressEvalLogger:
         artifact.save()
     
     # Rollout trajectory
-    # make_policy(params, deterministic=True)
-    jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
-    rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes_video)[0]
-    if self.eval_env.vision:
-       rollouts = rollouts[0]
+    if self.n_episodes > 0:
+        jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
+        rollouts = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes_video)[0]
+        results = self.eval_env.eval_metrics(rollouts) #, eval_metrics_keys=self.eval_metrics_keys)
+        plot_eval_metrics(results, step=current_step)
+        rollout_metrics_keys = rollouts[0][0].metrics.keys()
+        rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
     
     # Calculate metrics
     # final_eval_state = rollout[-1]
@@ -295,10 +341,6 @@ class ProgressEvalLogger:
     #   })
     # metrics['eval/avg_episode_length'] = np.mean(eval_metrics.episode_steps)
     # metrics['eval/std_episode_length'] = np.std(eval_metrics.episode_steps)
-    rollout_metrics_keys = rollouts[0][0].metrics.keys()
-    # TODO: move this code to separate function?
-    rollout_metrics = {f'eval/{k}': jp.mean(jp.array([jp.sum(jp.array([r.metrics[k] for r in rollout])) for rollout in rollouts])) for k in rollout_metrics_keys}
-
     # # run more rollouts that only store information relevant for computing task metrics
     # (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes, log_MT_only=True)[0]
     # task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states) #, eval_metrics_keys=self.eval_metrics_keys)
@@ -306,7 +348,7 @@ class ProgressEvalLogger:
     task_metrics = {}
 
     # Create video that can be uploaded to Weights & Biases
-    video_metrics = self.progress_eval_video(rollouts, current_step)
+    video_metrics = {}#self.progress_eval_video(rollouts, current_step)
 
     metrics = {**rollout_metrics, **task_metrics, **video_metrics, **training_metrics}    
     wandb.log(metrics, step=current_step)
@@ -338,7 +380,7 @@ class ProgressEvalLogger:
         if self.n_episodes > 0:
             jit_inference_fn = jax.jit(make_policy(params, deterministic=True))
             (movement_times, rollout_states) = evaluate_policy(eval_env=self.eval_env, jit_inference_fn=jit_inference_fn, jit_reset=self.jit_reset, jit_step=self.jit_step, seed=self.seed, n_episodes=self.n_episodes, log_MT_only=True)[0]
-            task_metrics = self.eval_env.calculate_metrics(movement_times=movement_times, rollout_states=rollout_states, plot_data=True) #, eval_metrics_keys=self.eval_metrics_keys)
+            task_metrics = self.eval_env.eval_metrics(movement_times=movement_times, rollout_states=rollout_states, plot_data=True) #, eval_metrics_keys=self.eval_metrics_keys)
             non_plot_metrics = {key: value for key, value in task_metrics.items() if "plot" not in key}
             print(non_plot_metrics)
             log_r2_plots_to_wandb(task_metrics, current_step, plots_path=self.plots_path)
