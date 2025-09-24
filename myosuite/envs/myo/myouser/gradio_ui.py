@@ -73,8 +73,35 @@ def hex_to_rgb(hex_color):
     rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
     return rgb
 
+class BMParameters:
+    num_elements: int = 1
+
+    @staticmethod
+    def get_parameters():
+        with gr.Row():
+            ctrl_dt = gr.Number(
+                label="Control Timestep (s)",   
+                value=0.05,
+                minimum=0.01,
+                maximum=0.5,
+                step=0.01,
+                interactive=True
+            )
+        return ctrl_dt, 
+
+    @staticmethod
+    def get_my_args(all_args):
+        return all_args[:BMParameters.num_elements]
+
+    @classmethod
+    def parse_values(cls, all_args):
+        ctrl_dt, = cls.get_my_args(all_args)
+        overrides = []
+        overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
+        return overrides
+
 class RLParameters:
-    num_elements: int = 9
+    num_elements: int = 8
 
     @staticmethod
     def get_parameters():
@@ -100,14 +127,6 @@ class RLParameters:
                 value=1,
                 minimum=1,
                 maximum=10,
-                interactive=True
-            )
-            ctrl_dt = gr.Number(
-                label="Control Timestep (s)",   
-                value=0.05,
-                minimum=0.01,
-                maximum=0.5,
-                step=0.01,
                 interactive=True
             )
         gr.Markdown(
@@ -158,7 +177,7 @@ class RLParameters:
                 inputs=select_checkpoint_run,
                 outputs=select_checkpoint_number
             )
-        return num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
+        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
 
     @staticmethod
     def get_my_args(all_args):
@@ -166,7 +185,7 @@ class RLParameters:
 
     @classmethod
     def parse_values(cls, all_args):
-        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = cls.get_my_args(all_args)
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = cls.get_my_args(all_args)
         overrides = []
         num_targets = cls.get_number_targets(all_args)
         to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
@@ -174,7 +193,6 @@ class RLParameters:
         overrides.append(f"rl.num_timesteps={int(num_timesteps)}")
         overrides.append(f"rl.num_checkpoints={int(num_checkpoints)}")
         overrides.append(f"rl.num_evals={int(num_evaluations)}")
-        overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
         overrides.append(f"rl.batch_size={int(batch_size)}")
         overrides.append(f"rl.num_envs={int(num_envs)}")
         overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
@@ -410,11 +428,12 @@ def get_ui(wandb_url, save_cfgs=[]):
             show_copy_button=True,
             info="Click to copy the URL and monitor training progress"
                     )
-        gr.Markdown("### RL Parameters")
-        rl_params = RLParameters.get_parameters()
-        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_params
         
-        gr.Markdown("### Dynamic Targets Feature")
+        gr.Markdown("### 1. Biomechanical Model Parameters")
+        bm_params = BMParameters.get_parameters()
+        ctrl_dt, = bm_params
+        
+        gr.Markdown("### 2. Task Setup")
         
         num_elements = gr.Number(
             label="Number of Targets",
@@ -480,6 +499,10 @@ def get_ui(wandb_url, save_cfgs=[]):
             box_rows.append(box_row)
             sphere_rows.append(sphere_row)
 
+        gr.Markdown("### 3. RL Parameters")
+        rl_params = RLParameters.get_parameters()
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_params
+        
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
         with gr.Row(visible=False) as env_view_row:
