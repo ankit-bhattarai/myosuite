@@ -104,6 +104,12 @@ def rl_parameters():
             step=0.01,
             interactive=True
         )
+    gr.Markdown(
+        "<span style='font-size: 1em;'>"
+        "<b><span style='color:red'>Note:</span></b> Ensure that (<i>batch_size</i> * <i>num_minibatches</i>) is a multiple of <i>num_envs</i>."
+        "</span>",
+        elem_id="hint-text"
+    )
     with gr.Row():
         batch_size = gr.Number(
             label="Batch Size",
@@ -113,7 +119,7 @@ def rl_parameters():
             interactive=True
         )
         num_envs = gr.Number(
-            label="Number of Environments",
+            label="Number of Parallel Environments",
             value=1024,
             minimum=0,
             maximum=4096,
@@ -126,12 +132,6 @@ def rl_parameters():
             maximum=40,
             interactive=True
         )
-    gr.Markdown(
-        "<span style='font-size: 1em;'>"
-        "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
-        "</span>",
-        elem_id="hint-text"
-    )
     with gr.Row():
         choices = get_available_checkpoints()
         select_checkpoint_run = gr.Dropdown(
@@ -233,7 +233,7 @@ def box_option_parameters(i):
                 )
     return box_row, box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn
 
-def sphere_option_parameters(i):
+def sphere_option_parameters(i, dwell_duration_min=0.0):
     # Sphere option row  
     with gr.Row(visible=True) as sphere_row:
         with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
@@ -276,7 +276,7 @@ def sphere_option_parameters(i):
                 dwell_duration = gr.Number(
                     label=f"Dwell Duration",
                     value=0.25,
-                    minimum=0.0,
+                    minimum=dwell_duration_min,
                     maximum=1.0,
                     step=0.01,
                     interactive=True
@@ -295,6 +295,9 @@ def sphere_option_parameters(i):
                     interactive=True
                 )
     return sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker
+
+def update_dwell_duration(dwell_duration, ctrl_dt):
+    return gr.update(minimum=max(ctrl_dt, 0))
 
 def get_ui(wandb_url, save_cfgs=[]):
     # Fix box handlers properly
@@ -323,6 +326,7 @@ def get_ui(wandb_url, save_cfgs=[]):
         # Create 10 sets of elements (maximum possible), first INIT_ELEMENTS visible by default
         dynamic_rows = []
         radios = []
+        dwell_durations = []
         box_rows = []
         sphere_rows = []
         
@@ -331,6 +335,16 @@ def get_ui(wandb_url, save_cfgs=[]):
             'boxes': [],
             'spheres': []
         }
+
+        # Create variable that sums up all selected dwell times
+        total_dwell_duration = gr.Number(
+                    label=f"total Dwell Time",
+                    value=0,
+                    minimum=0,
+                    step=0.01,
+                    interactive=False,
+                    visible=False
+                )
         
         for i in range(10):
             # Main row with radio selection
@@ -356,7 +370,9 @@ def get_ui(wandb_url, save_cfgs=[]):
                         'orientation_angle': orientation_angle,
                         'rgb': rgb_btn
                     })
-                    sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker = sphere_option_parameters(i)                    
+                    sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker = sphere_option_parameters(i, dwell_duration_min=ctrl_dt.value)                    
+                    ctrl_dt.change(fn=update_dwell_duration, inputs=(dwell_duration, ctrl_dt), outputs=dwell_duration, preprocess=False)
+                    
                     # Store sphere components
                     all_components['spheres'].append({
                         'x_range': x_slider,
@@ -371,6 +387,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             # Store references
             dynamic_rows.append(main_row)
             radios.append(radio)
+            dwell_durations.append(dwell_duration)
             box_rows.append(box_row)
             sphere_rows.append(sphere_row)
 
@@ -507,6 +524,10 @@ def get_ui(wandb_url, save_cfgs=[]):
                     updates.append(gr.update(visible=False))
             return updates
 
+        def update_num_timesteps(num_elements, *dwell_durations):
+            target_value = 5000000 + max((num_elements - 3), 0) * 1000000 + int(sum(dwell_durations) // 0.3) * 1000000
+            return gr.update(value=target_value)
+
         def toggle_interface_type(radio_value):
             """Show appropriate interface based on radio selection"""
             if radio_value == "Box":
@@ -521,12 +542,29 @@ def get_ui(wandb_url, save_cfgs=[]):
             outputs=dynamic_rows
         )
 
+        # Event handler for number of targets to suggested number of training steps
+        num_elements.change(
+            update_num_timesteps,
+            inputs=(num_elements, *dwell_durations),
+            outputs=num_timesteps,
+            preprocess=False
+        )
+
         # Event handlers for each radio button to control interface type
         for i in range(10):
             radios[i].change(
                 toggle_interface_type,
                 inputs=radios[i],
                 outputs=[box_rows[i], sphere_rows[i]]
+            )
+
+        # Event handler for each dwell duration to num of training steps
+        for i in range(10):
+            dwell_durations[i].change(
+                update_num_timesteps,
+                inputs=(num_elements, num_timesteps, *dwell_durations),
+                outputs=num_timesteps,
+                preprocess=False
             )
 
         # Prepare inputs for run button
