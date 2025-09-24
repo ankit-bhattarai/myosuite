@@ -145,7 +145,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                         with gr.Accordion(label=f"Button {i+1} Settings", open=False):
                             with gr.Row():
                                 button_position_x = gr.Slider(
-                                    label="Button Depth Position",
+                                    label="Depth Position",
                                     minimum=0.2,
                                     maximum=0.55,
                                     value=0.225,
@@ -153,7 +153,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 button_position_y = gr.Slider(
-                                    label="Button Horizontal Position",
+                                    label="Horizontal Position",
                                     minimum=-0.25,
                                     maximum=0.25,
                                     value=-0.1,
@@ -161,7 +161,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 button_position_z = gr.Slider(
-                                    label="Button Vertical Position",
+                                    label="Vertical Position",
                                     minimum=0.6,
                                     maximum=1.2,
                                     value=0.843,
@@ -170,7 +170,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                 )
                             with gr.Row():
                                 button_size_x_slider = gr.Slider(
-                                    label="Button Width",
+                                    label="Width",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
@@ -178,7 +178,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 button_size_y_slider = gr.Slider(
-                                    label="Button Height",
+                                    label="Height",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
