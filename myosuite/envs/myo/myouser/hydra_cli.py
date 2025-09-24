@@ -157,6 +157,7 @@ class RunConfig:
     log_wandb_videos: bool = True
     eval_episodes: int = 10
     eval_seed: int = 123
+    using_gradio: bool = False
 
 @dataclass
 class Config:
@@ -194,7 +195,7 @@ for (i, name, config) in LIST_CONFIGS:
     
 
 
-def load_config_interactive(overrides=[]):
+def load_config_interactive(overrides=[], cfg_only=False):
     """
     Use this function to load the config interactively from a jupyer notebook.
 
@@ -209,6 +210,9 @@ def load_config_interactive(overrides=[]):
     
     with initialize(version_base=None, config_path=None):
         cfg = compose(config_name="config", overrides=overrides)
+
+    if cfg_only:
+        return cfg
     
     container = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     container['env']['vision'] = container['vision']
