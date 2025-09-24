@@ -44,6 +44,9 @@ dependencies = [
     "interpax", 
     "jaxopt",
     "orbax-checkpoint==0.11.21",
+    "gradio",
+    "gradio_rangeslider"
+
 ]
 [project.optional-dependencies]
 examples = ["mink[examples]; python_version > '3.9'"]
