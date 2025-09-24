@@ -408,7 +408,8 @@ def get_ui(wandb_url, save_cfgs=[]):
             info="Click to copy the URL and monitor training progress"
                     )
         gr.Markdown("### RL Parameters")
-        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = RLParameters.get_parameters()
+        rl_params = RLParameters.get_parameters()
+        
         gr.Markdown("### Dynamic Targets Feature")
         
         num_elements = gr.Number(
@@ -563,7 +564,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, num_elements]
+        run_inputs = [*rl_params, num_elements]
         run_inputs.extend(radios)
         
         # Add all box components
