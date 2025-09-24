@@ -26,7 +26,34 @@ CHECKPOINT_PATH = os.path.join(parent_path, "tracked_checkpoints/universal")
 
 
 def get_available_checkpoints():
-    return os.listdir(CHECKPOINT_PATH)
+    checkpoints = os.listdir(CHECKPOINT_PATH)
+    checkpoints.append("None")
+    return checkpoints
+
+
+def is_number(s: str):
+    if ("." not in s) and s.isdigit():
+        return True
+    return False
+    
+def get_available_checkpoint_numbers(checkpoint_run):
+    if checkpoint_run == "None":
+        return ["None"]
+    checkpoint_path = os.path.join(CHECKPOINT_PATH, checkpoint_run)
+    checkpoint_path = os.path.join(checkpoint_path, "checkpoints")
+    available_numbers = [num for num in os.listdir(checkpoint_path) if is_number(num)]
+    return available_numbers
+
+
+def checkpoint_path_from_run_number(checkpoint_run, checkpoint_number):
+    checkpoint_path = os.path.join(CHECKPOINT_PATH, checkpoint_run)
+    checkpoint_path = os.path.join(checkpoint_path, "checkpoints")
+    checkpoint_path = os.path.join(checkpoint_path, checkpoint_number)
+    return checkpoint_path
+
+def update_checkpoint_numbers(checkpoint_run):
+    choices = get_available_checkpoint_numbers(checkpoint_run)
+    return gr.update(choices=choices, value=choices[0])
 
 def extract_rgb(rgba):
     rgba = rgba.split("rgba(")[1].strip(")")
@@ -92,6 +119,26 @@ def get_ui(wandb_url, save_cfgs=[]):
                 minimum=0,
                 maximum=4096,
                 interactive=True
+            )
+        with gr.Row():
+            choices = get_available_checkpoints()
+            select_checkpoint_run = gr.Dropdown(
+                label="Select Experiment from which to load checkpoints",
+                choices=choices,
+                interactive=True,
+                value="None"
+            )
+            choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
+            select_checkpoint_number = gr.Dropdown(
+                label="Select Checkpoint Number",
+                choices=choices,
+                interactive=True,
+                value="None"
+            )
+            select_checkpoint_run.change(
+                update_checkpoint_numbers,
+                inputs=select_checkpoint_run,
+                outputs=select_checkpoint_number
             )
         gr.Markdown("### Dynamic Targets Feature")
         
@@ -317,12 +364,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, checkpoints, evaluations, batch, envs, num_targets = args[:5]
-            radio_values = args[5:15]  # 10 radio values
+            timesteps, checkpoints, evaluations, batch, envs, num_targets, select_checkpoint_run, select_checkpoint_number = args[:8]
+            radio_values = args[8:18]  # 10 radio values
 
             # Get all other component values
-            button_values = args[15:105]  # 9 components × 10 = 90 values
-            pointing_values = args[105:]   # 7 components × 10 = 70 values
+            button_values = args[18:108]  # 9 components × 10 = 90 values
+            pointing_values = args[108:]   # 7 components × 10 = 70 values
             
 
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
@@ -337,7 +384,8 @@ def get_ui(wandb_url, save_cfgs=[]):
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
 
-            
+            exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
+            cfg_overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
 
             for i in range(int(num_targets)):
                 target_type = radio_values[i]
@@ -370,9 +418,9 @@ def get_ui(wandb_url, save_cfgs=[]):
                     # Extract pointing values for this target
                     start_idx = i * 7
                     x_range = pointing_values[start_idx]
-                    y_range = -pointing_values[start_idx + 1]
+                    y_range = pointing_values[start_idx + 1]
                     z_range = pointing_values[start_idx + 2]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{y_range[0]},{z_range[0]}],[{x_range[1]},{y_range[1]},{z_range[1]}]]")
+                    cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{-y_range[0]},{z_range[0]}],[{x_range[1]},{-y_range[1]},{z_range[1]}]]")
                     size_range = pointing_values[start_idx + 3]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
                     dwell = pointing_values[start_idx + 4]
@@ -442,7 +490,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_elements]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_elements, select_checkpoint_run, select_checkpoint_number]
         run_inputs.extend(radios)
         
         # Add all button components
