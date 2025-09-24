@@ -450,6 +450,20 @@ class MyoUserUniversal(MyoUserBase):
         spec = self.add_task_relevant_geoms(spec)
         return super().preprocess_spec(spec)
 
+    def model_render(self, camera: str):
+        model = self.mj_model
+        data = mujoco.MjData(model)
+
+        with mujoco.Renderer(model, height=480, width=640) as renderer:
+            mujoco.mj_forward(model, data)
+            renderer.update_scene(data, camera=camera)
+            img = renderer.render()
+        return img
+    
+    def get_renderings(self, cameras: List[str] = ['fixed-eye', 'top_camera']):
+        return [(camera, self.model_render(camera)) for camera in cameras]
+
+
     def _setup(self):
         super()._setup()
         self.reach_settings = self._config.task_config.reach_settings
