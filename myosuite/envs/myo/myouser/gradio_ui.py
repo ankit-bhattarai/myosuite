@@ -1,4 +1,3 @@
-import os
 import gradio as gr
 if gr.NO_RELOAD:
     from gradio_rangeslider import RangeSlider
@@ -6,6 +5,11 @@ if gr.NO_RELOAD:
     from myosuite.envs.myo.myouser.train_jax_ppo import train
     from myosuite.envs.myo.myouser.hydra_cli import load_config_interactive
     import numpy as np
+    import myosuite
+    import os
+    from pathlib import Path
+    myosuite_path = Path(myosuite.__path__[0])
+
 
 pointing_ranges = {
     "x": (0.225, 0.35),
@@ -16,7 +20,13 @@ pointing_ranges = {
 
 INIT_ELEMENTS = 2
 
-SAVE_CFGS = []
+
+parent_path = myosuite_path.parent
+CHECKPOINT_PATH = os.path.join(parent_path, "tracked_checkpoints/universal")
+
+
+def get_available_checkpoints():
+    return os.listdir(CHECKPOINT_PATH)
 
 def extract_rgb(rgba):
     rgba = rgba.split("rgba(")[1].strip(")")
@@ -35,7 +45,7 @@ def hex_to_rgb(hex_color):
     return rgb
 
 
-def get_ui(wandb_url):
+def get_ui(wandb_url, save_cfgs=[]):
     # Fix button handlers properly
     with gr.Blocks() as demo:
         gr.Markdown("**Weights & Biases URL:**")
@@ -393,9 +403,12 @@ def get_ui(wandb_url):
             cfg_overrides = args_to_cfg_overrides(*args)
             # cfg = load_config_interactive(cfg_overrides, cfg_only=True)
             gr.Info("Set up training start from the GR UI!")
-            SAVE_CFGS.extend(cfg_overrides)
+            save_cfgs = []
+            save_cfgs.extend(cfg_overrides)
             # train(cfg)
-            return "Go to the next notebook in the cell and run the training!"
+            text = "Go to the next notebook in the cell and run the training!\n"
+            text += "\n".join(save_cfgs)
+            return text
 
         def render_environment(*args):
             cfg_overrides = args_to_cfg_overrides(*args)
