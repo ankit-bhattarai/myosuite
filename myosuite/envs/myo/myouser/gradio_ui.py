@@ -46,7 +46,7 @@ def hex_to_rgb(hex_color):
 
 
 def get_ui(wandb_url, save_cfgs=[]):
-    # Fix button handlers properly
+    # Fix box handlers properly
     with gr.Blocks() as demo:
         gr.Markdown("**Weights & Biases URL:**")
         url_display = gr.Textbox(
@@ -120,12 +120,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         # Create 10 sets of elements (maximum possible), first INIT_ELEMENTS visible by default
         dynamic_rows = []
         radios = []
-        button_rows = []
+        box_rows = []
         pointing_rows = []
         
         # Store all components for easy access
         all_components = {
-            'buttons': [],
+            'boxes': [],
             'pointing': []
         }
         
@@ -134,17 +134,17 @@ def get_ui(wandb_url, save_cfgs=[]):
             with gr.Row(visible=(i < INIT_ELEMENTS)) as main_row:
                 with gr.Column():
                     radio = gr.Radio(
-                        choices=["Button", "Pointing"],
+                        choices=["Box", "Pointing"],
                         label=f"Target {i+1} Type",
                         value="Pointing",
                         interactive=True
                     )
                     
-                    # Buttons option row
-                    with gr.Row(visible=False) as button_row:
-                        with gr.Accordion(label=f"Button {i+1} Settings", open=False):
+                    # Boxes option row
+                    with gr.Row(visible=False) as box_row:
+                        with gr.Accordion(label=f"Box {i+1} Settings", open=False):
                             with gr.Row():
-                                button_position_x = gr.Slider(
+                                box_position_x = gr.Slider(
                                     label="Depth Position",
                                     minimum=0.2,
                                     maximum=0.55,
@@ -152,7 +152,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     step=0.001,
                                     interactive=True
                                 )
-                                button_position_y = gr.Slider(
+                                box_position_y = gr.Slider(
                                     label="Horizontal Position",
                                     minimum=-0.25,
                                     maximum=0.25,
@@ -160,7 +160,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     step=0.001,
                                     interactive=True
                                 )
-                                button_position_z = gr.Slider(
+                                box_position_z = gr.Slider(
                                     label="Vertical Position",
                                     minimum=0.6,
                                     maximum=1.2,
@@ -169,7 +169,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                             with gr.Row():
-                                button_size_x_slider = gr.Slider(
+                                box_size_x_slider = gr.Slider(
                                     label="Width",
                                     minimum=0.02,
                                     maximum=0.03,
@@ -177,7 +177,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     step=0.001,
                                     interactive=True
                                 )
-                                button_size_y_slider = gr.Slider(
+                                box_size_y_slider = gr.Slider(
                                     label="Height",
                                     minimum=0.02,
                                     maximum=0.03,
@@ -217,13 +217,13 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                     
-                    # Store button components
-                    all_components['buttons'].append({
-                        'button_position_x': button_position_x,
-                        'button_position_y': button_position_y,
-                        'button_position_z': button_position_z,
-                        'button_size_x': button_size_x_slider,
-                        'button_size_y': button_size_y_slider,
+                    # Store box components
+                    all_components['boxes'].append({
+                        'box_position_x': box_position_x,
+                        'box_position_y': box_position_y,
+                        'box_position_z': box_position_z,
+                        'box_size_x': box_size_x_slider,
+                        'box_size_y': box_size_y_slider,
                         'completion_bonus': completion_bonus_btn,
                         'min_touch_force': min_touch_force,
                         'orientation_angle': orientation_angle,
@@ -305,7 +305,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             # Store references
             dynamic_rows.append(main_row)
             radios.append(radio)
-            button_rows.append(button_row)
+            box_rows.append(box_row)
             pointing_rows.append(pointing_row)
 
         gr.Markdown("### View of the environment")
@@ -334,7 +334,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             radio_values = args[5:15]  # 10 radio values
 
             # Get all other component values
-            button_values = args[15:105]  # 9 components × 10 = 90 values
+            box_values = args[15:105]  # 9 components × 10 = 90 values
             pointing_values = args[105:]   # 7 components × 10 = 70 values
             
 
@@ -357,25 +357,25 @@ def get_ui(wandb_url, save_cfgs=[]):
                 target_type = radio_values[i]
                 cfg_overrides.append(f"+env/task_config/targets/target_{i}={target_type.lower()}")
                 
-                if target_type == "Button":
-                    # Extract button values for this target
+                if target_type == "Box":
+                    # Extract box values for this target
                     start_idx = i * 9
-                    btn_pos_x = button_values[start_idx]
-                    btn_pos_y = -button_values[start_idx + 1]
-                    btn_pos_z = button_values[start_idx + 2]
+                    btn_pos_x = box_values[start_idx]
+                    btn_pos_y = -box_values[start_idx + 1]
+                    btn_pos_z = box_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[{btn_pos_x},{btn_pos_y},{btn_pos_z}]")
-                    btn_size_x = button_values[start_idx + 3]
-                    btn_size_y = button_values[start_idx + 4]
+                    btn_size_x = box_values[start_idx + 3]
+                    btn_size_y = box_values[start_idx + 4]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{btn_size_x},{btn_size_y},0.01]")
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.site_size=[{btn_size_x-0.005},{btn_size_y-0.005},0.01]")
-                    completion_bonus = button_values[start_idx + 5]
+                    completion_bonus = box_values[start_idx + 5]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
-                    min_force = button_values[start_idx + 6]
+                    min_force = box_values[start_idx + 6]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_force}")
-                    orientation = button_values[start_idx + 7]
+                    orientation = box_values[start_idx + 7]
                     euler = -orientation * np.pi / 180
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{euler},0]")
-                    rgb = button_values[start_idx + 8]
+                    rgb = box_values[start_idx + 8]
                     rgb = hex_to_rgb(rgb)
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
                     
@@ -435,7 +435,7 @@ def get_ui(wandb_url, save_cfgs=[]):
 
         def toggle_interface_type(radio_value):
             """Show appropriate interface based on radio selection"""
-            if radio_value == "Button":
+            if radio_value == "Box":
                 return gr.update(visible=True), gr.update(visible=False)
             else:  # Pointing
                 return gr.update(visible=False), gr.update(visible=True)
@@ -452,17 +452,17 @@ def get_ui(wandb_url, save_cfgs=[]):
             radios[i].change(
                 toggle_interface_type,
                 inputs=radios[i],
-                outputs=[button_rows[i], pointing_rows[i]]
+                outputs=[box_rows[i], pointing_rows[i]]
             )
 
         # Prepare inputs for run button
         run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, num_elements]
         run_inputs.extend(radios)
         
-        # Add all button components
+        # Add all box components
         for i in range(10):
-            for key in ['button_position_x', 'button_position_y', 'button_position_z', 'button_size_x', 'button_size_y', 'completion_bonus', 'min_touch_force', 'orientation_angle', 'rgb']:
-                run_inputs.append(all_components['buttons'][i][key])
+            for key in ['box_position_x', 'box_position_y', 'box_position_z', 'box_size_x', 'box_size_y', 'completion_bonus', 'min_touch_force', 'orientation_angle', 'rgb']:
+                run_inputs.append(all_components['boxes'][i][key])
         
         # Add all pointing components
         for i in range(10):
