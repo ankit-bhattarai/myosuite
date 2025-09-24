@@ -69,6 +69,13 @@ def get_ui(wandb_url):
                 maximum=4096,
                 interactive=True
             )
+            num_checkpoints = gr.Number(
+                label="Number of Checkpoints",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
         gr.Markdown("### Dynamic Targets Feature")
         
         num_elements = gr.Number(
@@ -293,12 +300,12 @@ def get_ui(wandb_url):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, batch, envs, num_targets = args[:4]
-            radio_values = args[4:14]  # 10 radio values
-            
+            timesteps, batch, envs, num_targets, checkpoints = args[:5]
+            radio_values = args[5:15]  # 10 radio values
+
             # Get all other component values
-            button_values = args[14:104]  # 9 components × 10 = 90 values
-            pointing_values = args[104:]   # 7 components × 10 = 70 values
+            button_values = args[15:105]  # 9 components × 10 = 90 values
+            pointing_values = args[105:]   # 7 components × 10 = 70 values
             
 
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
@@ -310,6 +317,8 @@ def get_ui(wandb_url):
             cfg_overrides.append(f"rl.num_timesteps={int(timesteps)}")
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
+            cfg_overrides.append(f"rl.num_checkpoints={int(checkpoints)}")
+
             
 
             for i in range(int(num_targets)):
@@ -412,7 +421,7 @@ def get_ui(wandb_url):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, batch_size, num_envs, num_elements]
+        run_inputs = [num_timesteps, batch_size, num_envs, num_checkpoints, num_elements]
         run_inputs.extend(radios)
         
         # Add all button components
