@@ -91,7 +91,14 @@ class BMParameters:
 
     @staticmethod
     def get_my_args(all_args):
-        return all_args[:BMParameters.num_elements]
+        rl_number = RLParameters.num_elements
+        num_targets = 1
+        radio_number = 10
+        box_number = 10*BoxParameters.num_elements
+        sphere_number = 10*SphereParameters.num_elements
+        bm_start = rl_number + num_targets + radio_number + box_number + sphere_number
+        bm_end = rl_number + num_targets + radio_number + box_number + sphere_number + BMParameters.num_elements
+        return all_args[bm_start:bm_end]
 
     @classmethod
     def parse_values(cls, all_args):
@@ -190,7 +197,7 @@ class BoxParameters:
     @staticmethod
     def get_my_args(i, all_args):
         rl_number = RLParameters.num_elements
-        num_targets=1
+        num_targets = 1
         radio_number = 10
         box_start = rl_number + radio_number + num_targets
         box_end = box_start + 10*BoxParameters.num_elements
@@ -326,7 +333,15 @@ class TaskParameters:
 
     @staticmethod
     def get_my_args(all_args):
-        return all_args[:TaskParameters.num_elements]
+        rl_number = RLParameters.num_elements
+        num_targets = 1
+        radio_number = 10
+        box_number = 10*BoxParameters.num_elements
+        sphere_number = 10*SphereParameters.num_elements
+        bm_number = BMParameters.num_elements
+        task_start = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number
+        task_end = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number + TaskParameters.num_elements
+        return all_args[task_start:task_end]
 
     @classmethod
     def parse_values(cls, all_args):
@@ -367,13 +382,24 @@ class ObservationSpace:
 
     @staticmethod
     def get_my_args(all_args):
-        return all_args[:ObservationSpace.num_elements]
+        rl_number = RLParameters.num_elements
+        num_targets = 1
+        radio_number = 10
+        box_number = 10*BoxParameters.num_elements
+        sphere_number = 10*SphereParameters.num_elements
+        bm_number = BMParameters.num_elements
+        task_number = TaskParameters.num_elements
+        obs_start = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number + task_number
+        obs_end = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number + task_number + len(ObservationSpace.possible_obs_keys)
+        omni_start = obs_end
+        omni_end = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number + task_number + len(ObservationSpace.possible_obs_keys) + len(ObservationSpace.possible_omni_keys)
+        return all_args[obs_start:obs_end], all_args[omni_start:omni_end]
 
     @classmethod
     def parse_values(cls, all_args):
         obs_keys, omni_keys = cls.get_my_args(all_args)
-        obs_keys_selected = [k.label for k in obs_keys if k.value]
-        omni_keys_selected = [k.label for k in omni_keys if k.value]
+        obs_keys_selected = [ObservationSpace.possible_obs_keys[id] for id, k in enumerate(obs_keys) if k]  #[k.label for k in obs_keys if k.value]
+        omni_keys_selected = [ObservationSpace.possible_omni_keys[id] for id, k in enumerate(omni_keys) if k]  #[k.label for k in omni_keys if k.value]
         overrides = []
         overrides.append(f"env.task_config.obs_keys={obs_keys_selected}")
         overrides.append(f"env.task_config.omni_keys={omni_keys_selected}")
@@ -407,7 +433,17 @@ class RewardFunction:
 
     @staticmethod
     def get_my_args(all_args):
-        return all_args[:RewardFunction.num_elements]
+        rl_number = RLParameters.num_elements
+        num_targets = 1
+        radio_number = 10
+        box_number = 10*BoxParameters.num_elements
+        sphere_number = 10*SphereParameters.num_elements
+        bm_number = BMParameters.num_elements
+        task_number = TaskParameters.num_elements
+        obs_number = len(ObservationSpace.possible_obs_keys) + len(ObservationSpace.possible_omni_keys)
+        reward_start = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number + task_number + obs_number
+        reward_end = rl_number + num_targets + radio_number + box_number + sphere_number + bm_number + task_number + obs_number + len(RewardFunction.weights_default_min_max_step)
+        return all_args[reward_start:reward_end]
 
     @classmethod
     def parse_values(cls, all_args):
@@ -773,6 +809,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         for i in range(10):
             for key in SphereParameters.fields():
                 run_inputs.append(all_components['spheres'][i][key])
+
+        run_inputs.extend(bm_params)
+        run_inputs.extend(task_params)
+        run_inputs.extend(obs_keys)
+        run_inputs.extend(omni_keys)
+        run_inputs.extend(reward_weights)
 
         # Run button event
         run_button.click(
