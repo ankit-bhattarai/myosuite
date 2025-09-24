@@ -55,6 +55,20 @@ def get_ui(wandb_url):
                 maximum=50000000,
                 interactive=True
             )
+            num_checkpoints = gr.Number(
+                label="Number of Checkpoints",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
+            num_evaluations = gr.Number(
+                label="Number of Evaluations during Training",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
             batch_size = gr.Number(
                 label="Batch Size",
                 value=128,
@@ -67,13 +81,6 @@ def get_ui(wandb_url):
                 value=1024,
                 minimum=0,
                 maximum=4096,
-                interactive=True
-            )
-            num_checkpoints = gr.Number(
-                label="Number of Checkpoints",
-                value=1,
-                minimum=1,
-                maximum=10,
                 interactive=True
             )
         gr.Markdown("### Dynamic Targets Feature")
@@ -300,7 +307,7 @@ def get_ui(wandb_url):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, batch, envs, num_targets, checkpoints = args[:5]
+            timesteps, checkpoints, evaluations, batch, envs, num_targets = args[:5]
             radio_values = args[5:15]  # 10 radio values
 
             # Get all other component values
@@ -315,9 +322,10 @@ def get_ui(wandb_url):
             
             # RL Parameters
             cfg_overrides.append(f"rl.num_timesteps={int(timesteps)}")
+            cfg_overrides.append(f"rl.num_checkpoints={int(checkpoints)}")
+            cfg_overrides.append(f"rl.num_evals={int(evaluations)}")
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
-            cfg_overrides.append(f"rl.num_checkpoints={int(checkpoints)}")
 
             
 
@@ -421,7 +429,7 @@ def get_ui(wandb_url):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, batch_size, num_envs, num_checkpoints, num_elements]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_elements]
         run_inputs.extend(radios)
         
         # Add all button components
