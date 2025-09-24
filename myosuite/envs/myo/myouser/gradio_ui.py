@@ -379,6 +379,44 @@ class ObservationSpace:
         overrides.append(f"env.task_config.omni_keys={omni_keys_selected}")
         return overrides
 
+class RewardFunction:
+    num_elements: int = 1
+
+    weights_default_min_max_step = {"reach": (1, 0, 10, 0.1),
+                        "phase_bonus": (0, 0, 10, 0.5),
+                        "done": (10, 0, 50, 1),
+                        "neural_effort": (0, 0, 1, 0.01),
+                    }
+
+    @staticmethod
+    def get_parameters():
+        reward_weights = []
+        with gr.Row():
+            for k, (value, minimum, maximum, step) in RewardFunction.weights_default_min_max_step.items():
+                reward_weight = gr.Number(
+                    label=k,
+                    value=value,
+                    minimum=minimum,
+                    maximum=maximum,
+                    step=step,
+                    interactive=True
+                )
+                reward_weights.append(reward_weight)
+        
+        return reward_weights,
+
+    @staticmethod
+    def get_my_args(all_args):
+        return all_args[:RewardFunction.num_elements]
+
+    @classmethod
+    def parse_values(cls, all_args):
+        reward_weights, = cls.get_my_args(all_args)
+        weighted_reward_keys = {k.label: k.value for k in reward_weights}
+        overrides = []
+        overrides.append(f"env.task_config.weighted_reward_keys={weighted_reward_keys}")
+        return overrides
+
 class RLParameters:
     num_elements: int = 8
 
@@ -574,6 +612,9 @@ def get_ui(wandb_url, save_cfgs=[]):
 
         gr.Markdown("#### Observation Space")
         obs_keys, omni_keys = ObservationSpace.get_parameters()
+
+        gr.Markdown("#### Reward Weights")
+        reward_weights, = RewardFunction.get_parameters()
 
         gr.Markdown("### 3. RL Parameters")
         rl_params = RLParameters.get_parameters()
