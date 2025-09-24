@@ -11,7 +11,7 @@ if gr.NO_RELOAD:
     myosuite_path = Path(myosuite.__path__[0])
 
 
-pointing_ranges = {
+sphere_ranges = {
     "x": (0.225, 0.35),
     "y": (-0.1, 0.1),
     "z": (-0.3, 0.3),
@@ -73,7 +73,7 @@ def hex_to_rgb(hex_color):
 
 
 def get_ui(wandb_url, save_cfgs=[]):
-    # Fix button handlers properly
+    # Fix box handlers properly
     with gr.Blocks() as demo:
         gr.Markdown("**Weights & Biases URL:**")
         url_display = gr.Textbox(
@@ -120,6 +120,19 @@ def get_ui(wandb_url, save_cfgs=[]):
                 maximum=4096,
                 interactive=True
             )
+            num_minibatches = gr.Number(
+                label="Number of Minibatches",
+                value=8,
+                minimum=0,
+                maximum=40,
+                interactive=True
+            )
+        gr.Markdown(
+            "<span style='font-size: 1em;'>"
+            "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
+            "</span>",
+            elem_id="hint-text"
+        )
         with gr.Row():
             choices = get_available_checkpoints()
             select_checkpoint_run = gr.Dropdown(
@@ -154,13 +167,13 @@ def get_ui(wandb_url, save_cfgs=[]):
         # Create 10 sets of elements (maximum possible), first INIT_ELEMENTS visible by default
         dynamic_rows = []
         radios = []
-        button_rows = []
-        pointing_rows = []
+        box_rows = []
+        sphere_rows = []
         
         # Store all components for easy access
         all_components = {
-            'buttons': [],
-            'pointing': []
+            'boxes': [],
+            'spheres': []
         }
         
         for i in range(10):
@@ -168,34 +181,34 @@ def get_ui(wandb_url, save_cfgs=[]):
             with gr.Row(visible=(i < INIT_ELEMENTS)) as main_row:
                 with gr.Column():
                     radio = gr.Radio(
-                        choices=["Button", "Pointing"],
+                        choices=["Box", "Sphere"],
                         label=f"Target {i+1} Type",
-                        value="Pointing",
+                        value="Sphere",
                         interactive=True
                     )
                     
-                    # Buttons option row
-                    with gr.Row(visible=False) as button_row:
-                        with gr.Accordion(label=f"Button {i+1} Settings", open=False):
+                    # Boxes option row
+                    with gr.Row(visible=False) as box_row:
+                        with gr.Accordion(label=f"Box {i+1} Settings", open=False):
                             with gr.Row():
-                                button_position_x = gr.Slider(
-                                    label="Button Depth Position",
+                                box_position_x = gr.Slider(
+                                    label="Depth Position",
                                     minimum=0.2,
                                     maximum=0.55,
                                     value=0.225,
                                     step=0.001,
                                     interactive=True
                                 )
-                                button_position_y = gr.Slider(
-                                    label="Button Horizontal Position",
+                                box_position_y = gr.Slider(
+                                    label="Horizontal Position",
                                     minimum=-0.25,
                                     maximum=0.25,
                                     value=-0.1,
                                     step=0.001,
                                     interactive=True
                                 )
-                                button_position_z = gr.Slider(
-                                    label="Button Vertical Position",
+                                box_position_z = gr.Slider(
+                                    label="Vertical Position",
                                     minimum=0.6,
                                     maximum=1.2,
                                     value=0.843,
@@ -203,16 +216,16 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                             with gr.Row():
-                                button_size_x_slider = gr.Slider(
-                                    label="Button Width",
+                                box_size_x_slider = gr.Slider(
+                                    label="Width",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
                                     step=0.001,
                                     interactive=True
                                 )
-                                button_size_y_slider = gr.Slider(
-                                    label="Button Height",
+                                box_size_y_slider = gr.Slider(
+                                    label="Height",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
@@ -251,55 +264,55 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                     
-                    # Store button components
-                    all_components['buttons'].append({
-                        'button_position_x': button_position_x,
-                        'button_position_y': button_position_y,
-                        'button_position_z': button_position_z,
-                        'button_size_x': button_size_x_slider,
-                        'button_size_y': button_size_y_slider,
+                    # Store box components
+                    all_components['boxes'].append({
+                        'box_position_x': box_position_x,
+                        'box_position_y': box_position_y,
+                        'box_position_z': box_position_z,
+                        'box_size_x': box_size_x_slider,
+                        'box_size_y': box_size_y_slider,
                         'completion_bonus': completion_bonus_btn,
                         'min_touch_force': min_touch_force,
                         'orientation_angle': orientation_angle,
                         'rgb': rgb_btn
                     })
                                 
-                    # Pointing option row  
-                    with gr.Row(visible=True) as pointing_row:
-                        with gr.Accordion(label=f"Pointing {i+1} Settings", open=False):
+                    # Sphere option row  
+                    with gr.Row(visible=True) as sphere_row:
+                        with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
                             with gr.Row():
-                                gr.Markdown("#### The coordinates for the pointing targets are randomly sampled from a range, please choose them below")
+                                gr.Markdown("#### The coordinates for the sphere targets are randomly sampled from a range, please choose them below")
                             with gr.Row():
                                 x_slider = RangeSlider(
                                     label=f"Depth Range",
-                                    minimum=pointing_ranges["x"][0],
-                                    maximum=pointing_ranges["x"][1],
-                                    value=(pointing_ranges["x"][0], pointing_ranges["x"][1]),
+                                    minimum=sphere_ranges["x"][0],
+                                    maximum=sphere_ranges["x"][1],
+                                    value=(sphere_ranges["x"][0], sphere_ranges["x"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
                                 y_slider = RangeSlider(
                                     label=f"Horizontal Range",
-                                    minimum=pointing_ranges["y"][0],
-                                    maximum=pointing_ranges["y"][1],
-                                    value=(pointing_ranges["y"][0], pointing_ranges["y"][1]),
+                                    minimum=sphere_ranges["y"][0],
+                                    maximum=sphere_ranges["y"][1],
+                                    value=(sphere_ranges["y"][0], sphere_ranges["y"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
                                 z_slider = RangeSlider(
                                     label=f"Vertical Range",
-                                    minimum=pointing_ranges["z"][0],
-                                    maximum=pointing_ranges["z"][1],
-                                    value=(pointing_ranges["z"][0], pointing_ranges["z"][1]),
+                                    minimum=sphere_ranges["z"][0],
+                                    maximum=sphere_ranges["z"][1],
+                                    value=(sphere_ranges["z"][0], sphere_ranges["z"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
                             with gr.Row():
                                 size_slider = RangeSlider(
                                     label=f"Size Range",
-                                    minimum=pointing_ranges["size"][0],
-                                    maximum=pointing_ranges["size"][1],
-                                    value=(pointing_ranges["size"][0], pointing_ranges["size"][1]),
+                                    minimum=sphere_ranges["size"][0],
+                                    maximum=sphere_ranges["size"][1],
+                                    value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
@@ -325,8 +338,8 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                     
-                    # Store pointing components
-                    all_components['pointing'].append({
+                    # Store sphere components
+                    all_components['spheres'].append({
                         'x_range': x_slider,
                         'y_range': y_slider,
                         'z_range': z_slider,
@@ -339,8 +352,8 @@ def get_ui(wandb_url, save_cfgs=[]):
             # Store references
             dynamic_rows.append(main_row)
             radios.append(radio)
-            button_rows.append(button_row)
-            pointing_rows.append(pointing_row)
+            box_rows.append(box_row)
+            sphere_rows.append(sphere_row)
 
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
@@ -364,12 +377,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, checkpoints, evaluations, batch, envs, num_targets, select_checkpoint_run, select_checkpoint_number = args[:8]
-            radio_values = args[8:18]  # 10 radio values
+            timesteps, checkpoints, evaluations, batch, envs, num_minibatches, num_targets, select_checkpoint_run, select_checkpoint_number = args[:9]
+            radio_values = args[9:19]  # 10 radio values
 
             # Get all other component values
-            button_values = args[18:108]  # 9 components × 10 = 90 values
-            pointing_values = args[108:]   # 7 components × 10 = 70 values
+            box_values = args[19:109]  # 9 components × 10 = 90 values
+            sphere_values = args[109:]   # 7 components × 10 = 70 values
             
 
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
@@ -383,6 +396,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             cfg_overrides.append(f"rl.num_evals={int(evaluations)}")
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
+            cfg_overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
 
             exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
             cfg_overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
@@ -391,43 +405,43 @@ def get_ui(wandb_url, save_cfgs=[]):
                 target_type = radio_values[i]
                 cfg_overrides.append(f"+env/task_config/targets/target_{i}={target_type.lower()}")
                 
-                if target_type == "Button":
-                    # Extract button values for this target
+                if target_type == "Box":
+                    # Extract box values for this target
                     start_idx = i * 9
-                    btn_pos_x = button_values[start_idx]
-                    btn_pos_y = -button_values[start_idx + 1]
-                    btn_pos_z = button_values[start_idx + 2]
+                    btn_pos_x = box_values[start_idx]
+                    btn_pos_y = -box_values[start_idx + 1]
+                    btn_pos_z = box_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[{btn_pos_x},{btn_pos_y},{btn_pos_z}]")
-                    btn_size_x = button_values[start_idx + 3]
-                    btn_size_y = button_values[start_idx + 4]
+                    btn_size_x = box_values[start_idx + 3]
+                    btn_size_y = box_values[start_idx + 4]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{btn_size_x},{btn_size_y},0.01]")
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.site_size=[{btn_size_x-0.005},{btn_size_y-0.005},0.01]")
-                    completion_bonus = button_values[start_idx + 5]
+                    completion_bonus = box_values[start_idx + 5]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
-                    min_force = button_values[start_idx + 6]
+                    min_force = box_values[start_idx + 6]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_force}")
-                    orientation = button_values[start_idx + 7]
+                    orientation = box_values[start_idx + 7]
                     euler = -orientation * np.pi / 180
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{euler},0]")
-                    rgb = button_values[start_idx + 8]
+                    rgb = box_values[start_idx + 8]
                     rgb = hex_to_rgb(rgb)
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
                     
                     
-                else:  # Pointing
-                    # Extract pointing values for this target
+                else:  # Sphere
+                    # Extract sphere values for this target
                     start_idx = i * 7
-                    x_range = pointing_values[start_idx]
-                    y_range = pointing_values[start_idx + 1]
-                    z_range = pointing_values[start_idx + 2]
+                    x_range = sphere_values[start_idx]
+                    y_range = sphere_values[start_idx + 1]
+                    z_range = sphere_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{-y_range[0]},{z_range[0]}],[{x_range[1]},{-y_range[1]},{z_range[1]}]]")
-                    size_range = pointing_values[start_idx + 3]
+                    size_range = sphere_values[start_idx + 3]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
-                    dwell = pointing_values[start_idx + 4]
+                    dwell = sphere_values[start_idx + 4]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell}")
-                    completion_bonus = pointing_values[start_idx + 5]
+                    completion_bonus = sphere_values[start_idx + 5]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
-                    rgb = pointing_values[start_idx + 6]
+                    rgb = sphere_values[start_idx + 6]
                     rgb = hex_to_rgb(rgb)
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
                     
@@ -469,9 +483,9 @@ def get_ui(wandb_url, save_cfgs=[]):
 
         def toggle_interface_type(radio_value):
             """Show appropriate interface based on radio selection"""
-            if radio_value == "Button":
+            if radio_value == "Box":
                 return gr.update(visible=True), gr.update(visible=False)
-            else:  # Pointing
+            else:  # Sphere
                 return gr.update(visible=False), gr.update(visible=True)
 
         # Event handler for dynamic elements
@@ -486,22 +500,22 @@ def get_ui(wandb_url, save_cfgs=[]):
             radios[i].change(
                 toggle_interface_type,
                 inputs=radios[i],
-                outputs=[button_rows[i], pointing_rows[i]]
+                outputs=[box_rows[i], sphere_rows[i]]
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_elements, select_checkpoint_run, select_checkpoint_number]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, num_elements, select_checkpoint_run, select_checkpoint_number]
         run_inputs.extend(radios)
         
-        # Add all button components
+        # Add all box components
         for i in range(10):
-            for key in ['button_position_x', 'button_position_y', 'button_position_z', 'button_size_x', 'button_size_y', 'completion_bonus', 'min_touch_force', 'orientation_angle', 'rgb']:
-                run_inputs.append(all_components['buttons'][i][key])
+            for key in ['box_position_x', 'box_position_y', 'box_position_z', 'box_size_x', 'box_size_y', 'completion_bonus', 'min_touch_force', 'orientation_angle', 'rgb']:
+                run_inputs.append(all_components['boxes'][i][key])
         
-        # Add all pointing components
+        # Add all sphere components
         for i in range(10):
             for key in ['x_range', 'y_range', 'z_range', 'size_range', 'dwell_duration', 'completion_bonus', 'rgb']:
-                run_inputs.append(all_components['pointing'][i][key])
+                run_inputs.append(all_components['spheres'][i][key])
 
         # Run button event
         run_button.click(
