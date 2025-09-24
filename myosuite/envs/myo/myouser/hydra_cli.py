@@ -190,8 +190,8 @@ cs.store(group="rl/network_factory", name="no_vision", node=NetworkConfig)
 for (i, name, config) in LIST_CONFIGS:
     cs.store(group="env/task_config/targets", name=name, node=config)
     for j in range(0, i+1):
-        cs.store(group=f"env/task_config/targets/target_{j}", name="pointing", node=PointingTarget)
-        cs.store(group=f"env/task_config/targets/target_{j}", name="button", node=ButtonTarget)
+        cs.store(group=f"env/task_config/targets/target_{j}", name="sphere", node=PointingTarget)
+        cs.store(group=f"env/task_config/targets/target_{j}", name="box", node=ButtonTarget)
     
 
 
