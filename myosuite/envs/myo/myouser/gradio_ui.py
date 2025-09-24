@@ -404,7 +404,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             sphere_values = args[110:]   # 7 components × 10 = 70 values
             
 
-            cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
+            cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=ui-pilot-testing", "wandb.entity=biom-rl-ui"]
             to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
             cfg_overrides.append(f"env/task_config/targets={to_text[int(num_targets)]}")
 
