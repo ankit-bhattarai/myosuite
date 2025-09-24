@@ -109,7 +109,7 @@ def get_ui(wandb_url):
                         with gr.Accordion(label=f"Button {i+1} Settings", open=False):
                             with gr.Row():
                                 button_position_x = gr.Slider(
-                                    label="Button Position X",
+                                    label="Button Depth Position",
                                     minimum=0.2,
                                     maximum=0.55,
                                     value=0.225,
@@ -117,7 +117,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 button_position_y = gr.Slider(
-                                    label="Button Position Y",
+                                    label="Button Horizontal Position",
                                     minimum=-0.25,
                                     maximum=0.25,
                                     value=-0.1,
@@ -125,7 +125,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 button_position_z = gr.Slider(
-                                    label="Button Position Z",
+                                    label="Button Vertical Position",
                                     minimum=0.6,
                                     maximum=1.2,
                                     value=0.843,
@@ -134,7 +134,7 @@ def get_ui(wandb_url):
                                 )
                             with gr.Row():
                                 button_size_x_slider = gr.Slider(
-                                    label="Button Size X",
+                                    label="Button Width",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
@@ -142,7 +142,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 button_size_y_slider = gr.Slider(
-                                    label="Button Size Y",
+                                    label="Button Height",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
@@ -150,7 +150,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 completion_bonus_btn = gr.Slider(
-                                    label="Phase Completion Bonus",
+                                    label="Completion Bonus",
                                     minimum=0.0,
                                     maximum=10.0,
                                     value=0.0,
@@ -209,7 +209,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 y_slider = RangeSlider(
-                                    label=f"Left Range",
+                                    label=f"Horizontal Range",
                                     minimum=pointing_ranges["y"][0],
                                     maximum=pointing_ranges["y"][1],
                                     value=(pointing_ranges["y"][0], pointing_ranges["y"][1]),
@@ -217,7 +217,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 z_slider = RangeSlider(
-                                    label=f"Height Range",
+                                    label=f"Vertical Range",
                                     minimum=pointing_ranges["z"][0],
                                     maximum=pointing_ranges["z"][1],
                                     value=(pointing_ranges["z"][0], pointing_ranges["z"][1]),
@@ -321,7 +321,7 @@ def get_ui(wandb_url):
                     # Extract button values for this target
                     start_idx = i * 9
                     btn_pos_x = button_values[start_idx]
-                    btn_pos_y = button_values[start_idx + 1]
+                    btn_pos_y = -button_values[start_idx + 1]
                     btn_pos_z = button_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[{btn_pos_x},{btn_pos_y},{btn_pos_z}]")
                     btn_size_x = button_values[start_idx + 3]
@@ -344,7 +344,7 @@ def get_ui(wandb_url):
                     # Extract pointing values for this target
                     start_idx = i * 7
                     x_range = pointing_values[start_idx]
-                    y_range = pointing_values[start_idx + 1]
+                    y_range = -pointing_values[start_idx + 1]
                     z_range = pointing_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{y_range[0]},{z_range[0]}],[{x_range[1]},{y_range[1]},{z_range[1]}]]")
                     size_range = pointing_values[start_idx + 3]
