@@ -44,7 +44,7 @@ from mujoco_playground import registry
 
 
 import hydra
-from hydra_cli import Config
+from myosuite.envs.myo.myouser.hydra_cli import Config
 from omegaconf import OmegaConf
 from ml_collections.config_dict import ConfigDict
 
@@ -76,8 +76,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="absl")
 
 
 
-@hydra.main(version_base=None, config_name="config")
-def main(cfg: Config):
+def train(cfg: Config):
   container = OmegaConf.to_container(cfg, throw_on_missing=True, resolve=True)
   container['env']['vision'] = container['vision']
   config = ConfigDict(container)
@@ -118,7 +117,12 @@ def main(cfg: Config):
     wandb_api = wandb.Api()
     wandb_params = config.wandb.to_dict()
     wandb_params.pop('enabled')
-    wandb_run = wandb.init(**wandb_params)
+    if wandb.run is None:
+      print("Initializing new wandb run")
+      wandb_run = wandb.init(**wandb_params)
+    else:
+      wandb_run = wandb.run
+      print("Using existing wandb run with id: ", wandb_run.id)
     wandb_run = wandb_api.run(f"{wandb_params['entity']}/{wandb_params['project']}/{wandb_run.id}")
     wandb.config.update(config.to_dict())
     wandb.config.update({"env_name": env_cfg.env_name})
@@ -132,7 +136,7 @@ def main(cfg: Config):
     writer = None
   
   progress_logger = ProgressLogger(writer=writer, ppo_params=ppo_params, logdir=logdir,
-                                   local_plotting=config.run.local_plotting, log_wandb=config.wandb.enabled and not config.run.play_only, log_tb=config.run.use_tb)
+                                   local_plotting=config.run.local_plotting, log_wandb=config.wandb.enabled and not config.run.play_only, log_tb=config.run.use_tb, log_gradio=config.run.using_gradio)
   progress_fn = progress_logger.progress
 
   ## TRAINING/LOADING CHECKPOINT
@@ -268,6 +272,9 @@ def main(cfg: Config):
   #   if config.wandb.enabled:
   #     wandb.log(metrics)
 
+@hydra.main(version_base=None, config_name="config")
+def main(cfg: Config):
+  train(cfg)
 
 if __name__ == "__main__":
   jax.config.parse_flags_with_absl()  #allow for debugging flags such as --jax_debug_nans=True or --jax_disable_jit=True

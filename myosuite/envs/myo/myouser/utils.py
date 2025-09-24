@@ -8,6 +8,7 @@ import mediapy as media
 import matplotlib.pyplot as plt
 import wandb
 from datetime import datetime
+import gradio as gr
 
 
 def render_traj(rollouts: List[List[State]],
@@ -63,13 +64,16 @@ def update_target_visuals(scn, target_pos, target_size,
     #                     target_pos, target_pos + np.array([1e-6, 0, 0]))
 
 class ProgressLogger:
-  def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None, log_wandb=True, log_tb=True):
+  def __init__(self, writer=None, ppo_params=None, local_plotting=False, logdir=None, log_wandb=True, log_tb=True, log_gradio=False):
     self.times = [datetime.now()]
     self.writer = writer
     self.ppo_params = ppo_params
     self.local_plotting = local_plotting
     self.log_wandb = log_wandb
     self.log_tb = log_tb
+    self.log_gradio = log_gradio
+    if log_gradio:
+      gr.Info(f"Setting up progress logger to log to wandb and show some info updates in Gradio!")
 
     if self.local_plotting:
       assert logdir is not None, "logdir must be provided if local_plotting is True"
@@ -97,10 +101,17 @@ class ProgressLogger:
     if len(self.times) == 2:
         print(f'time to JIT compile: {self.times[1] - self.times[0]}')
         print(f'Starting training...')
+        if self.log_gradio:
+          time_diff = f"Starting training! Time to JIT compile: {self.times[1] - self.times[0]}"
+          gr.Info(time_diff)
 
     # Log to Weights & Biases
     if self.log_wandb:
       wandb.log({'num_steps': num_steps, **metrics}, step=num_steps)
+
+    if self.log_gradio:
+      gr.Info(f"Logged step {num_steps} to wandb!")
+
 
     # Log to TensorBoard
     if self.log_tb and self.writer is not None:
