@@ -91,7 +91,18 @@ def _validate_madrona_args(
           "Implement action_repeat using PipelineEnv's _n_frames to avoid"
           ' unnecessary rendering!'
       )
-
+    
+# def _validate_checkpoint_args(
+#     num_checkpoints: int = 1,
+#     save_checkpoint_path: Optional[str] = None,
+# ):
+#   """Validates arguments for logging checkpoints during and/or after training."""
+#   if num_checkpoints > 1:
+#     raise ValueError(f"No checkpoint path was provided via 'save_checkpoint_path', although num_checkpoints={num_checkpoints}")
+#   elif save_checkpoint_path is None and num_checkpoints == 1:
+#     logging.warning("Set num_checkpoints=0, as no checkpoint path was provided via 'save_checkpoint_path'")
+#     num_checkpoints = 0
+#   return num_checkpoints
 
 def _maybe_wrap_env(
     env: envs.Env,
@@ -235,7 +246,9 @@ def train(
     progress_fn: Callable[[int, Metrics], None] = lambda *args: None,
     policy_params_fn: Callable[..., None] = lambda *args: None,
     # checkpointing
+    num_checkpoints: int = 1,
     save_checkpoint_path: Optional[str] = None,
+    policy_params_fn_checkpoints: Callable[..., None] = lambda *args: None,
     restore_checkpoint_path: Optional[str] = None,
     restore_params: Optional[Any] = None,
     restore_value_fn: bool = True,
@@ -276,7 +289,8 @@ def train(
     num_updates_per_batch: the number of times to run the gradient update over
       all minibatches before doing a new environment rollout
     num_resets_per_eval: the number of environment resets to run between each
-      eval. The environment resets occur on the host
+      eval (or other training interruption). The environment resets occur on the host
+      ## TODO: rename to num_resets_per_training_block
     normalize_observations: whether to normalize observations
     reward_scaling: float scaling for reward
     clipping_epsilon: clipping epsilon for PPO loss
@@ -289,7 +303,7 @@ def train(
     num_evals: the number of evals to run during the entire training run.
       Increasing the number of evals increases total training time
     eval_env: an optional environment for eval only, defaults to `environment`
-    num_eval_envs: the number of envs to use for evluation. Each env will run 1
+    num_eval_envs: the number of envs to use for evaluation. Each env will run 1
       episode, and all envs run in parallel during eval.
     deterministic_eval: whether to run the eval with a deterministic policy
     log_training_metrics: whether to log training metrics and callback to
@@ -298,9 +312,12 @@ def train(
       training metrics
     progress_fn: a user-defined callback function for reporting/plotting metrics
     policy_params_fn: a user-defined callback function that can be used for
-      saving custom policy checkpoints or creating policy rollouts and videos
-    save_checkpoint_path: the path used to save checkpoints. If None, no
-      checkpoints are saved.
+      creating policy rollouts and videos
+    num_checkpoints: the number of checkpoints to store during the entire training run.
+    save_checkpoint_path: the path used to save checkpoints. [WARNING: deprecated; 
+    pass path when defining policy_params_fn_checkpoints instead]
+    policy_params_fn_checkpoints: a user-defined callback function that can be used for
+      saving custom policy checkpoints
     restore_checkpoint_path: the path used to restore previous model params
     restore_params: raw network parameters to restore the TrainingState from.
       These override `restore_checkpoint_path`. These paramaters can be obtained
@@ -340,17 +357,19 @@ def train(
       batch_size * unroll_length * num_minibatches * action_repeat
   )
   num_evals_after_init = max(num_evals - 1, 1)
+  num_training_interruptions = np.lcm(num_evals_after_init, max(num_checkpoints, 1))
   # The number of training_step calls per training_epoch call.
-  # equals to ceil(num_timesteps / (num_evals * env_step_per_training_step *
+  # equals to ceil(num_timesteps / (num_training_interruptions * env_step_per_training_step *
   #                                 num_resets_per_eval))
   num_training_steps_per_epoch = np.ceil(
       num_timesteps
       / (
-          num_evals_after_init
+          num_training_interruptions
           * env_step_per_training_step
           * max(num_resets_per_eval, 1)
       )
   ).astype(int)
+  print(f"num_training_interruptions: {num_training_interruptions - 1}")
 
   key = jax.random.PRNGKey(seed)
   global_key, local_key = jax.random.split(key)
@@ -360,6 +379,7 @@ def train(
   # key_networks should be global, so that networks are initialized the same
   # way for different processes.
   key_params, _ = jax.random.split(global_key, 2)
+  # key_policy, key_value = jax.random.split(global_key)
   del global_key
 
   assert num_envs % device_count == 0
@@ -606,6 +626,10 @@ def train(
   )
   normalizer_init_params = running_statistics.init_state(obs_shape['proprioception'])
   init_params = ppo_network.init(key_params, dummy_obs, normalizer_init_params)
+  # init_params = ppo_losses.PPONetworkParams(
+  #       policy=ppo_network.policy_network.init(key_policy),
+  #       value=ppo_network.value_network.init(key_value),
+  #   )
 
   training_state = TrainingState(  # pytype: disable=wrong-arg-types  # jax-ndarray
       optimizer_state=optimizer.init(init_params),  # pytype: disable=wrong-arg-types  # numpy-scalars
@@ -616,15 +640,36 @@ def train(
       env_steps=types.UInt64(hi=0, lo=0),
   )
 
-  if restore_checkpoint_path is not None:
+  if restore_checkpoint_path is not None:    
+    # params = checkpoint.load(restore_checkpoint_path)
+    # value_params = params[2] if restore_value_fn else init_params.value
+    # training_state = training_state.replace(
+    #     normalizer_params=params[0],
+    #     params=training_state.params.replace(
+    #         policy=params[1], value=value_params
+    #     ),
+    # )
+
+    #TODO: fix this properly
+
     params = checkpoint.load(restore_checkpoint_path)
+    # print(params[1]["params"]["policy_network"]["layers"].keys())
+    # print(params[1]["params"]["value_network"]["layers"].keys())
+    normalizer_params = params[0]
+    network_params = params[1]
+    network_params["params"]["policy_network"]["layers"] = {int(k): v for k, v in network_params["params"]["policy_network"]["layers"].items()}
+    network_params["params"]["value_network"]["layers"] = {int(k): v for k, v in network_params["params"]["value_network"]["layers"].items()}
+    if 'vision_aux_output' in network_params['params']:
+        network_params['params']['vision_aux_output']["layers"] = {int(k): v for k, v in network_params['params']['vision_aux_output']['layers'].items()}
+
     training_state = training_state.replace(
-        normalizer_params=params[0],
-        params=params[1],
+        normalizer_params=normalizer_params,
+        params=network_params,  #dict(training_state.params["params"], **{"policy_network": policy_params, "value_network": value_params}),
     )
 
   if restore_params is not None:
     logging.info('Restoring TrainingState from `restore_params`.')
+    # value_params = restore_params[2] if restore_value_fn else init_params.value
     training_state = training_state.replace(
         normalizer_params=restore_params[0],
         params=restore_params[1],
@@ -644,43 +689,48 @@ def train(
       training_state, jax.local_devices()[:local_devices_to_use]
   )
 
-  eval_env = _maybe_wrap_env(
-      eval_env or environment,
-      wrap_env,
-      num_eval_envs,
-      episode_length,
-      action_repeat,
-      local_device_count=1,  # eval on the host only
-      key_env=eval_key,
-      wrap_env_fn=wrap_env_fn,
-      randomization_fn=randomization_fn,
-  )
-  evaluator = acting.Evaluator(
-      eval_env,
-      functools.partial(make_policy, deterministic=deterministic_eval),
-      num_eval_envs=num_eval_envs,
-      episode_length=episode_length,
-      action_repeat=action_repeat,
-      key=eval_key,
-  )
+  # eval_env = _maybe_wrap_env(
+  #     eval_env or environment,
+  #     wrap_env,
+  #     num_eval_envs,
+  #     episode_length,
+  #     action_repeat,
+  #     local_device_count=1,  # eval on the host only
+  #     key_env=eval_key,
+  #     wrap_env_fn=wrap_env_fn,
+  #     randomization_fn=randomization_fn,
+  # )
+  # evaluator = acting.Evaluator(
+  #     eval_env,
+  #     functools.partial(make_policy, deterministic=deterministic_eval),
+  #     num_eval_envs=num_eval_envs,
+  #     episode_length=episode_length,
+  #     action_repeat=action_repeat,
+  #     key=eval_key,
+  # )
 
   # Run initial eval
   metrics = {}
   if process_id == 0 and num_evals > 1:
-    metrics = evaluator.run_evaluation(
-        _unpmap((
-            training_state.normalizer_params,
-            training_state.params,
-        )),
-        training_metrics={},
-    )
-    logging.info(metrics)
-    progress_fn(0, metrics)
+  #   metrics = evaluator.run_evaluation(
+  #       _unpmap((
+  #           training_state.normalizer_params,
+  #           training_state.params,
+  #       )),
+  #       training_metrics={},
+  #   )
+  #   logging.info(metrics)
+  #   progress_fn(0, metrics)
+    metrics = policy_params_fn(0, make_policy, _unpmap((
+              training_state.normalizer_params,
+              training_state.params,
+          )))
+
 
   training_metrics = {}
   training_walltime = 0
   current_step = 0
-  for it in range(num_evals_after_init):
+  for it in range(num_training_interruptions):
     logging.info('starting iteration %s %s', it, time.time() - xt)
 
     for _ in range(max(num_resets_per_eval, 1)):
@@ -707,20 +757,22 @@ def train(
         training_state.params,
     ))
 
-    policy_params_fn(current_step, make_policy, params)
+    if (num_checkpoints > 0) and ((it+1) % (num_training_interruptions/max(num_checkpoints, 1)) == 0):
+      policy_params_fn_checkpoints(current_step, make_policy, params)
+      if save_checkpoint_path is not None:
+        checkpoint.save(
+            save_checkpoint_path, current_step, params, ckpt_config
+        )
+    if (it+1) % (num_training_interruptions/num_evals_after_init) == 0:
+      metrics = policy_params_fn(current_step, make_policy, params)
 
-    if save_checkpoint_path is not None:
-      checkpoint.save(
-          save_checkpoint_path, current_step, params, ckpt_config
-      )
-
-    if num_evals > 0:
-      metrics = evaluator.run_evaluation(
-          params,
-          training_metrics,
-      )
-      logging.info(metrics)
-      progress_fn(current_step, metrics)
+    # if num_evals > 0:
+    #   metrics = evaluator.run_evaluation(
+    #       params,
+    #       training_metrics,
+    #   )
+    #   logging.info(metrics)
+    #   progress_fn(current_step, metrics)
 
   total_steps = current_step
   if not total_steps >= num_timesteps:

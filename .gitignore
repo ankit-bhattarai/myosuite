@@ -130,3 +130,7 @@ docs/source/notebooks_internal/
 myosuite/agents/nohup.out
 myosuite/agents/outputs
 **/checkpoints/
+logs/
+wandb/
+outputs/
+script.sh

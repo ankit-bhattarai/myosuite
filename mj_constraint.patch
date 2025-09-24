@@ -1,0 +1,27 @@
+--- constraint.py	2025-08-27 17:59:15.235621387 +0100
++++ mujoco/mjx/_src/constraint.py	2025-09-03 21:29:19.056998000 +0100
+@@ -260,13 +260,19 @@
+     pos1, pos2 = d.qpos[qposadr1], d.qpos[qposadr2]
+     ref1, ref2 = m.qpos0[qposadr1], m.qpos0[qposadr2]
+     dif = (pos2 - ref2) * (obj2id > -1)
+-    dif_power = jp.power(dif, jp.arange(0, 5))
+-    pos = pos1 - ref1 - jp.dot(data[:5], dif_power)
+-    deriv = jp.dot(data[1:5], dif_power[:4] * jp.arange(1, 5)) * (obj2id > -1)
++    dif_power = jp.power(dif, jp.arange(0, 2))
++    eq_obj3id = data[4].astype(jp.int32)
++    dofadr3, qposadr3 = jp.asarray(m.jnt_dofadr)[eq_obj3id], jp.asarray(m.jnt_qposadr)[eq_obj3id]
++    pos3, ref3 = d.qpos[qposadr3], m.qpos0[qposadr3]
++    dif3 = (pos3 - ref3) * (eq_obj3id > 0)
++    dif3_power = dif3 * dif_power
++    pos = pos1 - ref1 - jp.dot(data[:2], dif_power) - jp.dot(data[2:4], dif3_power)
++    deriv = (jp.dot(data[1:2], dif_power[:1] * jp.arange(1, 2)) + data[3] * dif3) * (obj2id > -1)
++    deriv3 = (jp.dot(data[2:3], dif_power[:1] * jp.arange(1, 2)) + data[3] * dif) * (eq_obj3id > 0)
+ 
+-    j = jp.zeros((m.nv)).at[dofadr2].set(-deriv).at[dofadr1].set(1.0)
++    j = jp.zeros((m.nv)).at[dofadr3].set(-deriv3).at[dofadr2].set(-deriv).at[dofadr1].set(1.0)
+     invweight = m.dof_invweight0[dofadr1]
+     invweight += m.dof_invweight0[dofadr2] * (obj2id > -1)
++    invweight += m.dof_invweight0[dofadr3] * (eq_obj3id > 0)
+     zero = jp.zeros_like(pos)
+ 
+     efc = _row(j, pos, pos, invweight, solref, solimp, zero, zero)
