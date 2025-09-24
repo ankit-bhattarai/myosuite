@@ -46,6 +46,8 @@ def get_available_checkpoint_numbers(checkpoint_run):
 
 
 def checkpoint_path_from_run_number(checkpoint_run, checkpoint_number):
+    if checkpoint_run == "None" or checkpoint_number == "None":
+        return "None"
     checkpoint_path = os.path.join(CHECKPOINT_PATH, checkpoint_run)
     checkpoint_path = os.path.join(checkpoint_path, "checkpoints")
     checkpoint_path = os.path.join(checkpoint_path, checkpoint_number)
