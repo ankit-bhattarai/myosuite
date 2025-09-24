@@ -73,30 +73,36 @@ def hex_to_rgb(hex_color):
     rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
     return rgb
 
-def rl_parameters():
-    with gr.Row():
-        num_timesteps = gr.Number(
-            label="Number of Timesteps",
-            value=15000000,
-            minimum=0,
-            maximum=50000000,
-            interactive=True
-        )
-        num_checkpoints = gr.Number(
-            label="Number of Checkpoints",
-            value=1,
-            minimum=1,
-            maximum=10,
-            interactive=True
-        )
-        num_evaluations = gr.Number(
-            label="Number of Evaluations during Training",
-            value=1,
-            minimum=1,
-            maximum=10,
-            interactive=True
-        )
-        ctrl_dt = gr.Number(
+class RLParameters:
+    num_elements: int = 9
+
+    @staticmethod
+    def get_parameters():
+        with gr.Row():
+            num_timesteps = gr.Number(
+                label="Number of Timesteps",
+                value=15000000,
+                minimum=0,
+                maximum=50000000,
+                step=100_000,
+                interactive=True
+            )
+        
+            num_checkpoints = gr.Number(
+                label="Number of Checkpoints",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
+            num_evaluations = gr.Number(
+                label="Number of Evaluations during Training",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
+            ctrl_dt = gr.Number(
             label="Control Timestep (s)",   
             value=0.05,
             minimum=0.01,
@@ -104,197 +110,291 @@ def rl_parameters():
             step=0.01,
             interactive=True
         )
-    with gr.Row():
-        batch_size = gr.Number(
-            label="Batch Size",
-            value=128,
-            minimum=0,
-            maximum=512,
-            interactive=True
-        )
-        num_envs = gr.Number(
-            label="Number of Environments",
-            value=1024,
-            minimum=0,
-            maximum=4096,
-            interactive=True
-        )
-        num_minibatches = gr.Number(
-            label="Number of Minibatches",
-            value=8,
-            minimum=0,
-            maximum=40,
-            interactive=True
-        )
-    gr.Markdown(
-        "<span style='font-size: 1em;'>"
-        "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
-        "</span>",
-        elem_id="hint-text"
-    )
-    with gr.Row():
-        choices = get_available_checkpoints()
-        select_checkpoint_run = gr.Dropdown(
-            label="Select Experiment from which to load checkpoints",
-            choices=choices,
-            interactive=True,
-            value="None"
-        )
-        choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
-        select_checkpoint_number = gr.Dropdown(
-            label="Select Checkpoint Number",
-            choices=choices,
-            interactive=True,
-            value="None"
-        )
-        select_checkpoint_run.change(
-            update_checkpoint_numbers,
-            inputs=select_checkpoint_run,
-            outputs=select_checkpoint_number
-        )
-    return num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
+        with gr.Row():
+            batch_size = gr.Number(
+                    label="Batch Size",
+                    value=128,
+                    minimum=0,
+                    maximum=512,
+                    interactive=True
+                )
+            num_envs = gr.Number(
+                label="Number of Environments",
+                value=1024,
+                minimum=0,
+                maximum=4096,
+                interactive=True
+            )
+            num_minibatches = gr.Number(
+                label="Number of Minibatches",
+                value=8,
+                minimum=0,
+                maximum=40,
+                interactive=True
+            )
+            gr.Markdown(
+                "<span style='font-size: 1em;'>"
+                "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
+                "</span>",
+                elem_id="hint-text"
+            )
+        with gr.Row():
+            choices = get_available_checkpoints()
+            select_checkpoint_run = gr.Dropdown(
+                label="Select Experiment from which to load checkpoints",
+                choices=choices,
+                interactive=True,
+                value="None"
+            )
+            choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
+            select_checkpoint_number = gr.Dropdown(
+                label="Select Checkpoint Number",
+                choices=choices,
+                interactive=True,
+                value="None"
+            )
+            select_checkpoint_run.change(
+                update_checkpoint_numbers,
+                inputs=select_checkpoint_run,
+                outputs=select_checkpoint_number
+            )
+        return num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
 
-def box_option_parameters(i):
-    # Boxes option row
-    with gr.Row(visible=False) as box_row:
-        with gr.Accordion(label=f"Box {i+1} Settings", open=False):
-            with gr.Row():
-                box_position_x = gr.Slider(
-                    label="Depth Position",
-                    minimum=0.2,
-                    maximum=0.55,
-                    value=0.225,
-                    step=0.001,
-                    interactive=True
-                )
-                box_position_y = gr.Slider(
-                    label="Horizontal Position",
-                    minimum=-0.25,
-                    maximum=0.25,
-                    value=-0.1,
-                    step=0.001,
-                    interactive=True
-                )
-                box_position_z = gr.Slider(
-                    label="Vertical Position",
-                    minimum=0.6,
-                    maximum=1.2,
-                    value=0.843,
-                    step=0.001,
-                    interactive=True
-                )
-            with gr.Row():
-                box_size_x_slider = gr.Slider(
-                    label="Width",
-                    minimum=0.02,
-                    maximum=0.03,
-                    value=0.025,
-                    step=0.001,
-                    interactive=True
-                )
-                box_size_y_slider = gr.Slider(
-                    label="Height",
-                    minimum=0.02,
-                    maximum=0.03,
-                    value=0.025,
-                    step=0.001,
-                    interactive=True
-                )
-                completion_bonus_btn = gr.Slider(
-                    label="Completion Bonus",
-                    minimum=0.0,
-                    maximum=10.0,
-                    value=0.0,
-                    step=0.1,
-                    interactive=True
-                )
-            with gr.Row():
-                min_touch_force = gr.Slider(
-                    label="Minimum Touch Force",
-                    info="Minimum force required to register a touch",
-                    minimum=0.0,
-                    maximum=10.0,
-                    value=1.0,
-                    step=0.1,
-                    interactive=True
-                )
-                orientation_angle = gr.Slider(
-                    label="Orientation Angle",
-                    minimum=0.0,
-                    maximum=180.0,
-                    value=45,
-                    step=1.0,
-                    interactive=True
-                )
-                rgb_btn = gr.ColorPicker(
-                    label="RGB",
-                    value="#FF6B6B",
-                    interactive=True
-                )
-    return box_row, box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn
+    @staticmethod
+    def get_my_args(all_args):
+        return all_args[:RLParameters.num_elements]
 
-def sphere_option_parameters(i):
+    @classmethod
+    def parse_values(cls, all_args):
+        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = cls.get_my_args(all_args)
+        overrides = []
+        num_targets = cls.get_number_targets(all_args)
+        to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+        overrides.append(f"env/task_config/targets={to_text[int(num_targets)]}")
+        overrides.append(f"rl.num_timesteps={int(num_timesteps)}")
+        overrides.append(f"rl.num_checkpoints={int(num_checkpoints)}")
+        overrides.append(f"rl.num_evals={int(num_evaluations)}")
+        overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
+        overrides.append(f"rl.batch_size={int(batch_size)}")
+        overrides.append(f"rl.num_envs={int(num_envs)}")
+        overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
+        exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
+        overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
+        return overrides
+
+    @classmethod
+    def get_number_targets(cls, all_args):
+        return all_args[RLParameters.num_elements]
+
+class BoxParameters:
+    num_elements: int = 9
+    
+    @staticmethod
+    def fields():
+        return ["box_position_x", "box_position_y", "box_position_z", "box_size_x", "box_size_y", "completion_bonus", "min_touch_force", "orientation_angle", "rgb"]
+    
+    @staticmethod
+    def get_parameters(i):
+        # Boxes option row
+        with gr.Row(visible=False) as box_row:
+            with gr.Accordion(label=f"Box {i+1} Settings", open=False):
+                with gr.Row():
+                    box_position_x = gr.Slider(
+                        label="Depth Position",
+                        minimum=0.2,
+                        maximum=0.55,
+                        value=0.225,
+                        step=0.001,
+                        interactive=True
+                    )
+                    box_position_y = gr.Slider(
+                        label="Horizontal Position",
+                        minimum=-0.25,
+                        maximum=0.25,
+                        value=-0.1,
+                        step=0.001,
+                        interactive=True
+                    )
+                    box_position_z = gr.Slider(
+                        label="Vertical Position",
+                        minimum=0.6,
+                        maximum=1.2,
+                        value=0.843,
+                        step=0.001,
+                        interactive=True
+                    )
+                with gr.Row():
+                    box_size_x_slider = gr.Slider(
+                        label="Width",
+                        minimum=0.02,
+                        maximum=0.03,
+                        value=0.025,
+                        step=0.001,
+                        interactive=True
+                    )
+                    box_size_y_slider = gr.Slider(
+                        label="Height",
+                        minimum=0.02,
+                        maximum=0.03,
+                        value=0.025,
+                        step=0.001,
+                        interactive=True
+                    )
+                    completion_bonus_btn = gr.Slider(
+                        label="Completion Bonus",
+                        minimum=0.0,
+                        maximum=10.0,
+                        value=0.0,
+                        step=0.1,
+                        interactive=True
+                    )
+                with gr.Row():
+                    min_touch_force = gr.Slider(
+                        label="Minimum Touch Force",
+                        info="Minimum force required to register a touch",
+                        minimum=0.0,
+                        maximum=10.0,
+                        value=1.0,
+                        step=0.1,
+                        interactive=True
+                    )
+                    orientation_angle = gr.Slider(
+                        label="Orientation Angle",
+                        minimum=0.0,
+                        maximum=180.0,
+                        value=45,
+                        step=1.0,
+                        interactive=True
+                    )
+                    rgb_btn = gr.ColorPicker(
+                        label="RGB",
+                        value="#FF6B6B",
+                        interactive=True
+                    )
+        return box_row, (box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn)
+
+    @staticmethod
+    def get_my_args(i, all_args):
+        rl_number = RLParameters.num_elements
+        num_targets=1
+        radio_number = 10
+        box_start = rl_number + radio_number + num_targets
+        box_end = box_start + 10*BoxParameters.num_elements
+        box_args = all_args[box_start:box_end]
+        start_index = i*BoxParameters.num_elements
+        end_index = start_index + BoxParameters.num_elements
+        return box_args[start_index:end_index]
+
+    @classmethod
+    def parse_values(cls, i, all_args):
+        box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn = cls.get_my_args(i, all_args)
+        rgb = hex_to_rgb(rgb_btn)
+        overrides = []
+        overrides.append(f"env.task_config.targets.target_{i}.position=[{box_position_x},{box_position_y},{box_position_z}]")
+        overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{box_size_x_slider},{box_size_y_slider},0.01]")
+        overrides.append(f"env.task_config.targets.target_{i}.site_size=[{box_size_x_slider-0.005},{box_size_y_slider-0.005},0.01]")
+        overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus_btn}")
+        overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_touch_force}")
+        overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{orientation_angle*np.pi/180},0]")
+        overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
+        return overrides
+
+
+class SphereParameters:
+    num_elements: int = 7
+
+    @staticmethod
+    def fields():
+        return ["x_range", "y_range", "z_range", "size_range", "dwell_duration", "completion_bonus", "rgb"]
+    
+    @staticmethod
+    def get_parameters(i):
     # Sphere option row  
-    with gr.Row(visible=True) as sphere_row:
-        with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
-            with gr.Row():
-                gr.Markdown("#### The coordinates for the sphere targets are randomly sampled from a range, please choose them below")
-            with gr.Row():
-                x_slider = RangeSlider(
-                    label=f"Depth Range",
-                    minimum=sphere_ranges["x"][0],
-                    maximum=sphere_ranges["x"][1],
-                    value=(sphere_ranges["x"][0], sphere_ranges["x"][1]),
-                    step=0.001,
-                    interactive=True
-                )
-                y_slider = RangeSlider(
-                    label=f"Horizontal Range",
-                    minimum=sphere_ranges["y"][0],
-                    maximum=sphere_ranges["y"][1],
-                    value=(sphere_ranges["y"][0], sphere_ranges["y"][1]),
-                    step=0.001,
-                    interactive=True
-                )
-                z_slider = RangeSlider(
-                    label=f"Vertical Range",
-                    minimum=sphere_ranges["z"][0],
-                    maximum=sphere_ranges["z"][1],
-                    value=(sphere_ranges["z"][0], sphere_ranges["z"][1]),
-                    step=0.001,
-                    interactive=True
-                )
-            with gr.Row():
-                size_slider = RangeSlider(
-                    label=f"Size Range",
-                    minimum=sphere_ranges["size"][0],
-                    maximum=sphere_ranges["size"][1],
-                    value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
-                    step=0.001,
-                    interactive=True
-                )
-                dwell_duration = gr.Number(
-                    label=f"Dwell Duration",
-                    value=0.25,
-                    minimum=0.0,
-                    maximum=1.0,
-                    step=0.01,
-                    interactive=True
-                )
-                completion_bonus_pt = gr.Number(
-                    label=f"Completion Bonus",
-                    value=0.0,
-                    minimum=0.0,
-                    maximum=10.0,
-                    step=0.1,
-                    interactive=True
-                )
-                color_picker = gr.ColorPicker(
-                    label=f"RGB",
-                    value="#FF6B6B",
-                    interactive=True
-                )
-    return sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker
+        with gr.Row(visible=True) as sphere_row:
+            with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
+                with gr.Row():
+                    gr.Markdown("#### The coordinates for the sphere targets are randomly sampled from a range, please choose them below")
+                with gr.Row():
+                    x_slider = RangeSlider(
+                        label=f"Depth Range",
+                        minimum=sphere_ranges["x"][0],
+                        maximum=sphere_ranges["x"][1],
+                        value=(sphere_ranges["x"][0], sphere_ranges["x"][1]),
+                        step=0.001,
+                        interactive=True
+                    )
+                    y_slider = RangeSlider(
+                        label=f"Horizontal Range",
+                        minimum=sphere_ranges["y"][0],
+                        maximum=sphere_ranges["y"][1],
+                        value=(sphere_ranges["y"][0], sphere_ranges["y"][1]),
+                        step=0.001,
+                        interactive=True
+                    )
+                    z_slider = RangeSlider(
+                        label=f"Vertical Range",
+                        minimum=sphere_ranges["z"][0],
+                        maximum=sphere_ranges["z"][1],
+                        value=(sphere_ranges["z"][0], sphere_ranges["z"][1]),
+                        step=0.001,
+                        interactive=True
+                    )
+                with gr.Row():
+                    size_slider = RangeSlider(
+                        label=f"Size Range",
+                        minimum=sphere_ranges["size"][0],
+                        maximum=sphere_ranges["size"][1],
+                        value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
+                        step=0.001,
+                        interactive=True
+                    )
+                    dwell_duration = gr.Number(
+                        label=f"Dwell Duration",
+                        value=0.25,
+                        minimum=0.0,
+                        maximum=1.0,
+                        step=0.01,
+                        interactive=True
+                    )
+                    completion_bonus_pt = gr.Number(
+                        label=f"Completion Bonus",
+                        value=0.0,
+                        minimum=0.0,
+                        maximum=10.0,
+                        step=0.1,
+                        interactive=True
+                    )
+                    color_picker = gr.ColorPicker(
+                        label=f"RGB",
+                        value="#FF6B6B",
+                        interactive=True
+                    )
+        return sphere_row, (x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker)
+
+    def get_my_args(i, all_args):
+        rl_number = RLParameters.num_elements
+        radio_number = 10
+        box_number = 10*BoxParameters.num_elements
+        num_targets=1
+        sphere_start = rl_number + radio_number + box_number + num_targets
+        sphere_args = all_args[sphere_start:]
+        start_index = i*SphereParameters.num_elements
+        end_index = start_index + SphereParameters.num_elements
+        return sphere_args[start_index:end_index]
+    
+    @classmethod
+    def parse_values(cls, i, all_args):
+        x_range, y_range, z_range, size_range, dwell_duration, completion_bonus, rgb = cls.get_my_args(i, all_args)
+        rgb = hex_to_rgb(rgb)
+        overrides = []
+        overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{-y_range[0]},{z_range[0]}],[{x_range[1]},{-y_range[1]},{z_range[1]}]]")
+        overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
+        overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell_duration}")
+        overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
+        overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
+        print(overrides)
+        return overrides
+
 
 def get_ui(wandb_url, save_cfgs=[]):
     # Fix box handlers properly
@@ -308,7 +408,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             info="Click to copy the URL and monitor training progress"
                     )
         gr.Markdown("### RL Parameters")
-        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_parameters()
+        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = RLParameters.get_parameters()
         gr.Markdown("### Dynamic Targets Feature")
         
         num_elements = gr.Number(
@@ -342,31 +442,17 @@ def get_ui(wandb_url, save_cfgs=[]):
                         value="Sphere",
                         interactive=True
                     )
-                    box_row, box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn = box_option_parameters(i)
+                    box_row, box_params = BoxParameters.get_parameters(i)
                     
                     # Store box components
                     all_components['boxes'].append({
-                        'box_position_x': box_position_x,
-                        'box_position_y': box_position_y,
-                        'box_position_z': box_position_z,
-                        'box_size_x': box_size_x_slider,
-                        'box_size_y': box_size_y_slider,
-                        'completion_bonus': completion_bonus_btn,
-                        'min_touch_force': min_touch_force,
-                        'orientation_angle': orientation_angle,
-                        'rgb': rgb_btn
+                        key: value for key, value in zip(BoxParameters.fields(), box_params)
                     })
-                    sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker = sphere_option_parameters(i)                    
+                    sphere_row, sphere_params = SphereParameters.get_parameters(i)
                     # Store sphere components
                     all_components['spheres'].append({
-                        'x_range': x_slider,
-                        'y_range': y_slider,
-                        'z_range': z_slider,
-                        'size_range': size_slider,
-                        'dwell_duration': dwell_duration,
-                        'completion_bonus': completion_bonus_pt,
-                        'rgb': color_picker
-                    })
+                        key: value for key, value in zip(SphereParameters.fields(), sphere_params)
+                    })                    
             
             # Store references
             dynamic_rows.append(main_row)
@@ -396,81 +482,28 @@ def get_ui(wandb_url, save_cfgs=[]):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, checkpoints, evaluations, ctrl_dt, batch, envs, num_minibatches, num_targets, select_checkpoint_run, select_checkpoint_number = args[:10]
-            radio_values = args[10:20]  # 10 radio values
-
-            # Get all other component values
-            box_values = args[20:110]  # 9 components × 10 = 90 values
-            sphere_values = args[110:]   # 7 components × 10 = 70 values
+            num_targets = args[RLParameters.num_elements]
+            radio_start = RLParameters.num_elements + 1
+            radio_end = radio_start + 10
+            radio_values = args[radio_start:radio_end]
             
 
-            cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=ui-pilot-testing", "wandb.entity=biom-rl-ui"]
-            to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
-            cfg_overrides.append(f"env/task_config/targets={to_text[int(num_targets)]}")
-
-            
-            # RL Parameters
-            cfg_overrides.append(f"rl.num_timesteps={int(timesteps)}")
-            cfg_overrides.append(f"rl.num_checkpoints={int(checkpoints)}")
-            cfg_overrides.append(f"rl.num_evals={int(evaluations)}")
-            cfg_overrides.append(f"rl.batch_size={int(batch)}")
-            cfg_overrides.append(f"rl.num_envs={int(envs)}")
-            cfg_overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
-            cfg_overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
-
-            exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
-            cfg_overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
-            error = False
+            cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
+            rl_overrides = RLParameters.parse_values(args)
+            cfg_overrides.extend(rl_overrides)
 
             for i in range(int(num_targets)):
                 target_type = radio_values[i]
                 cfg_overrides.append(f"+env/task_config/targets/target_{i}={target_type.lower()}")
                 
                 if target_type == "Box":
-                    # Extract box values for this target
-                    start_idx = i * 9
-                    btn_pos_x = box_values[start_idx]
-                    btn_pos_y = -box_values[start_idx + 1]
-                    btn_pos_z = box_values[start_idx + 2]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[{btn_pos_x},{btn_pos_y},{btn_pos_z}]")
-                    btn_size_x = box_values[start_idx + 3]
-                    btn_size_y = box_values[start_idx + 4]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{btn_size_x},{btn_size_y},0.01]")
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.site_size=[{btn_size_x-0.005},{btn_size_y-0.005},0.01]")
-                    completion_bonus = box_values[start_idx + 5]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
-                    min_force = box_values[start_idx + 6]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_force}")
-                    orientation = box_values[start_idx + 7]
-                    euler = -orientation * np.pi / 180
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{euler},0]")
-                    rgb = box_values[start_idx + 8]
-                    rgb = hex_to_rgb(rgb)
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
-                    
+                    overrides = BoxParameters.parse_values(i, args)
+                    cfg_overrides.extend(overrides)
                     
                 else:  # Sphere
-                    # Extract sphere values for this target
-                    start_idx = i * 7
-                    x_range = sphere_values[start_idx]
-                    y_range = sphere_values[start_idx + 1]
-                    z_range = sphere_values[start_idx + 2]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{-y_range[0]},{z_range[0]}],[{x_range[1]},{-y_range[1]},{z_range[1]}]]")
-                    size_range = sphere_values[start_idx + 3]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
-                    dwell = sphere_values[start_idx + 4]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell}")
-                    if dwell < 0.01:
-                        error = True
-                        gr.Warning("Dwell duration must be greater than 0.0")
-                    completion_bonus = sphere_values[start_idx + 5]
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
-                    rgb = sphere_values[start_idx + 6]
-                    rgb = hex_to_rgb(rgb)
-                    cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
+                    overrides = SphereParameters.parse_values(i, args)
+                    cfg_overrides.extend(overrides)
 
-            if error:
-                return ["Error in the configuration, please check the configuration and try again"]
             return cfg_overrides
 
         def run_training(*args):
@@ -530,17 +563,17 @@ def get_ui(wandb_url, save_cfgs=[]):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, num_elements, select_checkpoint_run, select_checkpoint_number]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, num_elements]
         run_inputs.extend(radios)
         
         # Add all box components
         for i in range(10):
-            for key in ['box_position_x', 'box_position_y', 'box_position_z', 'box_size_x', 'box_size_y', 'completion_bonus', 'min_touch_force', 'orientation_angle', 'rgb']:
+            for key in BoxParameters.fields():
                 run_inputs.append(all_components['boxes'][i][key])
         
         # Add all sphere components
         for i in range(10):
-            for key in ['x_range', 'y_range', 'z_range', 'size_range', 'dwell_duration', 'completion_bonus', 'rgb']:
+            for key in SphereParameters.fields():
                 run_inputs.append(all_components['spheres'][i][key])
 
         # Run button event
