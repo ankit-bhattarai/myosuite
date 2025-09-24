@@ -1,10 +1,11 @@
 import os
 import gradio as gr
-from gradio_rangeslider import RangeSlider
-from myosuite.envs.myo.myouser.myouser_universal import MyoUserUniversal
-from myosuite.envs.myo.myouser.train_jax_ppo import train
-from myosuite.envs.myo.myouser.hydra_cli import load_config_interactive
-import numpy as np
+if gr.NO_RELOAD:
+    from gradio_rangeslider import RangeSlider
+    from myosuite.envs.myo.myouser.myouser_universal import MyoUserUniversal
+    from myosuite.envs.myo.myouser.train_jax_ppo import train
+    from myosuite.envs.myo.myouser.hydra_cli import load_config_interactive
+    import numpy as np
 
 pointing_ranges = {
     "x": (0.225, 0.35),
@@ -30,7 +31,9 @@ def hex_to_rgb(hex_color):
     if "rgba" in hex_color:
         return extract_rgb(hex_color)
     hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+    print(rgb)
+    return rgb
 
 
 def get_ui(wandb_url):
@@ -195,7 +198,7 @@ def get_ui(wandb_url):
                     with gr.Row(visible=True) as pointing_row:
                         with gr.Accordion(label=f"Pointing {i+1} Settings", open=False):
                             with gr.Row():
-                                gr.Markdown("#######The coordinates for the pointing targets are randomly sampled from a range, please choose them below")
+                                gr.Markdown("#### The coordinates for the pointing targets are randomly sampled from a range, please choose them below")
                             with gr.Row():
                                 x_slider = RangeSlider(
                                     label=f"Depth Range",
