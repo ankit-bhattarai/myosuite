@@ -442,3 +442,8 @@ def get_ui(wandb_url):
         )
 
     return demo
+
+if __name__ == "__main__":
+    wandb_url = None
+    demo = get_ui(wandb_url)
+    demo.launch(share=True)
