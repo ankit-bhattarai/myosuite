@@ -100,110 +100,6 @@ class BMParameters:
         overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
         return overrides
 
-class RLParameters:
-    num_elements: int = 8
-
-    @staticmethod
-    def get_parameters():
-        with gr.Row():
-            num_timesteps = gr.Number(
-                label="Number of Timesteps",
-                value=15000000,
-                minimum=0,
-                maximum=50000000,
-                step=100_000,
-                interactive=True
-            )
-        
-            num_checkpoints = gr.Number(
-                label="Number of Checkpoints",
-                value=1,
-                minimum=1,
-                maximum=10,
-                interactive=True
-            )
-            num_evaluations = gr.Number(
-                label="Number of Evaluations during Training",
-                value=1,
-                minimum=1,
-                maximum=10,
-                interactive=True
-            )
-        gr.Markdown(
-            "<span style='font-size: 1em;'>"
-            "<b><span style='color:red'>Note:</span></b> Ensure that (<i>batch_size</i> * <i>num_minibatches</i>) is a multiple of <i>num_envs</i>."
-            "</span>",
-            elem_id="hint-text"
-        )
-        with gr.Row():
-            batch_size = gr.Number(
-                label="Batch Size",
-                value=128,
-                minimum=0,
-                maximum=512,
-                interactive=True
-            )
-            num_envs = gr.Number(
-                label="Number of Parallel Environments",
-                value=1024,
-                minimum=0,
-                maximum=4096,
-                interactive=True
-            )
-            num_minibatches = gr.Number(
-                label="Number of Minibatches",
-                value=8,
-                minimum=0,
-                maximum=40,
-                interactive=True
-            )
-        with gr.Row():
-            choices = get_available_checkpoints()
-            select_checkpoint_run = gr.Dropdown(
-                label="Select Experiment from which to load checkpoints",
-                choices=choices,
-                interactive=True,
-                value="None"
-            )
-            choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
-            select_checkpoint_number = gr.Dropdown(
-                label="Select Checkpoint Number",
-                choices=choices,
-                interactive=True,
-                value="None"
-            )
-            select_checkpoint_run.change(
-                update_checkpoint_numbers,
-                inputs=select_checkpoint_run,
-                outputs=select_checkpoint_number
-            )
-        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
-
-    @staticmethod
-    def get_my_args(all_args):
-        return all_args[:RLParameters.num_elements]
-
-    @classmethod
-    def parse_values(cls, all_args):
-        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = cls.get_my_args(all_args)
-        overrides = []
-        num_targets = cls.get_number_targets(all_args)
-        to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
-        overrides.append(f"env/task_config/targets={to_text[int(num_targets)]}")
-        overrides.append(f"rl.num_timesteps={int(num_timesteps)}")
-        overrides.append(f"rl.num_checkpoints={int(num_checkpoints)}")
-        overrides.append(f"rl.num_evals={int(num_evaluations)}")
-        overrides.append(f"rl.batch_size={int(batch_size)}")
-        overrides.append(f"rl.num_envs={int(num_envs)}")
-        overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
-        exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
-        overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
-        return overrides
-
-    @classmethod
-    def get_number_targets(cls, all_args):
-        return all_args[RLParameters.num_elements]
-
 class BoxParameters:
     num_elements: int = 9
     
@@ -317,7 +213,6 @@ class BoxParameters:
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
         return overrides
 
-
 class SphereParameters:
     num_elements: int = 7
 
@@ -413,6 +308,136 @@ class SphereParameters:
         print(overrides)
         return overrides
 
+class TaskParameters:
+    num_elements: int = 1
+
+    @staticmethod
+    def get_parameters(ctrl_dt=0.05):
+        with gr.Row():
+            max_duration = gr.Number(
+                label="Maximum Episode Duration (s)",   
+                value=4.,
+                minimum=0.5,
+                maximum=120.,
+                step=ctrl_dt,
+                interactive=True
+            )
+        return max_duration, 
+
+    @staticmethod
+    def get_my_args(all_args):
+        return all_args[:TaskParameters.num_elements]
+
+    @classmethod
+    def parse_values(cls, all_args):
+        max_duration, = cls.get_my_args(all_args)
+        overrides = []
+        overrides.append(f"env.task_config.max_duration={float(max_duration)}")
+        return overrides
+
+class RLParameters:
+    num_elements: int = 8
+
+    @staticmethod
+    def get_parameters():
+        with gr.Row():
+            num_timesteps = gr.Number(
+                label="Number of Training Steps",
+                value=15000000,
+                minimum=0,
+                maximum=50000000,
+                step=100_000,
+                interactive=True
+            )
+            num_checkpoints = gr.Number(
+                label="Number of Checkpoints During/After Training",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
+            num_evaluations = gr.Number(
+                label="Number of Evaluations During/After Training",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
+        gr.Markdown(
+            "<span style='font-size: 1em;'>"
+            "<b><span style='color:red'>Note:</span></b> Ensure that (<i>batch_size</i> * <i>num_minibatches</i>) is a multiple of <i>num_envs</i>."
+            "</span>",
+            elem_id="hint-text"
+        )
+        with gr.Row():
+            batch_size = gr.Number(
+                label="Batch Size",
+                value=128,
+                minimum=0,
+                maximum=512,
+                interactive=True
+            )
+            num_envs = gr.Number(
+                label="Number of Parallel Environments",
+                value=1024,
+                minimum=0,
+                maximum=4096,
+                interactive=True
+            )
+            num_minibatches = gr.Number(
+                label="Number of Minibatches",
+                value=8,
+                minimum=0,
+                maximum=40,
+                interactive=True
+            )
+        with gr.Row():
+            choices = get_available_checkpoints()
+            select_checkpoint_run = gr.Dropdown(
+                label="Select Experiment from which to load checkpoints",
+                choices=choices,
+                interactive=True,
+                value="None"
+            )
+            choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
+            select_checkpoint_number = gr.Dropdown(
+                label="Select Checkpoint Number",
+                choices=choices,
+                interactive=True,
+                value="None"
+            )
+            select_checkpoint_run.change(
+                update_checkpoint_numbers,
+                inputs=select_checkpoint_run,
+                outputs=select_checkpoint_number
+            )
+        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
+
+    @staticmethod
+    def get_my_args(all_args):
+        return all_args[:RLParameters.num_elements]
+
+    @classmethod
+    def parse_values(cls, all_args):
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = cls.get_my_args(all_args)
+        overrides = []
+        num_targets = cls.get_number_targets(all_args)
+        to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+        overrides.append(f"env/task_config/targets={to_text[int(num_targets)]}")
+        overrides.append(f"rl.num_timesteps={int(num_timesteps)}")
+        overrides.append(f"rl.num_checkpoints={int(num_checkpoints)}")
+        overrides.append(f"rl.num_evals={int(num_evaluations)}")
+        overrides.append(f"rl.batch_size={int(batch_size)}")
+        overrides.append(f"rl.num_envs={int(num_envs)}")
+        overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
+        exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
+        overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
+        return overrides
+
+    @classmethod
+    def get_number_targets(cls, all_args):
+        return all_args[RLParameters.num_elements]
+
 
 def update_dwell_duration(dwell_duration, ctrl_dt):
     return gr.update(minimum=max(ctrl_dt, 0))
@@ -433,8 +458,8 @@ def get_ui(wandb_url, save_cfgs=[]):
         bm_params = BMParameters.get_parameters()
         ctrl_dt, = bm_params
         
-        gr.Markdown("### 2. Task Setup")
-        
+        gr.Markdown("### 2. Task Parameters")
+        gr.Markdown("#### Target Setup")
         num_elements = gr.Number(
             label="Number of Targets",
             value=INIT_ELEMENTS,
@@ -479,11 +504,11 @@ def get_ui(wandb_url, save_cfgs=[]):
                     )
                     box_row, box_params = BoxParameters.get_parameters(i)
                     box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn = box_params
-                    
                     # Store box components
                     all_components['boxes'].append({
                         key: value for key, value in zip(BoxParameters.fields(), box_params)
                     })
+
                     sphere_row, sphere_params = SphereParameters.get_parameters(i, dwell_duration_min=ctrl_dt.value)
                     x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker = sphere_params
                     ctrl_dt.change(fn=update_dwell_duration, inputs=(dwell_duration, ctrl_dt), outputs=dwell_duration, preprocess=False)
@@ -498,6 +523,10 @@ def get_ui(wandb_url, save_cfgs=[]):
             dwell_durations.append(dwell_duration)
             box_rows.append(box_row)
             sphere_rows.append(sphere_row)
+
+        gr.Markdown("#### Other Task Parameters")
+        task_params = TaskParameters.get_parameters(ctrl_dt=ctrl_dt.value)
+        max_duration, = task_params
 
         gr.Markdown("### 3. RL Parameters")
         rl_params = RLParameters.get_parameters()
@@ -571,7 +600,6 @@ def get_ui(wandb_url, save_cfgs=[]):
             return gr.update(visible=True), gr.update(value=img1), gr.update(value=img2)
             
 
-
         def update_dynamic_elements(num):
             """Show/hide dynamic rows based on the number input"""
             num = max(0, min(int(num) if num is not None else 0, 10))
@@ -583,8 +611,13 @@ def get_ui(wandb_url, save_cfgs=[]):
                     updates.append(gr.update(visible=False))
             return updates
 
-        def update_num_timesteps(num_elements, *dwell_durations):
-            target_value = 5000000 + max((num_elements - 3), 0) * 1000000 + int(sum(dwell_durations) // 0.3) * 1000000
+        def update_num_timesteps(num_elements, ctrl_dt, *dwell_durations_and_radios):
+            _num_targets_max = int(len(dwell_durations_and_radios) // 2)
+            dwell_durations = dwell_durations_and_radios[:num_elements]
+            radios = dwell_durations_and_radios[_num_targets_max:_num_targets_max+num_elements]
+            total_dwell_duration = sum(map(lambda x, y: max(0, x - ctrl_dt) * (y == "Sphere"), dwell_durations, radios))
+
+            target_value = 5000000 + max((num_elements - 3), 0) * 1000000 + int(total_dwell_duration // 0.3) * 1000000
             return gr.update(value=target_value)
 
         def toggle_interface_type(radio_value):
@@ -604,24 +637,30 @@ def get_ui(wandb_url, save_cfgs=[]):
         # Event handler for number of targets to suggested number of training steps
         num_elements.change(
             update_num_timesteps,
-            inputs=(num_elements, *dwell_durations),
+            inputs=(num_elements, ctrl_dt, *dwell_durations, *radios),
             outputs=num_timesteps,
             preprocess=False
         )
 
-        # Event handlers for each radio button to control interface type
+        # Event handlers for each radio button to control interface type and num of training steps
         for i in range(10):
             radios[i].change(
                 toggle_interface_type,
                 inputs=radios[i],
                 outputs=[box_rows[i], sphere_rows[i]]
             )
+            radios[i].change(
+                update_num_timesteps,
+                inputs=(num_elements, ctrl_dt, *dwell_durations, *radios),
+                outputs=num_timesteps,
+                preprocess=False
+            )
 
         # Event handler for each dwell duration to num of training steps
         for i in range(10):
             dwell_durations[i].change(
                 update_num_timesteps,
-                inputs=(num_elements, *dwell_durations),
+                inputs=(num_elements, ctrl_dt, *dwell_durations, *radios),
                 outputs=num_timesteps,
                 preprocess=False
             )
