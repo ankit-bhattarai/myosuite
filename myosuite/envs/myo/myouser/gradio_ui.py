@@ -402,6 +402,7 @@ def get_ui(wandb_url, save_cfgs=[]):
 
             exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
             cfg_overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
+            error = False
 
             for i in range(int(num_targets)):
                 target_type = radio_values[i]
@@ -441,12 +442,17 @@ def get_ui(wandb_url, save_cfgs=[]):
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
                     dwell = sphere_values[start_idx + 4]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell}")
+                    if dwell < 0.01:
+                        error = True
+                        gr.Warning("Dwell duration must be greater than 0.0")
                     completion_bonus = sphere_values[start_idx + 5]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
                     rgb = sphere_values[start_idx + 6]
                     rgb = hex_to_rgb(rgb)
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
-                    
+
+            if error:
+                return ["Error in the configuration, please check the configuration and try again"]
             return cfg_overrides
 
         def run_training(*args):
