@@ -11,7 +11,7 @@ if gr.NO_RELOAD:
     myosuite_path = Path(myosuite.__path__[0])
 
 
-pointing_ranges = {
+sphere_ranges = {
     "x": (0.225, 0.35),
     "y": (-0.1, 0.1),
     "z": (-0.3, 0.3),
@@ -121,12 +121,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         dynamic_rows = []
         radios = []
         box_rows = []
-        pointing_rows = []
+        sphere_rows = []
         
         # Store all components for easy access
         all_components = {
             'boxes': [],
-            'pointing': []
+            'spheres': []
         }
         
         for i in range(10):
@@ -134,9 +134,9 @@ def get_ui(wandb_url, save_cfgs=[]):
             with gr.Row(visible=(i < INIT_ELEMENTS)) as main_row:
                 with gr.Column():
                     radio = gr.Radio(
-                        choices=["Box", "Pointing"],
+                        choices=["Box", "Sphere"],
                         label=f"Target {i+1} Type",
-                        value="Pointing",
+                        value="Sphere",
                         interactive=True
                     )
                     
@@ -230,42 +230,42 @@ def get_ui(wandb_url, save_cfgs=[]):
                         'rgb': rgb_btn
                     })
                                 
-                    # Pointing option row  
-                    with gr.Row(visible=True) as pointing_row:
-                        with gr.Accordion(label=f"Pointing {i+1} Settings", open=False):
+                    # Sphere option row  
+                    with gr.Row(visible=True) as sphere_row:
+                        with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
                             with gr.Row():
-                                gr.Markdown("#### The coordinates for the pointing targets are randomly sampled from a range, please choose them below")
+                                gr.Markdown("#### The coordinates for the sphere targets are randomly sampled from a range, please choose them below")
                             with gr.Row():
                                 x_slider = RangeSlider(
                                     label=f"Depth Range",
-                                    minimum=pointing_ranges["x"][0],
-                                    maximum=pointing_ranges["x"][1],
-                                    value=(pointing_ranges["x"][0], pointing_ranges["x"][1]),
+                                    minimum=sphere_ranges["x"][0],
+                                    maximum=sphere_ranges["x"][1],
+                                    value=(sphere_ranges["x"][0], sphere_ranges["x"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
                                 y_slider = RangeSlider(
                                     label=f"Horizontal Range",
-                                    minimum=pointing_ranges["y"][0],
-                                    maximum=pointing_ranges["y"][1],
-                                    value=(pointing_ranges["y"][0], pointing_ranges["y"][1]),
+                                    minimum=sphere_ranges["y"][0],
+                                    maximum=sphere_ranges["y"][1],
+                                    value=(sphere_ranges["y"][0], sphere_ranges["y"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
                                 z_slider = RangeSlider(
                                     label=f"Vertical Range",
-                                    minimum=pointing_ranges["z"][0],
-                                    maximum=pointing_ranges["z"][1],
-                                    value=(pointing_ranges["z"][0], pointing_ranges["z"][1]),
+                                    minimum=sphere_ranges["z"][0],
+                                    maximum=sphere_ranges["z"][1],
+                                    value=(sphere_ranges["z"][0], sphere_ranges["z"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
                             with gr.Row():
                                 size_slider = RangeSlider(
                                     label=f"Size Range",
-                                    minimum=pointing_ranges["size"][0],
-                                    maximum=pointing_ranges["size"][1],
-                                    value=(pointing_ranges["size"][0], pointing_ranges["size"][1]),
+                                    minimum=sphere_ranges["size"][0],
+                                    maximum=sphere_ranges["size"][1],
+                                    value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
                                     step=0.001,
                                     interactive=True
                                 )
@@ -291,8 +291,8 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                     
-                    # Store pointing components
-                    all_components['pointing'].append({
+                    # Store sphere components
+                    all_components['spheres'].append({
                         'x_range': x_slider,
                         'y_range': y_slider,
                         'z_range': z_slider,
@@ -306,7 +306,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             dynamic_rows.append(main_row)
             radios.append(radio)
             box_rows.append(box_row)
-            pointing_rows.append(pointing_row)
+            sphere_rows.append(sphere_row)
 
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
@@ -335,7 +335,7 @@ def get_ui(wandb_url, save_cfgs=[]):
 
             # Get all other component values
             box_values = args[15:105]  # 9 components × 10 = 90 values
-            pointing_values = args[105:]   # 7 components × 10 = 70 values
+            sphere_values = args[105:]   # 7 components × 10 = 70 values
             
 
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
@@ -380,20 +380,20 @@ def get_ui(wandb_url, save_cfgs=[]):
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
                     
                     
-                else:  # Pointing
-                    # Extract pointing values for this target
+                else:  # Sphere
+                    # Extract sphere values for this target
                     start_idx = i * 7
-                    x_range = pointing_values[start_idx]
-                    y_range = -pointing_values[start_idx + 1]
-                    z_range = pointing_values[start_idx + 2]
+                    x_range = sphere_values[start_idx]
+                    y_range = -sphere_values[start_idx + 1]
+                    z_range = sphere_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{y_range[0]},{z_range[0]}],[{x_range[1]},{y_range[1]},{z_range[1]}]]")
-                    size_range = pointing_values[start_idx + 3]
+                    size_range = sphere_values[start_idx + 3]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
-                    dwell = pointing_values[start_idx + 4]
+                    dwell = sphere_values[start_idx + 4]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell}")
-                    completion_bonus = pointing_values[start_idx + 5]
+                    completion_bonus = sphere_values[start_idx + 5]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
-                    rgb = pointing_values[start_idx + 6]
+                    rgb = sphere_values[start_idx + 6]
                     rgb = hex_to_rgb(rgb)
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
                     
@@ -437,7 +437,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             """Show appropriate interface based on radio selection"""
             if radio_value == "Box":
                 return gr.update(visible=True), gr.update(visible=False)
-            else:  # Pointing
+            else:  # Sphere
                 return gr.update(visible=False), gr.update(visible=True)
 
         # Event handler for dynamic elements
@@ -452,7 +452,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             radios[i].change(
                 toggle_interface_type,
                 inputs=radios[i],
-                outputs=[box_rows[i], pointing_rows[i]]
+                outputs=[box_rows[i], sphere_rows[i]]
             )
 
         # Prepare inputs for run button
@@ -464,10 +464,10 @@ def get_ui(wandb_url, save_cfgs=[]):
             for key in ['box_position_x', 'box_position_y', 'box_position_z', 'box_size_x', 'box_size_y', 'completion_bonus', 'min_touch_force', 'orientation_angle', 'rgb']:
                 run_inputs.append(all_components['boxes'][i][key])
         
-        # Add all pointing components
+        # Add all sphere components
         for i in range(10):
             for key in ['x_range', 'y_range', 'z_range', 'size_range', 'dwell_duration', 'completion_bonus', 'rgb']:
-                run_inputs.append(all_components['pointing'][i][key])
+                run_inputs.append(all_components['spheres'][i][key])
 
         # Run button event
         run_button.click(
