@@ -335,6 +335,50 @@ class TaskParameters:
         overrides.append(f"env.task_config.max_duration={float(max_duration)}")
         return overrides
 
+class ObservationSpace:
+    num_elements: int = 2
+
+    possible_obs_keys = ["qpos", "qvel", "qacc", "ee_pos", "act"]
+    possible_omni_keys = ["target_pos", "target_size", "phase"]
+
+    @staticmethod
+    def get_parameters():
+        obs_keys = []
+        with gr.Row():
+            for k in ObservationSpace.possible_obs_keys:
+                obs_key = gr.Checkbox(
+                    label=k,   
+                    value=True,
+                    interactive=True
+                )
+                obs_keys.append(obs_key)
+        
+        omni_keys = []
+        with gr.Row():
+            for k in ObservationSpace.possible_omni_keys:
+                omni_key = gr.Checkbox(
+                    label=k,   
+                    value=True,
+                    interactive=True
+                )
+                omni_keys.append(omni_key)
+        
+        return obs_keys, omni_keys
+
+    @staticmethod
+    def get_my_args(all_args):
+        return all_args[:ObservationSpace.num_elements]
+
+    @classmethod
+    def parse_values(cls, all_args):
+        obs_keys, omni_keys = cls.get_my_args(all_args)
+        obs_keys_selected = [k.label for k in obs_keys if k.value]
+        omni_keys_selected = [k.label for k in omni_keys if k.value]
+        overrides = []
+        overrides.append(f"env.task_config.obs_keys={obs_keys_selected}")
+        overrides.append(f"env.task_config.omni_keys={omni_keys_selected}")
+        return overrides
+
 class RLParameters:
     num_elements: int = 8
 
@@ -528,6 +572,9 @@ def get_ui(wandb_url, save_cfgs=[]):
         task_params = TaskParameters.get_parameters(ctrl_dt=ctrl_dt.value)
         max_duration, = task_params
 
+        gr.Markdown("#### Observation Space")
+        obs_keys, omni_keys = ObservationSpace.get_parameters()
+
         gr.Markdown("### 3. RL Parameters")
         rl_params = RLParameters.get_parameters()
         num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_params
@@ -559,10 +606,10 @@ def get_ui(wandb_url, save_cfgs=[]):
             radio_end = radio_start + 10
             radio_values = args[radio_start:radio_end]
             
-
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
-            rl_overrides = RLParameters.parse_values(args)
-            cfg_overrides.extend(rl_overrides)
+
+            bm_overrides = BMParameters.parse_values(args)
+            cfg_overrides.extend(bm_overrides)
 
             for i in range(int(num_targets)):
                 target_type = radio_values[i]
@@ -575,6 +622,13 @@ def get_ui(wandb_url, save_cfgs=[]):
                 else:  # Sphere
                     overrides = SphereParameters.parse_values(i, args)
                     cfg_overrides.extend(overrides)
+            
+            task_overrides = TaskParameters.parse_values(args)
+            cfg_overrides.extend(task_overrides)
+            obs_overrides = ObservationSpace.parse_values(args)
+            cfg_overrides.extend(obs_overrides)
+            rl_overrides = RLParameters.parse_values(args)
+            cfg_overrides.extend(rl_overrides)
 
             return cfg_overrides
 
