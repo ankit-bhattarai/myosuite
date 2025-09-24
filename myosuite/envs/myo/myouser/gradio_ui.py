@@ -598,7 +598,7 @@ def get_ui(wandb_url, save_cfgs=[]):
         for i in range(10):
             dwell_durations[i].change(
                 update_num_timesteps,
-                inputs=(num_elements, num_timesteps, *dwell_durations),
+                inputs=(num_elements, *dwell_durations),
                 outputs=num_timesteps,
                 preprocess=False
             )
