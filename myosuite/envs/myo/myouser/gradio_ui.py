@@ -73,6 +73,219 @@ def hex_to_rgb(hex_color):
     rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
     return rgb
 
+def rl_parameters():
+    with gr.Row():
+        num_timesteps = gr.Number(
+            label="Number of Timesteps",
+            value=15000000,
+            minimum=0,
+            maximum=50000000,
+            interactive=True
+        )
+        num_checkpoints = gr.Number(
+            label="Number of Checkpoints",
+            value=1,
+            minimum=1,
+            maximum=10,
+            interactive=True
+        )
+        num_evaluations = gr.Number(
+            label="Number of Evaluations during Training",
+            value=1,
+            minimum=1,
+            maximum=10,
+            interactive=True
+        )
+        batch_size = gr.Number(
+            label="Batch Size",
+            value=128,
+            minimum=0,
+            maximum=512,
+            interactive=True
+        )
+        num_envs = gr.Number(
+            label="Number of Environments",
+            value=1024,
+            minimum=0,
+            maximum=4096,
+            interactive=True
+        )
+        num_minibatches = gr.Number(
+            label="Number of Minibatches",
+            value=8,
+            minimum=0,
+            maximum=40,
+            interactive=True
+        )
+        gr.Markdown(
+            "<span style='font-size: 1em;'>"
+            "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
+            "</span>",
+            elem_id="hint-text"
+        )
+    with gr.Row():
+        choices = get_available_checkpoints()
+        select_checkpoint_run = gr.Dropdown(
+            label="Select Experiment from which to load checkpoints",
+            choices=choices,
+            interactive=True,
+            value="None"
+        )
+        choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
+        select_checkpoint_number = gr.Dropdown(
+            label="Select Checkpoint Number",
+            choices=choices,
+            interactive=True,
+            value="None"
+        )
+        select_checkpoint_run.change(
+            update_checkpoint_numbers,
+            inputs=select_checkpoint_run,
+            outputs=select_checkpoint_number
+        )
+    return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
+
+def box_option_parameters(i):
+    # Boxes option row
+    with gr.Row(visible=False) as box_row:
+        with gr.Accordion(label=f"Box {i+1} Settings", open=False):
+            with gr.Row():
+                box_position_x = gr.Slider(
+                    label="Depth Position",
+                    minimum=0.2,
+                    maximum=0.55,
+                    value=0.225,
+                    step=0.001,
+                    interactive=True
+                )
+                box_position_y = gr.Slider(
+                    label="Horizontal Position",
+                    minimum=-0.25,
+                    maximum=0.25,
+                    value=-0.1,
+                    step=0.001,
+                    interactive=True
+                )
+                box_position_z = gr.Slider(
+                    label="Vertical Position",
+                    minimum=0.6,
+                    maximum=1.2,
+                    value=0.843,
+                    step=0.001,
+                    interactive=True
+                )
+            with gr.Row():
+                box_size_x_slider = gr.Slider(
+                    label="Width",
+                    minimum=0.02,
+                    maximum=0.03,
+                    value=0.025,
+                    step=0.001,
+                    interactive=True
+                )
+                box_size_y_slider = gr.Slider(
+                    label="Height",
+                    minimum=0.02,
+                    maximum=0.03,
+                    value=0.025,
+                    step=0.001,
+                    interactive=True
+                )
+                completion_bonus_btn = gr.Slider(
+                    label="Completion Bonus",
+                    minimum=0.0,
+                    maximum=10.0,
+                    value=0.0,
+                    step=0.1,
+                    interactive=True
+                )
+            with gr.Row():
+                min_touch_force = gr.Slider(
+                    label="Minimum Touch Force",
+                    info="Minimum force required to register a touch",
+                    minimum=0.0,
+                    maximum=10.0,
+                    value=1.0,
+                    step=0.1,
+                    interactive=True
+                )
+                orientation_angle = gr.Slider(
+                    label="Orientation Angle",
+                    minimum=0.0,
+                    maximum=180.0,
+                    value=45,
+                    step=1.0,
+                    interactive=True
+                )
+                rgb_btn = gr.ColorPicker(
+                    label="RGB",
+                    value="#FF6B6B",
+                    interactive=True
+                )
+    return box_row, box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn
+
+def sphere_option_parameters(i):
+    # Sphere option row  
+    with gr.Row(visible=True) as sphere_row:
+        with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
+            with gr.Row():
+                gr.Markdown("#### The coordinates for the sphere targets are randomly sampled from a range, please choose them below")
+            with gr.Row():
+                x_slider = RangeSlider(
+                    label=f"Depth Range",
+                    minimum=sphere_ranges["x"][0],
+                    maximum=sphere_ranges["x"][1],
+                    value=(sphere_ranges["x"][0], sphere_ranges["x"][1]),
+                    step=0.001,
+                    interactive=True
+                )
+                y_slider = RangeSlider(
+                    label=f"Horizontal Range",
+                    minimum=sphere_ranges["y"][0],
+                    maximum=sphere_ranges["y"][1],
+                    value=(sphere_ranges["y"][0], sphere_ranges["y"][1]),
+                    step=0.001,
+                    interactive=True
+                )
+                z_slider = RangeSlider(
+                    label=f"Vertical Range",
+                    minimum=sphere_ranges["z"][0],
+                    maximum=sphere_ranges["z"][1],
+                    value=(sphere_ranges["z"][0], sphere_ranges["z"][1]),
+                    step=0.001,
+                    interactive=True
+                )
+            with gr.Row():
+                size_slider = RangeSlider(
+                    label=f"Size Range",
+                    minimum=sphere_ranges["size"][0],
+                    maximum=sphere_ranges["size"][1],
+                    value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
+                    step=0.001,
+                    interactive=True
+                )
+                dwell_duration = gr.Number(
+                    label=f"Dwell Duration",
+                    value=0.25,
+                    minimum=0.0,
+                    maximum=1.0,
+                    step=0.01,
+                    interactive=True
+                )
+                completion_bonus_pt = gr.Number(
+                    label=f"Completion Bonus",
+                    value=0.0,
+                    minimum=0.0,
+                    maximum=10.0,
+                    step=0.1,
+                    interactive=True
+                )
+                color_picker = gr.ColorPicker(
+                    label=f"RGB",
+                    value="#FF6B6B",
+                    interactive=True
+                )
+    return sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker
 
 def get_ui(wandb_url, save_cfgs=[]):
     # Fix box handlers properly
@@ -86,75 +299,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             info="Click to copy the URL and monitor training progress"
                     )
         gr.Markdown("### RL Parameters")
-        with gr.Row():
-            num_timesteps = gr.Number(
-                label="Number of Timesteps",
-                value=15000000,
-                minimum=0,
-                maximum=50000000,
-                interactive=True
-            )
-            num_checkpoints = gr.Number(
-                label="Number of Checkpoints",
-                value=1,
-                minimum=1,
-                maximum=10,
-                interactive=True
-            )
-            num_evaluations = gr.Number(
-                label="Number of Evaluations during Training",
-                value=1,
-                minimum=1,
-                maximum=10,
-                interactive=True
-            )
-            batch_size = gr.Number(
-                label="Batch Size",
-                value=128,
-                minimum=0,
-                maximum=512,
-                interactive=True
-            )
-            num_envs = gr.Number(
-                label="Number of Environments",
-                value=1024,
-                minimum=0,
-                maximum=4096,
-                interactive=True
-            )
-            num_minibatches = gr.Number(
-                label="Number of Minibatches",
-                value=8,
-                minimum=0,
-                maximum=40,
-                interactive=True
-            )
-        gr.Markdown(
-            "<span style='font-size: 1em;'>"
-            "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
-            "</span>",
-            elem_id="hint-text"
-        )
-        with gr.Row():
-            choices = get_available_checkpoints()
-            select_checkpoint_run = gr.Dropdown(
-                label="Select Experiment from which to load checkpoints",
-                choices=choices,
-                interactive=True,
-                value="None"
-            )
-            choices = get_available_checkpoint_numbers(select_checkpoint_run.value)
-            select_checkpoint_number = gr.Dropdown(
-                label="Select Checkpoint Number",
-                choices=choices,
-                interactive=True,
-                value="None"
-            )
-            select_checkpoint_run.change(
-                update_checkpoint_numbers,
-                inputs=select_checkpoint_run,
-                outputs=select_checkpoint_number
-            )
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_parameters()
         gr.Markdown("### Dynamic Targets Feature")
         
         num_elements = gr.Number(
@@ -188,83 +333,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                         value="Sphere",
                         interactive=True
                     )
-                    
-                    # Boxes option row
-                    with gr.Row(visible=False) as box_row:
-                        with gr.Accordion(label=f"Box {i+1} Settings", open=False):
-                            with gr.Row():
-                                box_position_x = gr.Slider(
-                                    label="Depth Position",
-                                    minimum=0.2,
-                                    maximum=0.55,
-                                    value=0.225,
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                box_position_y = gr.Slider(
-                                    label="Horizontal Position",
-                                    minimum=-0.25,
-                                    maximum=0.25,
-                                    value=-0.1,
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                box_position_z = gr.Slider(
-                                    label="Vertical Position",
-                                    minimum=0.6,
-                                    maximum=1.2,
-                                    value=0.843,
-                                    step=0.001,
-                                    interactive=True
-                                )
-                            with gr.Row():
-                                box_size_x_slider = gr.Slider(
-                                    label="Width",
-                                    minimum=0.02,
-                                    maximum=0.03,
-                                    value=0.025,
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                box_size_y_slider = gr.Slider(
-                                    label="Height",
-                                    minimum=0.02,
-                                    maximum=0.03,
-                                    value=0.025,
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                completion_bonus_btn = gr.Slider(
-                                    label="Completion Bonus",
-                                    minimum=0.0,
-                                    maximum=10.0,
-                                    value=0.0,
-                                    step=0.1,
-                                    interactive=True
-                                )
-                            with gr.Row():
-                                min_touch_force = gr.Slider(
-                                    label="Minimum Touch Force",
-                                    info="Minimum force required to register a touch",
-                                    minimum=0.0,
-                                    maximum=10.0,
-                                    value=1.0,
-                                    step=0.1,
-                                    interactive=True
-                                )
-                                orientation_angle = gr.Slider(
-                                    label="Orientation Angle",
-                                    minimum=0.0,
-                                    maximum=180.0,
-                                    value=45,
-                                    step=1.0,
-                                    interactive=True
-                                )
-                                rgb_btn = gr.ColorPicker(
-                                    label="RGB",
-                                    value="#FF6B6B",
-                                    interactive=True
-                                )
+                    box_row, box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn = box_option_parameters(i)
                     
                     # Store box components
                     all_components['boxes'].append({
@@ -278,68 +347,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                         'orientation_angle': orientation_angle,
                         'rgb': rgb_btn
                     })
-                                
-                    # Sphere option row  
-                    with gr.Row(visible=True) as sphere_row:
-                        with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
-                            with gr.Row():
-                                gr.Markdown("#### The coordinates for the sphere targets are randomly sampled from a range, please choose them below")
-                            with gr.Row():
-                                x_slider = RangeSlider(
-                                    label=f"Depth Range",
-                                    minimum=sphere_ranges["x"][0],
-                                    maximum=sphere_ranges["x"][1],
-                                    value=(sphere_ranges["x"][0], sphere_ranges["x"][1]),
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                y_slider = RangeSlider(
-                                    label=f"Horizontal Range",
-                                    minimum=sphere_ranges["y"][0],
-                                    maximum=sphere_ranges["y"][1],
-                                    value=(sphere_ranges["y"][0], sphere_ranges["y"][1]),
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                z_slider = RangeSlider(
-                                    label=f"Vertical Range",
-                                    minimum=sphere_ranges["z"][0],
-                                    maximum=sphere_ranges["z"][1],
-                                    value=(sphere_ranges["z"][0], sphere_ranges["z"][1]),
-                                    step=0.001,
-                                    interactive=True
-                                )
-                            with gr.Row():
-                                size_slider = RangeSlider(
-                                    label=f"Size Range",
-                                    minimum=sphere_ranges["size"][0],
-                                    maximum=sphere_ranges["size"][1],
-                                    value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
-                                    step=0.001,
-                                    interactive=True
-                                )
-                                dwell_duration = gr.Number(
-                                    label=f"Dwell Duration",
-                                    value=0.25,
-                                    minimum=0.0,
-                                    maximum=1.0,
-                                    step=0.01,
-                                    interactive=True
-                                )
-                                completion_bonus_pt = gr.Number(
-                                    label=f"Completion Bonus",
-                                    value=0.0,
-                                    minimum=0.0,
-                                    maximum=10.0,
-                                    step=0.1,
-                                    interactive=True
-                                )
-                                color_picker = gr.ColorPicker(
-                                    label=f"RGB",
-                                    value="#FF6B6B",
-                                    interactive=True
-                                )
-                    
+                    sphere_row, x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker = sphere_option_parameters(i)                    
                     # Store sphere components
                     all_components['spheres'].append({
                         'x_range': x_slider,
