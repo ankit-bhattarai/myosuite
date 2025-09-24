@@ -5,13 +5,6 @@ from myosuite.envs.myo.myouser.myouser_universal import MyoUserUniversal
 from myosuite.envs.myo.myouser.train_jax_ppo import train
 from myosuite.envs.myo.myouser.hydra_cli import load_config_interactive
 import numpy as np
-import wandb
-
-
-wandb.init(project="workshop", entity="hci-biomechsims")
-
-wandb_url=wandb.run.url
-
 
 pointing_ranges = {
     "x": (0.225, 0.35),
@@ -202,8 +195,10 @@ def get_ui(wandb_url):
                     with gr.Row(visible=True) as pointing_row:
                         with gr.Accordion(label=f"Pointing {i+1} Settings", open=False):
                             with gr.Row():
+                                gr.Markdown("#######The coordinates for the pointing targets are randomly sampled from a range, please choose them below")
+                            with gr.Row():
                                 x_slider = RangeSlider(
-                                    label=f"X Range",
+                                    label=f"Depth Range",
                                     minimum=pointing_ranges["x"][0],
                                     maximum=pointing_ranges["x"][1],
                                     value=(pointing_ranges["x"][0], pointing_ranges["x"][1]),
@@ -211,7 +206,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 y_slider = RangeSlider(
-                                    label=f"Y Range",
+                                    label=f"Left Range",
                                     minimum=pointing_ranges["y"][0],
                                     maximum=pointing_ranges["y"][1],
                                     value=(pointing_ranges["y"][0], pointing_ranges["y"][1]),
@@ -219,7 +214,7 @@ def get_ui(wandb_url):
                                     interactive=True
                                 )
                                 z_slider = RangeSlider(
-                                    label=f"Z Range",
+                                    label=f"Height Range",
                                     minimum=pointing_ranges["z"][0],
                                     maximum=pointing_ranges["z"][1],
                                     value=(pointing_ranges["z"][0], pointing_ranges["z"][1]),
