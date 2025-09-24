@@ -96,6 +96,15 @@ def rl_parameters():
             maximum=10,
             interactive=True
         )
+        ctrl_dt = gr.Number(
+            label="Control Timestep (s)",   
+            value=0.05,
+            minimum=0.01,
+            maximum=0.5,
+            step=0.01,
+            interactive=True
+        )
+    with gr.Row():
         batch_size = gr.Number(
             label="Batch Size",
             value=128,
@@ -117,12 +126,12 @@ def rl_parameters():
             maximum=40,
             interactive=True
         )
-        gr.Markdown(
-            "<span style='font-size: 1em;'>"
-            "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
-            "</span>",
-            elem_id="hint-text"
-        )
+    gr.Markdown(
+        "<span style='font-size: 1em;'>"
+        "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
+        "</span>",
+        elem_id="hint-text"
+    )
     with gr.Row():
         choices = get_available_checkpoints()
         select_checkpoint_run = gr.Dropdown(
@@ -143,7 +152,7 @@ def rl_parameters():
             inputs=select_checkpoint_run,
             outputs=select_checkpoint_number
         )
-    return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
+    return num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
 
 def box_option_parameters(i):
     # Boxes option row
@@ -299,7 +308,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             info="Click to copy the URL and monitor training progress"
                     )
         gr.Markdown("### RL Parameters")
-        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_parameters()
+        num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_parameters()
         gr.Markdown("### Dynamic Targets Feature")
         
         num_elements = gr.Number(
@@ -387,12 +396,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, checkpoints, evaluations, batch, envs, num_minibatches, num_targets, select_checkpoint_run, select_checkpoint_number = args[:9]
-            radio_values = args[9:19]  # 10 radio values
+            timesteps, checkpoints, evaluations, ctrl_dt, batch, envs, num_minibatches, num_targets, select_checkpoint_run, select_checkpoint_number = args[:10]
+            radio_values = args[10:20]  # 10 radio values
 
             # Get all other component values
-            box_values = args[19:109]  # 9 components × 10 = 90 values
-            sphere_values = args[109:]   # 7 components × 10 = 70 values
+            box_values = args[20:110]  # 9 components × 10 = 90 values
+            sphere_values = args[110:]   # 7 components × 10 = 70 values
             
 
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
@@ -407,6 +416,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
             cfg_overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
+            cfg_overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
 
             exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
             cfg_overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
@@ -520,7 +530,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, num_elements, select_checkpoint_run, select_checkpoint_number]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, ctrl_dt, batch_size, num_envs, num_minibatches, num_elements, select_checkpoint_run, select_checkpoint_number]
         run_inputs.extend(radios)
         
         # Add all box components
