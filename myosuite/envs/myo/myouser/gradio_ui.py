@@ -83,6 +83,19 @@ def get_ui(wandb_url):
                 maximum=4096,
                 interactive=True
             )
+            num_minibatches = gr.Number(
+                label="Number of Minibatches",
+                value=8,
+                minimum=0,
+                maximum=40,
+                interactive=True
+            )
+        gr.Markdown(
+            "<span style='font-size: 1em;'>"
+            "Note: Ensure that batch_size * num_minibatches % num_envs = 0."
+            "</span>",
+            elem_id="hint-text"
+        )
         gr.Markdown("### Dynamic Targets Feature")
         
         num_elements = gr.Number(
@@ -307,7 +320,7 @@ def get_ui(wandb_url):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, checkpoints, evaluations, batch, envs, num_targets = args[:5]
+            timesteps, checkpoints, evaluations, batch, envs, num_minibatches, num_targets = args[:5]
             radio_values = args[5:15]  # 10 radio values
 
             # Get all other component values
@@ -326,6 +339,7 @@ def get_ui(wandb_url):
             cfg_overrides.append(f"rl.num_evals={int(evaluations)}")
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
+            cfg_overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
 
             
 
@@ -429,7 +443,7 @@ def get_ui(wandb_url):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_elements]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, num_elements]
         run_inputs.extend(radios)
         
         # Add all button components
