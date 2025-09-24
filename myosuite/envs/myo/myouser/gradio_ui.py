@@ -65,6 +65,20 @@ def get_ui(wandb_url, save_cfgs=[]):
                 maximum=50000000,
                 interactive=True
             )
+            num_checkpoints = gr.Number(
+                label="Number of Checkpoints",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
+            num_evaluations = gr.Number(
+                label="Number of Evaluations during Training",
+                value=1,
+                minimum=1,
+                maximum=10,
+                interactive=True
+            )
             batch_size = gr.Number(
                 label="Batch Size",
                 value=128,
@@ -118,7 +132,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                         with gr.Accordion(label=f"Button {i+1} Settings", open=False):
                             with gr.Row():
                                 button_position_x = gr.Slider(
-                                    label="Button Position X",
+                                    label="Button Depth Position",
                                     minimum=0.2,
                                     maximum=0.55,
                                     value=0.225,
@@ -126,7 +140,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 button_position_y = gr.Slider(
-                                    label="Button Position Y",
+                                    label="Button Horizontal Position",
                                     minimum=-0.25,
                                     maximum=0.25,
                                     value=-0.1,
@@ -134,7 +148,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 button_position_z = gr.Slider(
-                                    label="Button Position Z",
+                                    label="Button Vertical Position",
                                     minimum=0.6,
                                     maximum=1.2,
                                     value=0.843,
@@ -143,7 +157,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                 )
                             with gr.Row():
                                 button_size_x_slider = gr.Slider(
-                                    label="Button Size X",
+                                    label="Button Width",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
@@ -151,7 +165,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 button_size_y_slider = gr.Slider(
-                                    label="Button Size Y",
+                                    label="Button Height",
                                     minimum=0.02,
                                     maximum=0.03,
                                     value=0.025,
@@ -159,7 +173,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 completion_bonus_btn = gr.Slider(
-                                    label="Phase Completion Bonus",
+                                    label="Completion Bonus",
                                     minimum=0.0,
                                     maximum=10.0,
                                     value=0.0,
@@ -218,7 +232,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 y_slider = RangeSlider(
-                                    label=f"Left Range",
+                                    label=f"Horizontal Range",
                                     minimum=pointing_ranges["y"][0],
                                     maximum=pointing_ranges["y"][1],
                                     value=(pointing_ranges["y"][0], pointing_ranges["y"][1]),
@@ -226,7 +240,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                                     interactive=True
                                 )
                                 z_slider = RangeSlider(
-                                    label=f"Height Range",
+                                    label=f"Vertical Range",
                                     minimum=pointing_ranges["z"][0],
                                     maximum=pointing_ranges["z"][1],
                                     value=(pointing_ranges["z"][0], pointing_ranges["z"][1]),
@@ -303,12 +317,12 @@ def get_ui(wandb_url, save_cfgs=[]):
         def args_to_cfg_overrides(*args):
             """Print all configuration details"""
             # Extract values from args
-            timesteps, batch, envs, num_targets = args[:4]
-            radio_values = args[4:14]  # 10 radio values
-            
+            timesteps, checkpoints, evaluations, batch, envs, num_targets = args[:5]
+            radio_values = args[5:15]  # 10 radio values
+
             # Get all other component values
-            button_values = args[14:104]  # 9 components × 10 = 90 values
-            pointing_values = args[104:]   # 7 components × 10 = 70 values
+            button_values = args[15:105]  # 9 components × 10 = 90 values
+            pointing_values = args[105:]   # 7 components × 10 = 70 values
             
 
             cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
@@ -318,8 +332,11 @@ def get_ui(wandb_url, save_cfgs=[]):
             
             # RL Parameters
             cfg_overrides.append(f"rl.num_timesteps={int(timesteps)}")
+            cfg_overrides.append(f"rl.num_checkpoints={int(checkpoints)}")
+            cfg_overrides.append(f"rl.num_evals={int(evaluations)}")
             cfg_overrides.append(f"rl.batch_size={int(batch)}")
             cfg_overrides.append(f"rl.num_envs={int(envs)}")
+
             
 
             for i in range(int(num_targets)):
@@ -330,7 +347,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                     # Extract button values for this target
                     start_idx = i * 9
                     btn_pos_x = button_values[start_idx]
-                    btn_pos_y = button_values[start_idx + 1]
+                    btn_pos_y = -button_values[start_idx + 1]
                     btn_pos_z = button_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[{btn_pos_x},{btn_pos_y},{btn_pos_z}]")
                     btn_size_x = button_values[start_idx + 3]
@@ -353,7 +370,7 @@ def get_ui(wandb_url, save_cfgs=[]):
                     # Extract pointing values for this target
                     start_idx = i * 7
                     x_range = pointing_values[start_idx]
-                    y_range = pointing_values[start_idx + 1]
+                    y_range = -pointing_values[start_idx + 1]
                     z_range = pointing_values[start_idx + 2]
                     cfg_overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{y_range[0]},{z_range[0]}],[{x_range[1]},{y_range[1]},{z_range[1]}]]")
                     size_range = pointing_values[start_idx + 3]
@@ -425,7 +442,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             )
 
         # Prepare inputs for run button
-        run_inputs = [num_timesteps, batch_size, num_envs, num_elements]
+        run_inputs = [num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_elements]
         run_inputs.extend(radios)
         
         # Add all button components
