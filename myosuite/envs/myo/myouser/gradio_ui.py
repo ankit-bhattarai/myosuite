@@ -864,8 +864,8 @@ def get_ui(project_name, save_cfgs=[]):
 
             return cfg_overrides
 
-        def run_training(*args):
-            cfg_overrides = args_to_cfg_overrides(*args)
+        def run_training(run_name, *args):
+            cfg_overrides = args_to_cfg_overrides(run_name, *args)
             # cfg = load_config_interactive(cfg_overrides, cfg_only=True)
             gr.Info("Set up training start from the GR UI!")
             save_cfgs.clear()
@@ -875,10 +875,10 @@ def get_ui(project_name, save_cfgs=[]):
             text += "\n".join(save_cfgs)
             return text
 
-        def render_environment(*args):
+        def render_environment(run_name, *args):
             target_init_seed = RLParameters.get_target_init_seed(args)
             next_seed = target_init_seed + 1
-            cfg_overrides = args_to_cfg_overrides(*args)
+            cfg_overrides = args_to_cfg_overrides(run_name, *args)
             config = load_config_interactive(cfg_overrides)
             env = MyoUserUniversal(config.env)
             imgs = env.get_renderings()
@@ -994,7 +994,7 @@ def get_ui(project_name, save_cfgs=[]):
 
         render_button.click(
             render_environment,
-            inputs=run_inputs,
+            inputs=run_or_save_inputs,
             outputs=[target_init_seed, env_view_row, env_view_1, env_view_2]
         )
 
