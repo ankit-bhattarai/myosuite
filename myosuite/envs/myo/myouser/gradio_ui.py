@@ -650,7 +650,35 @@ def get_ui(wandb_url, save_cfgs=[]):
         obs_keys, omni_keys = ObservationSpace.get_parameters()
 
         gr.Markdown("#### Reward Weights")
+        _reach_d, _phase_bonus_d, _done_d, _neural_effort_d = RewardFunction.weights_default_min_max_step['reach'][0], RewardFunction.weights_default_min_max_step['phase_bonus'][0], RewardFunction.weights_default_min_max_step['done'][0], RewardFunction.weights_default_min_max_step['neural_effort'][0],
+        reward_function_text = gr.Markdown(
+            "<span style='font-size: 1em;'>"
+            f"""The following **Reward** will be provided at each time step *n*:
+            $$
+            r_n = {-1*_reach_d} \cdot (\\text{{distance to current target }} i + \sum_{{j=i+1}}^{{{num_elements.value}}}\\text{{dist(target }}j\\text{{, target }} j-1\\text{{)}}) + \\\\
+                  {1*_phase_bonus_d} \cdot (\\text{{current target }} i \\text{{ successfully hit for the first time}}) + \\\\
+                  {1*_done_d} \cdot (\\text{{task successfully completed}}) + \\\\
+                  {-1*_neural_effort_d} \cdot (\\text{{squared control effort costs}})
+            $$"""
+            "</span>",
+            elem_id="reward-function",
+            # latex_delimiters=[{"left": "$", "right": "$", "display": False}],
+        )
         reward_weights, = RewardFunction.get_parameters()
+        weighted_reward_keys_gr = {k.label: k for k in reward_weights}
+        def update_reward_fct_view(num_elements, reach, phase_bonus, done, neural_effort):
+            return gr.update(value=
+            "<span style='font-size: 1em;'>"
+            f"""The following **Reward** will be provided at each time step *n*:
+            $$
+            r_n = {-1*reach} \cdot (\\text{{distance to current target }} i + \sum_{{j=i+1}}^{{{num_elements}}}\\text{{dist(target }}j\\text{{, target }} j-1\\text{{)}}) + \\\\
+                  {1*phase_bonus} \cdot (\\text{{current target }} i \\text{{ ssuccessfully hit for the first time}}) + \\\\
+                  {1*done} \cdot (\\text{{task successfully completed}}) + \\\\
+                  {-1*neural_effort} \cdot (\\text{{squared control effort costs}})
+            $$"""
+            "</span>")
+        for k in reward_weights + [num_elements]:
+            k.change(update_reward_fct_view, [num_elements, weighted_reward_keys_gr['reach'], weighted_reward_keys_gr['phase_bonus'], weighted_reward_keys_gr['done'], weighted_reward_keys_gr['neural_effort']], reward_function_text)
 
         gr.Markdown("### 3. RL Parameters")
         rl_params = RLParameters.get_parameters()
