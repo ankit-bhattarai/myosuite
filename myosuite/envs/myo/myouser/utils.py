@@ -106,8 +106,21 @@ class ProgressLogger:
           gr.Info(time_diff)
 
     # Log to Weights & Biases
+    rules = [
+        ("reward/", ["reward"]),
+        ("success/", ["target", "distance", "success"]),
+    ]
+
+    def rename_key(key: str) -> str:
+        k = key.lower()
+        for replacement, triggers in rules:
+            if any(t in k for t in triggers):
+                return key.replace("episode/", replacement)
+        return key
+
+    wandb_metrics = {rename_key(k): v for k, v in metrics.items()}
     if self.log_wandb:
-      wandb.log({'num_steps': num_steps, **metrics}, step=num_steps)
+      wandb.log({'num_steps': num_steps, **wandb_metrics}, step=num_steps)
 
     if self.log_gradio:
       gr.Info(f"Logged step {num_steps} to wandb!")

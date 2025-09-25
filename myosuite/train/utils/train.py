@@ -142,7 +142,7 @@ def plot_eval_metrics(results, step):
     plt.xlabel("Target size")
     plt.ylabel("Success rate")
     plt.title("Success rate vs Target size")
-    wandb.log({"chart/success_per_target_size": wandb.Image(fig1)}, step=step)
+    wandb.log({"success/success_per_target_size": wandb.Image(fig1)}, step=step)
     plt.close(fig1)
 
     # Plot 2: 3D target positions
@@ -160,7 +160,7 @@ def plot_eval_metrics(results, step):
     ax.set_xlabel('depth'); ax.set_ylabel('left-right'); ax.set_zlabel('height')
     ax.set_title("Target positions (green=success, red=failure)")
     ax.set_xlim(ax.get_xlim()[::-1])
-    wandb.log({"chart/target_positions": wandb.Image(fig)}, step=step)
+    wandb.log({"success/target_positions": wandb.Image(fig)}, step=step)
     plt.close()
 
 def log_r2_plots_to_wandb(task_metrics, step, plots_path=None):
