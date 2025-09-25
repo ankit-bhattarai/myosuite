@@ -867,7 +867,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             cfg_overrides = args_to_cfg_overrides(*args)
             # cfg = load_config_interactive(cfg_overrides, cfg_only=True)
             gr.Info("Set up training start from the GR UI!")
-            save_cfgs = []
+            save_cfgs.clear()
             save_cfgs.extend(cfg_overrides)
             # train(cfg)
             text = "Go to the next notebook in the cell and run the training!\n"
