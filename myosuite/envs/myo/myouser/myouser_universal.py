@@ -479,8 +479,8 @@ class MyoUserUniversal(MyoUserBase):
             print(f"Vision, so not adding {self.omni_keys} to obs_keys")
         print(f"Obs keys: {self.obs_keys}")
         self.ee_pos_id = self.mj_model.site('fingertip').id
-        self.non_accumulation_metrics = ['distance_to_target', 'phase_bonus_reward', 'done_reward', 'neural_effort_reward', 'distance_reward'] + [f'target_{i}_completed' for i in range(len(self.target_objs))]
-        self.accumulation_metrics = ['success_rate']
+        self.non_accumulation_metrics = ['distance_to_target', 'phase_bonus_reward', 'done_reward', 'neural_effort_reward', 'distance_reward'] + [f'target_{i}_completed' for i in range(len(self.target_objs)-1)]
+        self.accumulation_metrics = ['target_final_completed']
 
 
     def _prepare_after_init(self, data):
@@ -581,7 +581,7 @@ class MyoUserUniversal(MyoUserBase):
     def default_metrics(self, phase: int):
         ### Called if task hasn't been completed and sets the phase_complete_metrics according to the current phase
         return {
-            f'target_{i}_completed': 1.0 * (phase > i) for i in range(len(self.target_objs))
+            f'target_{i}_completed': 1.0 * (phase > i) for i in range(len(self.target_objs)-1)
         }
     
     def eval_metrics(self, rollout):
@@ -645,7 +645,7 @@ class MyoUserUniversal(MyoUserBase):
 
         metrics = {
             'distance_to_target': obs_dict['reach_dist'],
-            'success_rate': obs_dict['task_completed'],
+            'target_final_completed': obs_dict['task_completed'],
             'distance_reward': rwd_dict['reach']*current_weights['reach'],
             'phase_bonus_reward': rwd_dict['phase_bonus']*current_weights['phase_bonus'],
             'done_reward': rwd_dict['done']*current_weights['done'],
