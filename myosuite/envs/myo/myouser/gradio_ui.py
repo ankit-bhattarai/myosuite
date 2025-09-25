@@ -16,7 +16,7 @@ sphere_ranges = {
     "x": (0.225, 0.35),
     "y": (-0.1, 0.1),
     "z": (-0.3, 0.3),
-    "size": (0.05, 0.15),
+    "size": (0.005, 0.15),  #radius
 }
 
 INIT_ELEMENTS = 2
@@ -204,17 +204,17 @@ class BoxParameters:
                 with gr.Row():
                     box_size_x_slider = gr.Slider(
                         label="Width",
-                        minimum=0.02,
-                        maximum=0.03,
-                        value=0.025,
+                        minimum=0.005,
+                        maximum=0.06,
+                        value=0.05,
                         step=0.001,
                         interactive=True
                     )
                     box_size_y_slider = gr.Slider(
                         label="Height",
-                        minimum=0.02,
-                        maximum=0.03,
-                        value=0.025,
+                        minimum=0.005,
+                        maximum=0.06,
+                        value=0.05,
                         step=0.001,
                         interactive=True
                     )
@@ -261,8 +261,8 @@ class BoxParameters:
         rgb = hex_to_rgb(rgb_btn)
         overrides = []
         overrides.append(f"env.task_config.targets.target_{i}.position=[{box_position_x},{box_position_y},{box_position_z}]")
-        overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{box_size_x_slider},{box_size_y_slider},0.01]")
-        overrides.append(f"env.task_config.targets.target_{i}.site_size=[{box_size_x_slider-0.005},{box_size_y_slider-0.005},0.01]")
+        overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{0.5*box_size_x_slider},{0.5*box_size_y_slider},0.01]")
+        overrides.append(f"env.task_config.targets.target_{i}.site_size=[{0.5*box_size_x_slider-0.005},{0.5*box_size_y_slider-0.005},0.01]")
         overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_touch_force}")
         overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{-orientation_angle*np.pi/180},0]")
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
@@ -311,7 +311,7 @@ class SphereParameters:
                     )
                 with gr.Row():
                     size_slider = RangeSlider(
-                        label=f"Size Range",
+                        label=f"Size Range (Sphere Radius)",
                         minimum=sphere_ranges["size"][0],
                         maximum=sphere_ranges["size"][1],
                         value=(sphere_ranges["size"][0], sphere_ranges["size"][1]),
