@@ -474,6 +474,7 @@ class RewardFunction:
 
 class RLParameters:
     num_elements: int = 9
+    num_mds: int = 1
 
     @staticmethod
     def get_parameters():
@@ -500,7 +501,7 @@ class RLParameters:
                 maximum=10,
                 interactive=True
             )
-        gr.Markdown(
+        md_rl_note = gr.Markdown(
             "<span style='font-size: 1em;'>"
             "<b><span style='color:red'>Note:</span></b> Ensure that (<i>batch_size</i> * <i>num_minibatches</i>) is a multiple of <i>num_envs</i>."
             "</span>",
@@ -556,7 +557,7 @@ class RLParameters:
             interactive=True,
             visible=False
         )
-        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed
+        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed, md_rl_note
 
     @staticmethod
     def get_my_args(all_args):
@@ -564,7 +565,7 @@ class RLParameters:
 
     @classmethod
     def parse_values(cls, all_args):
-        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed = cls.get_my_args(all_args)
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed, md_rl_note = cls.get_my_args(all_args)
         overrides = []
         num_targets = cls.get_number_targets(all_args)
         to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
@@ -611,6 +612,7 @@ class ConfigSaver:
     def config_save_clicked(self, config_name_input, *args):
         if config_name_input in self.my_configs:
             gr.Warning("There is already a configuration with this name. Please choose a different name.")
+            return gr.skip()
         if config_name_input == "":
             gr.Warning("Please enter a name for the configuration.")
         else:
@@ -629,6 +631,13 @@ class ConfigSaver:
 def get_ui(project_name, save_cfgs=[]):
     # Fix box handlers properly
     with gr.Blocks() as demo:
+        pageview = gr.Radio(
+            choices=["Simple", "Advanced"],
+            label=f"Show Advanced Options",
+            value="Simple",
+            interactive=True
+        )
+
         gr.Markdown("**Weights & Biases URL:**")
         url_display = gr.Textbox(
             value=f"https://wandb.ai/biom-rl-ui/{project_name}",
@@ -648,12 +657,12 @@ def get_ui(project_name, save_cfgs=[]):
                 visible=True
             )
 
-        gr.Markdown("### 1. Biomechanical Model Parameters")
+        md1 = gr.Markdown("### Biomechanical Model Parameters")
         bm_params = BMParameters.get_parameters()
         ctrl_dt, = bm_params
         
-        gr.Markdown("### 2. Task Parameters")
-        gr.Markdown("#### Target Setup")
+        md2 = gr.Markdown("### Task Parameters")
+        md21 = gr.Markdown("#### Target Setup")
         num_elements = gr.Number(
             label="Number of Targets",
             value=INIT_ELEMENTS,
@@ -718,14 +727,14 @@ def get_ui(project_name, save_cfgs=[]):
             box_rows.append(box_row)
             sphere_rows.append(sphere_row)
 
-        gr.Markdown("#### Other Task Parameters")
+        md22 = gr.Markdown("#### Other Task Parameters")
         task_params = TaskParameters.get_parameters(ctrl_dt=ctrl_dt.value)
         max_duration, = task_params
 
-        gr.Markdown("#### Observation Space")
+        md23 = gr.Markdown("#### Observation Space")
         obs_keys, omni_keys = ObservationSpace.get_parameters()
 
-        gr.Markdown("#### Reward Weights")
+        md24 = gr.Markdown("#### Reward Weights")
         def get_max_dist(num_elements, *radios_and_box_and_sphere_positions):
             ee_pos0 = [0., -0.27, 0.37]  #TODO: infer from model!
 
@@ -800,8 +809,10 @@ def get_ui(project_name, save_cfgs=[]):
         for k in reward_weights + [num_elements, max_dist]:
             k.change(update_reward_fct_view, [num_elements, weighted_reward_keys_gr['reach'], weighted_reward_keys_gr['phase_bonus'], weighted_reward_keys_gr['done'], weighted_reward_keys_gr['neural_effort'], max_dist], reward_function_text)
 
-        gr.Markdown("### 3. RL Parameters")
-        rl_params = RLParameters.get_parameters()
+        md3 = gr.Markdown("### RL Parameters")
+        rl_params_and_mds = RLParameters.get_parameters()
+        rl_params = rl_params_and_mds[:RLParameters.num_elements]
+        md_rl_notes = rl_params_and_mds[-RLParameters.num_mds:]
         num_timesteps = rl_params[0]
         target_init_seed = rl_params[-1]
 
@@ -913,6 +924,15 @@ def get_ui(project_name, save_cfgs=[]):
                 return gr.update(visible=True), gr.update(visible=False)
             else:  # Sphere
                 return gr.update(visible=False), gr.update(visible=True)
+        
+        def update_pageview(pageview, *advanced_options):
+            visible = (pageview == "Advanced")
+            return [gr.update(visible=visible) for opt in advanced_options]
+
+        advanced_options_and_markdowns = [*bm_params, *task_params, *obs_keys, *omni_keys, *rl_params, *md_rl_notes] + [md1, md22, md23, md3]
+        pageview.change(fn=update_pageview, inputs=(pageview, *advanced_options_and_markdowns), outputs=advanced_options_and_markdowns)
+        # also call this method once at the very beginning
+        demo.load(fn=update_pageview, inputs=(pageview, *advanced_options_and_markdowns), outputs=advanced_options_and_markdowns)
 
         # Event handler for dynamic elements
         num_elements.change(
