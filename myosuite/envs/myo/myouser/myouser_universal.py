@@ -159,6 +159,7 @@ class UniversalTaskConfig:
     reset_type: str = "range_uniform"
     targets: TargetsConfig = MISSING
     show_all_targets: bool = True
+    target_init_seed: int = 1
 
 @dataclass
 class UniversalEnvConfig(BaseEnvConfig):
@@ -415,7 +416,7 @@ class MyoUserUniversal(MyoUserBase):
         targets = [getattr(targets, f"target_{i}") for i in range(num_targets)]
         total_phases = len(targets)
         self.target_objs = []
-        rng = jax.random.PRNGKey(1)
+        rng = jax.random.PRNGKey(self._config.task_config.target_init_seed)
         for i, target in enumerate(targets):
             rng, rng_init = jax.random.split(rng, 2)
             if target.name == "pointing_target":
