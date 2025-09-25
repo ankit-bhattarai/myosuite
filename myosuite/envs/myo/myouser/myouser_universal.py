@@ -416,6 +416,10 @@ class MyoUserUniversal(MyoUserBase):
         targets = [getattr(targets, f"target_{i}") for i in range(num_targets)]
         total_phases = len(targets)
         self.target_objs = []
+        model = spec.compile()
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        target_coordinates_origin = data.site_xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, self._config.task_config.reach_settings.ref_site)]
         rng = jax.random.PRNGKey(self._config.task_config.target_init_seed)
         for i, target in enumerate(targets):
             rng, rng_init = jax.random.split(rng, 2)
@@ -431,7 +435,7 @@ class MyoUserUniversal(MyoUserBase):
             elif target.name == "button_target":
                 target_obj = ButtonTargetClass(phase_number=i,
                     total_phases=total_phases,
-                    position=jp.array(target.position),
+                    position=jp.array(target.position) + target_coordinates_origin,
                     geom_size=jp.array(target.geom_size),
                     site_size=jp.array(target.site_size),
                     site_pos=jp.array(target.site_pos),
