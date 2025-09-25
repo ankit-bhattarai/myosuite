@@ -90,7 +90,7 @@ def init_target_rgb(i):
     rgbs =[el*255 for el in target_rgb[i]]
     return f"rgba({rgbs[0]},{rgbs[1]},{rgbs[2]},1)"
 class BMParameters:
-    num_elements: int = 1
+    num_elements: int = 4
 
     @staticmethod
     def get_parameters():
@@ -103,7 +103,23 @@ class BMParameters:
                 step=0.01,
                 interactive=True
             )
-        return ctrl_dt, 
+            reset_type = gr.Dropdown(
+                label="Define how to reset the body pose", 
+                choices=("zero", "epsilon_uniform", "range_uniform", "None"),
+                interactive=True,
+                value="range_uniform"
+            )
+            sigdepnoise_enabled = gr.Checkbox(
+                label="Signal-dependent motor noise",   
+                value=False,
+                interactive=True
+            )
+            constantnoise_enabled = gr.Checkbox(
+                label="Constant motor noise",   
+                value=False,
+                interactive=True
+            )
+        return ctrl_dt, reset_type, sigdepnoise_enabled, constantnoise_enabled
 
     @staticmethod
     def get_my_args(all_args):
@@ -118,9 +134,14 @@ class BMParameters:
 
     @classmethod
     def parse_values(cls, all_args):
-        ctrl_dt, = cls.get_my_args(all_args)
+        ctrl_dt, reset_type, sigdepnoise_enabled, constantnoise_enabled = cls.get_my_args(all_args)
         overrides = []
         overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
+        overrides.append(f"env.task_config.reset_type={reset_type}")
+        sigdepnoise_type = "white" if sigdepnoise_enabled else "None"
+        constantnoise_type = "white" if constantnoise_enabled else "None"
+        overrides.append(f"env.muscle_config.noise_params.sigdepnoise_type={sigdepnoise_type}")
+        overrides.append(f"env.muscle_config.noise_params.constantnoise_type={constantnoise_type}")
         return overrides
 
 class BoxParameters:
@@ -474,6 +495,7 @@ class RewardFunction:
 
 class RLParameters:
     num_elements: int = 9
+    num_mds: int = 1
 
     @staticmethod
     def get_parameters():
@@ -500,7 +522,7 @@ class RLParameters:
                 maximum=10,
                 interactive=True
             )
-        gr.Markdown(
+        md_rl_note = gr.Markdown(
             "<span style='font-size: 1em;'>"
             "<b><span style='color:red'>Note:</span></b> Ensure that (<i>batch_size</i> * <i>num_minibatches</i>) is a multiple of <i>num_envs</i>."
             "</span>",
@@ -556,7 +578,7 @@ class RLParameters:
             interactive=True,
             visible=False
         )
-        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed
+        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed, md_rl_note
 
     @staticmethod
     def get_my_args(all_args):
@@ -611,12 +633,13 @@ class ConfigSaver:
     def config_save_clicked(self, config_name_input, *args):
         if config_name_input in self.my_configs:
             gr.Warning("There is already a configuration with this name. Please choose a different name.")
+            return gr.skip()
         if config_name_input == "":
             gr.Warning("Please enter a name for the configuration.")
         else:
             self.add_config(config_name_input, args)
             self.my_configs.append(config_name_input)
-        return gr.update(choices=self.my_configs)
+        return gr.update(choices=self.my_configs, value=config_name_input)
 
     def available_configs(self):
         return self.my_configs
@@ -626,16 +649,23 @@ class ConfigSaver:
             data = json.load(f)
         return tuple([gr.update(value=k) for k in data])
 
-def get_ui(wandb_url, save_cfgs=[]):
+def get_ui(project_name, save_cfgs=[]):
     # Fix box handlers properly
     with gr.Blocks() as demo:
+        pageview = gr.Radio(
+            choices=["Simple", "Advanced"],
+            label=f"Show Advanced Options",
+            value="Simple",
+            interactive=True
+        )
+
         gr.Markdown("**Weights & Biases URL:**")
         url_display = gr.Textbox(
-            value=wandb_url,
+            value=f"https://wandb.ai/biom-rl-ui/{project_name}",
             label="Results Dashboard",
             interactive=False,
             show_copy_button=True,
-            info="Click to copy the URL and monitor training progress"
+            info="Once your run starts, you can view the training progress for your projects here. Click to copy the URL to go to the wandb project and monitor training progress"
                     )
         
         gr.Markdown("### Pre-saved configurations")
@@ -648,12 +678,12 @@ def get_ui(wandb_url, save_cfgs=[]):
                 visible=True
             )
 
-        gr.Markdown("### 1. Biomechanical Model Parameters")
+        md1 = gr.Markdown("### Biomechanical Model Parameters")
         bm_params = BMParameters.get_parameters()
-        ctrl_dt, = bm_params
+        ctrl_dt, reset_type, sigdepnoise_enabled, constantnoise_enabled = bm_params
         
-        gr.Markdown("### 2. Task Parameters")
-        gr.Markdown("#### Target Setup")
+        md2 = gr.Markdown("### Task Parameters")
+        md21 = gr.Markdown("#### Target Setup")
         num_elements = gr.Number(
             label="Number of Targets",
             value=INIT_ELEMENTS,
@@ -718,14 +748,14 @@ def get_ui(wandb_url, save_cfgs=[]):
             box_rows.append(box_row)
             sphere_rows.append(sphere_row)
 
-        gr.Markdown("#### Other Task Parameters")
+        md22 = gr.Markdown("#### Other Task Parameters")
         task_params = TaskParameters.get_parameters(ctrl_dt=ctrl_dt.value)
         max_duration, = task_params
 
-        gr.Markdown("#### Observation Space")
+        md23 = gr.Markdown("#### Observation Space")
         obs_keys, omni_keys = ObservationSpace.get_parameters()
 
-        gr.Markdown("#### Reward Weights")
+        md24 = gr.Markdown("#### Reward Weights")
         def get_max_dist(num_elements, *radios_and_box_and_sphere_positions):
             ee_pos0 = [0., -0.27, 0.37]  #TODO: infer from model!
 
@@ -800,15 +830,13 @@ def get_ui(wandb_url, save_cfgs=[]):
         for k in reward_weights + [num_elements, max_dist]:
             k.change(update_reward_fct_view, [num_elements, weighted_reward_keys_gr['reach'], weighted_reward_keys_gr['phase_bonus'], weighted_reward_keys_gr['done'], weighted_reward_keys_gr['neural_effort'], max_dist], reward_function_text)
 
-        gr.Markdown("### 3. RL Parameters")
-        rl_params = RLParameters.get_parameters()
+        md3 = gr.Markdown("### RL Parameters")
+        rl_params_and_mds = RLParameters.get_parameters()
+        rl_params = rl_params_and_mds[:RLParameters.num_elements]
+        md_rl_notes = rl_params_and_mds[-RLParameters.num_mds:]
         num_timesteps = rl_params[0]
         target_init_seed = rl_params[-1]
-        
-        gr.Markdown("### Save current configuration")
-        with gr.Row():
-            config_name_input = gr.Textbox(label="Configuration Name", value="", interactive=True)
-            save_config_button = gr.Button("Save Configuration", variant="primary", size="lg")
+
 
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
@@ -816,8 +844,14 @@ def get_ui(wandb_url, save_cfgs=[]):
             env_view_1 = gr.Image(label="Environment View", interactive=False)
             env_view_2 = gr.Image(label="Environment View", interactive=False)
         
+                
+        gr.Markdown("### Save current configuration")
+        with gr.Row():
+            config_name_input = gr.Textbox(label="Configuration Name", value="", interactive=True)
+            save_config_button = gr.Button("Save Configuration", variant="primary", size="lg")
         # Add Run button and output
         gr.Markdown("### Run Configuration")
+        gr.Markdown("Click the save button above to save the configuration first!")
         with gr.Row():
             run_button = gr.Button("Run", variant="primary", size="lg")
         
@@ -829,7 +863,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             show_copy_button=True
         )
 
-        def args_to_cfg_overrides(*args):
+        def args_to_cfg_overrides(run_name, *args):
             """Print all configuration details"""
             # Extract values from args
             num_targets = args[RLParameters.num_elements]
@@ -837,7 +871,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             radio_end = radio_start + 10
             radio_values = args[radio_start:radio_end]
             
-            cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
+            cfg_overrides = ["env=universal", "run.using_gradio=True", f"wandb.project={project_name}", "wandb.entity=biom-rl-ui", f"wandb.name={run_name}"]
 
             bm_overrides = BMParameters.parse_values(args)
             cfg_overrides.extend(bm_overrides)
@@ -863,8 +897,8 @@ def get_ui(wandb_url, save_cfgs=[]):
 
             return cfg_overrides
 
-        def run_training(*args):
-            cfg_overrides = args_to_cfg_overrides(*args)
+        def run_training(run_name, *args):
+            cfg_overrides = args_to_cfg_overrides(run_name, *args)
             # cfg = load_config_interactive(cfg_overrides, cfg_only=True)
             gr.Info("Set up training start from the GR UI!")
             save_cfgs.clear()
@@ -874,10 +908,10 @@ def get_ui(wandb_url, save_cfgs=[]):
             text += "\n".join(save_cfgs)
             return text
 
-        def render_environment(*args):
+        def render_environment(run_name, *args):
             target_init_seed = RLParameters.get_target_init_seed(args)
             next_seed = target_init_seed + 1
-            cfg_overrides = args_to_cfg_overrides(*args)
+            cfg_overrides = args_to_cfg_overrides(run_name, *args)
             config = load_config_interactive(cfg_overrides)
             env = MyoUserUniversal(config.env)
             imgs = env.get_renderings()
@@ -912,6 +946,15 @@ def get_ui(wandb_url, save_cfgs=[]):
                 return gr.update(visible=True), gr.update(visible=False)
             else:  # Sphere
                 return gr.update(visible=False), gr.update(visible=True)
+        
+        def update_pageview(pageview, *advanced_options):
+            visible = (pageview == "Advanced")
+            return [gr.update(visible=visible) for opt in advanced_options]
+
+        advanced_options_and_markdowns = [*bm_params, *task_params, *obs_keys, *omni_keys, *rl_params, *md_rl_notes] + [md1, md22, md23, md3]
+        pageview.change(fn=update_pageview, inputs=(pageview, *advanced_options_and_markdowns), outputs=advanced_options_and_markdowns)
+        # also call this method once at the very beginning
+        demo.load(fn=update_pageview, inputs=(pageview, *advanced_options_and_markdowns), outputs=advanced_options_and_markdowns)
 
         # Event handler for dynamic elements
         num_elements.change(
@@ -972,9 +1015,10 @@ def get_ui(wandb_url, save_cfgs=[]):
         run_inputs.extend(reward_weights)
 
         # Run button event
+        run_or_save_inputs = [config_name_input] + run_inputs
         run_button.click(
             run_training,
-            inputs=run_inputs,
+            inputs=run_or_save_inputs,
             outputs=output_text
         )
 
@@ -984,16 +1028,15 @@ def get_ui(wandb_url, save_cfgs=[]):
             outputs=run_inputs
         )
 
-        save_config_inptus = [config_name_input] + run_inputs 
         save_config_button.click(
             config_saver.config_save_clicked,
-            inputs=save_config_inptus,
+            inputs=run_or_save_inputs,
             outputs=pre_saved_configs
         )
 
         render_button.click(
             render_environment,
-            inputs=run_inputs,
+            inputs=run_or_save_inputs,
             outputs=[target_init_seed, env_view_row, env_view_1, env_view_2]
         )
 
