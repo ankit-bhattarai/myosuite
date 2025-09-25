@@ -349,7 +349,7 @@ class SphereParameters:
         x_range, y_range, z_range, size_range, dwell_duration, rgb = cls.get_my_args(i, all_args)
         rgb = hex_to_rgb(rgb)
         overrides = []
-        overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{-y_range[0]},{z_range[0]}],[{x_range[1]},{-y_range[1]},{z_range[1]}]]")
+        overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{y_range[0]},{z_range[0]}],[{x_range[1]},{y_range[1]},{z_range[1]}]]")
         overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
         overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell_duration}")
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
