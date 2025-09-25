@@ -818,7 +818,8 @@ def get_ui(project_name, save_cfgs=[]):
             config_name_input = gr.Textbox(label="Configuration Name", value="", interactive=True)
             save_config_button = gr.Button("Save Configuration", variant="primary", size="lg")
         # Add Run button and output
-        gr.Markdown("### Run Configuration \n Click the save button above to save the configuration first!")
+        gr.Markdown("### Run Configuration")
+        gr.Markdown("Click the save button above to save the configuration first!")
         with gr.Row():
             run_button = gr.Button("Run", variant="primary", size="lg")
         
