@@ -426,7 +426,7 @@ class MyoUserUniversal(MyoUserBase):
             if target.name == "pointing_target":
                 target_obj = PointingTargetClass(phase_number=i,
                     total_phases=total_phases,
-                    target_pos_range=jp.array(target.position),
+                    target_pos_range=jp.array(target.position) + target_coordinates_origin,
                     target_radius_range=jp.array(target.size),
                     dwell_steps=int(target.dwell_duration/self.dt),
                     weighted_reward_keys=self._config.task_config.weighted_reward_keys,
