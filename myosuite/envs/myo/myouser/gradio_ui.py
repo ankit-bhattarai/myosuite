@@ -436,7 +436,7 @@ class RewardFunction:
         return overrides
 
 class RLParameters:
-    num_elements: int = 8
+    num_elements: int = 9
 
     @staticmethod
     def get_parameters():
@@ -511,7 +511,15 @@ class RLParameters:
                 inputs=select_checkpoint_run,
                 outputs=select_checkpoint_number
             )
-        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number
+        target_init_seed = gr.Number(
+            label="Target Initial Seed",
+            value = 0,
+            minimum=0,
+            maximum=1000000,
+            interactive=True,
+            visible=False
+        )
+        return num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed
 
     @staticmethod
     def get_my_args(all_args):
@@ -519,7 +527,7 @@ class RLParameters:
 
     @classmethod
     def parse_values(cls, all_args):
-        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = cls.get_my_args(all_args)
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed = cls.get_my_args(all_args)
         overrides = []
         num_targets = cls.get_number_targets(all_args)
         to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
@@ -532,11 +540,16 @@ class RLParameters:
         overrides.append(f"rl.num_minibatches={int(num_minibatches)}")
         exact_checkpoint_path = checkpoint_path_from_run_number(select_checkpoint_run, select_checkpoint_number)
         overrides.append(f"rl.load_checkpoint_path={exact_checkpoint_path}")
+        overrides.append(f"env.task_config.target_init_seed={int(target_init_seed)}")
         return overrides
 
     @classmethod
     def get_number_targets(cls, all_args):
         return all_args[RLParameters.num_elements]
+
+    @classmethod
+    def get_target_init_seed(cls, all_args):
+        return all_args[RLParameters.num_elements - 1]
 
 
 def update_dwell_duration(dwell_duration, ctrl_dt):
@@ -664,7 +677,8 @@ def get_ui(wandb_url, save_cfgs=[]):
 
         gr.Markdown("### 3. RL Parameters")
         rl_params = RLParameters.get_parameters()
-        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number = rl_params
+        num_timesteps = rl_params[0]
+        target_init_seed = rl_params[-1]
         
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
@@ -731,6 +745,8 @@ def get_ui(wandb_url, save_cfgs=[]):
             return text
 
         def render_environment(*args):
+            target_init_seed = RLParameters.get_target_init_seed(args)
+            next_seed = target_init_seed + 1
             cfg_overrides = args_to_cfg_overrides(*args)
             print(cfg_overrides)
             config = load_config_interactive(cfg_overrides)
@@ -738,7 +754,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             imgs = env.get_renderings()
             img1 = imgs[0][1]
             img2 = imgs[1][1]
-            return gr.update(visible=True), gr.update(value=img1), gr.update(value=img2)
+            return gr.update(value=next_seed), gr.update(visible=True), gr.update(value=img1), gr.update(value=img2)
             
 
         def update_dynamic_elements(num):
@@ -836,7 +852,7 @@ def get_ui(wandb_url, save_cfgs=[]):
         render_button.click(
             render_environment,
             inputs=run_inputs,
-            outputs=[env_view_row, env_view_1, env_view_2]
+            outputs=[target_init_seed, env_view_row, env_view_1, env_view_2]
         )
 
     return demo
