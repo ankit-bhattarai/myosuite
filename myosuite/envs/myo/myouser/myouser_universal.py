@@ -150,6 +150,7 @@ class UniversalTaskConfig:
         "reach": 1,
         "phase_bonus": 0,
         "done": 10,
+        "neural_effort": 0.001,
     })
     reach_metric: float = 10.0
     max_duration: float = 6.
@@ -477,7 +478,7 @@ class MyoUserUniversal(MyoUserBase):
             print(f"Vision, so not adding {self.omni_keys} to obs_keys")
         print(f"Obs keys: {self.obs_keys}")
         self.ee_pos_id = self.mj_model.site('fingertip').id
-        self.non_accumulation_metrics = ['distance_to_target', 'bonus_reward', 'distance_reward'] + [f'target_{i}_completed' for i in range(len(self.target_objs))] #completion_time?
+        self.non_accumulation_metrics = ['distance_to_target', 'phase_bonus_reward', 'done_reward', 'neural_effort_reward', 'distance_reward'] + [f'target_{i}_completed' for i in range(len(self.target_objs))]
         self.accumulation_metrics = ['success_rate']
 
 
@@ -630,11 +631,13 @@ class MyoUserUniversal(MyoUserBase):
 
         reward_weights = {
             'reach': jp.array([t.weighted_reward_keys['reach'] for t in self.target_objs]),
+            'neural_effort': jp.array([t.weighted_reward_keys['neural_effort'] for t in self.target_objs]),
             'phase_bonus': jp.array([t.weighted_reward_keys['phase_bonus'] for t in self.target_objs]),
             'done': jp.array([t.weighted_reward_keys['done'] for t in self.target_objs]),
         }
         current_weights = {
             'reach': reward_weights['reach'][obs_dict['phase']],
+            'neural_effort': reward_weights['neural_effort'][obs_dict['phase']],
             'phase_bonus': reward_weights['phase_bonus'][obs_dict['phase']],
             'done': reward_weights['done'][obs_dict['phase']],
         }
@@ -643,7 +646,9 @@ class MyoUserUniversal(MyoUserBase):
             'distance_to_target': obs_dict['reach_dist'],
             'success_rate': obs_dict['task_completed'],
             'distance_reward': rwd_dict['reach']*current_weights['reach'],
-            'bonus_reward': rwd_dict['phase_bonus']*current_weights['phase_bonus'] + rwd_dict['done']*current_weights['done'],
+            'phase_bonus_reward': rwd_dict['phase_bonus']*current_weights['phase_bonus'],
+            'done_reward': rwd_dict['done']*current_weights['done'],
+            'neural_effort_reward': rwd_dict['neural_effort']*current_weights['neural_effort'],
             **phase_complete_metrics,
         }
 
