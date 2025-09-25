@@ -462,6 +462,14 @@ def train_or_load_checkpoint(env_name,
     if eval_mode:
         ppo_params.num_timesteps = 0  #only load the model, do not train
 
+    ## TODO: fix this properly
+    if checkpoint_path == "None":
+        checkpoint_path = None
+    if env_cfg.muscle_config.noise_params.sigdepnoise_type == "None":
+        env_cfg.muscle_config.noise_params.sigdepnoise_type = None
+    if env_cfg.muscle_config.noise_params.constantnoise_type == "None":
+        env_cfg.muscle_config.noise_params.constantnoise_type = None
+
     # Handle checkpoint loading
     if checkpoint_path is not None:
         # Convert to absolute path
