@@ -14,7 +14,7 @@ if gr.NO_RELOAD:
 
 sphere_ranges = {
     "x": (0.2, 0.55),
-    "y": (-0.25, 0.25),
+    "y": (-0.25, 0.45),
     "z": (-0.3, 0.3),
     "size": (0.005, 0.15),  #radius
 }
@@ -177,24 +177,24 @@ class BoxParameters:
                 with gr.Row():
                     box_position_x = gr.Slider(
                         label="Depth Position",
-                        minimum=0.22,
-                        maximum=0.57,
+                        minimum=0.2,
+                        maximum=0.55,
                         value=button_position[0],
                         step=0.001,
                         interactive=True
                     )
                     box_position_y = gr.Slider(
                         label="Horizontal Position",
-                        minimum=-0.08,
-                        maximum=0.42,
+                        minimum=-0.25,
+                        maximum=0.45,
                         value=button_position[1],
                         step=0.001,
                         interactive=True
                     )
                     box_position_z = gr.Slider(
                         label="Vertical Position",
-                        minimum=-0.41,
-                        maximum=0.21,
+                        minimum=-0.3,
+                        maximum=0.3,
                         value=button_position[2],
                         step=0.001,
                         interactive=True
