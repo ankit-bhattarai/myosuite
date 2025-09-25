@@ -14,8 +14,11 @@
           <geom name="fixed-eye" quat="0.7106 0.25537 0.616985 0.221728" type="mesh" rgba="1 1 1 1" mesh="eye"/>
           <camera name="fixed-eye" pos="0 0 0" fovy="120"/>
         </body>
-        <body name='top_camera' pos="0.25 -0.27 1.5" quat="1 0 0 0">
-          <camera name='top_camera' pos="0 0 0" fovy="120"/>
+        <body name='side_camera' pos="0.25 -0.27 1.1" euler="1 0 0">
+          <camera name='side_camera' pos="0 0 0.6" fovy="70"/>
+        </body>
+        <body name='head_on_camera' pos="1.5 0.0 1.0" euler="1.5708 1.5708 0.0">
+          <camera name='head_on_camera' pos="0 0 12" fovy="10"/>
         </body>
     </worldbody>
 </mujoco>

@@ -462,7 +462,7 @@ class MyoUserUniversal(MyoUserBase):
             img = renderer.render()
         return img
     
-    def get_renderings(self, cameras: List[str] = ['agent_view_camera', 'side_camera']):
+    def get_renderings(self, cameras: List[str] = ['head_on_camera', 'side_camera']):
         return [(camera, self.model_render(camera)) for camera in cameras]
 
 
