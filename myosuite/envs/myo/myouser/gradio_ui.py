@@ -13,8 +13,8 @@ if gr.NO_RELOAD:
 
 
 sphere_ranges = {
-    "x": (0.2, 0.4),
-    "y": (-0.1, 0.1),
+    "x": (0.2, 0.55),
+    "y": (-0.25, 0.25),
     "z": (-0.3, 0.3),
     "size": (0.005, 0.15),  #radius
 }
@@ -195,8 +195,8 @@ class BoxParameters:
                     )
                     box_position_z = gr.Slider(
                         label="Vertical Position",
-                        minimum=0.6,
-                        maximum=1.2,
+                        minimum=-0.3,
+                        maximum=0.3,
                         value=button_position[2],
                         step=0.001,
                         interactive=True
