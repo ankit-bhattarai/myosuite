@@ -616,7 +616,7 @@ class ConfigSaver:
         else:
             self.add_config(config_name_input, args)
             self.my_configs.append(config_name_input)
-        return gr.update(choices=self.my_configs)
+        return gr.update(choices=self.my_configs, value=config_name_input)
 
     def available_configs(self):
         return self.my_configs
@@ -626,16 +626,16 @@ class ConfigSaver:
             data = json.load(f)
         return tuple([gr.update(value=k) for k in data])
 
-def get_ui(wandb_url, save_cfgs=[]):
+def get_ui(project_name, save_cfgs=[]):
     # Fix box handlers properly
     with gr.Blocks() as demo:
         gr.Markdown("**Weights & Biases URL:**")
         url_display = gr.Textbox(
-            value=wandb_url,
+            value=f"https://wandb.ai/biom-rl-ui/{project_name}",
             label="Results Dashboard",
             interactive=False,
             show_copy_button=True,
-            info="Click to copy the URL and monitor training progress"
+            info="Once your run starts, you can view the training progress for your projects here. Click to copy the URL to go to the wandb project and monitor training progress"
                     )
         
         gr.Markdown("### Pre-saved configurations")
@@ -804,11 +804,7 @@ def get_ui(wandb_url, save_cfgs=[]):
         rl_params = RLParameters.get_parameters()
         num_timesteps = rl_params[0]
         target_init_seed = rl_params[-1]
-        
-        gr.Markdown("### Save current configuration")
-        with gr.Row():
-            config_name_input = gr.Textbox(label="Configuration Name", value="", interactive=True)
-            save_config_button = gr.Button("Save Configuration", variant="primary", size="lg")
+
 
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
@@ -816,8 +812,13 @@ def get_ui(wandb_url, save_cfgs=[]):
             env_view_1 = gr.Image(label="Environment View", interactive=False)
             env_view_2 = gr.Image(label="Environment View", interactive=False)
         
+                
+        gr.Markdown("### Save current configuration")
+        with gr.Row():
+            config_name_input = gr.Textbox(label="Configuration Name", value="", interactive=True)
+            save_config_button = gr.Button("Save Configuration", variant="primary", size="lg")
         # Add Run button and output
-        gr.Markdown("### Run Configuration")
+        gr.Markdown("### Run Configuration \n Click the save button above to save the configuration first!")
         with gr.Row():
             run_button = gr.Button("Run", variant="primary", size="lg")
         
@@ -829,7 +830,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             show_copy_button=True
         )
 
-        def args_to_cfg_overrides(*args):
+        def args_to_cfg_overrides(run_name, *args):
             """Print all configuration details"""
             # Extract values from args
             num_targets = args[RLParameters.num_elements]
@@ -837,7 +838,7 @@ def get_ui(wandb_url, save_cfgs=[]):
             radio_end = radio_start + 10
             radio_values = args[radio_start:radio_end]
             
-            cfg_overrides = ["env=universal", "run.using_gradio=True", "wandb.project=workshop"]
+            cfg_overrides = ["env=universal", "run.using_gradio=True", f"wandb.project={project_name}", "wandb.entity=biom-rl-ui", f"wandb.name={run_name}"]
 
             bm_overrides = BMParameters.parse_values(args)
             cfg_overrides.extend(bm_overrides)
@@ -972,9 +973,10 @@ def get_ui(wandb_url, save_cfgs=[]):
         run_inputs.extend(reward_weights)
 
         # Run button event
+        run_or_save_inputs = [config_name_input] + run_inputs
         run_button.click(
             run_training,
-            inputs=run_inputs,
+            inputs=run_or_save_inputs,
             outputs=output_text
         )
 
@@ -984,10 +986,9 @@ def get_ui(wandb_url, save_cfgs=[]):
             outputs=run_inputs
         )
 
-        save_config_inptus = [config_name_input] + run_inputs 
         save_config_button.click(
             config_saver.config_save_clicked,
-            inputs=save_config_inptus,
+            inputs=run_or_save_inputs,
             outputs=pre_saved_configs
         )
 
