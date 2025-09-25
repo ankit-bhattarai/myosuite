@@ -108,11 +108,11 @@ class BMParameters:
         return overrides
 
 class BoxParameters:
-    num_elements: int = 9
+    num_elements: int = 8
     
     @staticmethod
     def fields():
-        return ["box_position_x", "box_position_y", "box_position_z", "box_size_x", "box_size_y", "completion_bonus", "min_touch_force", "orientation_angle", "rgb"]
+        return ["box_position_x", "box_position_y", "box_position_z", "box_size_x", "box_size_y", "min_touch_force", "orientation_angle", "rgb"]
     
     @staticmethod
     def get_parameters(i):
@@ -161,14 +161,6 @@ class BoxParameters:
                         step=0.001,
                         interactive=True
                     )
-                    completion_bonus_btn = gr.Slider(
-                        label="Completion Bonus",
-                        minimum=0.0,
-                        maximum=10.0,
-                        value=0.0,
-                        step=0.1,
-                        interactive=True
-                    )
                 with gr.Row():
                     min_touch_force = gr.Slider(
                         label="Minimum Touch Force",
@@ -192,7 +184,7 @@ class BoxParameters:
                         value="#FF6B6B",
                         interactive=True
                     )
-        return box_row, (box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn)
+        return box_row, (box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, min_touch_force, orientation_angle, rgb_btn)
 
     @staticmethod
     def get_my_args(i, all_args):
@@ -208,24 +200,23 @@ class BoxParameters:
 
     @classmethod
     def parse_values(cls, i, all_args):
-        box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn = cls.get_my_args(i, all_args)
+        box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, min_touch_force, orientation_angle, rgb_btn = cls.get_my_args(i, all_args)
         rgb = hex_to_rgb(rgb_btn)
         overrides = []
         overrides.append(f"env.task_config.targets.target_{i}.position=[{box_position_x},{box_position_y},{box_position_z}]")
         overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{box_size_x_slider},{box_size_y_slider},0.01]")
         overrides.append(f"env.task_config.targets.target_{i}.site_size=[{box_size_x_slider-0.005},{box_size_y_slider-0.005},0.01]")
-        overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus_btn}")
         overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_touch_force}")
         overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{orientation_angle*np.pi/180},0]")
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
         return overrides
 
 class SphereParameters:
-    num_elements: int = 7
+    num_elements: int = 6
 
     @staticmethod
     def fields():
-        return ["x_range", "y_range", "z_range", "size_range", "dwell_duration", "completion_bonus", "rgb"]
+        return ["x_range", "y_range", "z_range", "size_range", "dwell_duration", "rgb"]
     
     @staticmethod
     def get_parameters(i, dwell_duration_min=0.0):
@@ -276,20 +267,12 @@ class SphereParameters:
                         step=0.01,
                         interactive=True
                     )
-                    completion_bonus_pt = gr.Number(
-                        label=f"Completion Bonus",
-                        value=0.0,
-                        minimum=0.0,
-                        maximum=10.0,
-                        step=0.1,
-                        interactive=True
-                    )
                     color_picker = gr.ColorPicker(
                         label=f"RGB",
                         value="#FF6B6B",
                         interactive=True
                     )
-        return sphere_row, (x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker)
+        return sphere_row, (x_slider, y_slider, z_slider, size_slider, dwell_duration, color_picker)
 
     def get_my_args(i, all_args):
         rl_number = RLParameters.num_elements
@@ -304,13 +287,12 @@ class SphereParameters:
     
     @classmethod
     def parse_values(cls, i, all_args):
-        x_range, y_range, z_range, size_range, dwell_duration, completion_bonus, rgb = cls.get_my_args(i, all_args)
+        x_range, y_range, z_range, size_range, dwell_duration, rgb = cls.get_my_args(i, all_args)
         rgb = hex_to_rgb(rgb)
         overrides = []
         overrides.append(f"env.task_config.targets.target_{i}.position=[[{x_range[0]},{-y_range[0]},{z_range[0]}],[{x_range[1]},{-y_range[1]},{z_range[1]}]]")
         overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
         overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell_duration}")
-        overrides.append(f"env.task_config.targets.target_{i}.completion_bonus={completion_bonus}")
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
         print(overrides)
         return overrides
@@ -621,14 +603,14 @@ def get_ui(wandb_url, save_cfgs=[]):
                         interactive=True
                     )
                     box_row, box_params = BoxParameters.get_parameters(i)
-                    box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, completion_bonus_btn, min_touch_force, orientation_angle, rgb_btn = box_params
+                    box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, min_touch_force, orientation_angle, rgb_btn = box_params
                     # Store box components
                     all_components['boxes'].append({
                         key: value for key, value in zip(BoxParameters.fields(), box_params)
                     })
 
                     sphere_row, sphere_params = SphereParameters.get_parameters(i, dwell_duration_min=ctrl_dt.value)
-                    x_slider, y_slider, z_slider, size_slider, dwell_duration, completion_bonus_pt, color_picker = sphere_params
+                    x_slider, y_slider, z_slider, size_slider, dwell_duration, color_picker = sphere_params
                     ctrl_dt.change(fn=update_dwell_duration, inputs=(dwell_duration, ctrl_dt), outputs=dwell_duration, preprocess=False)
                     # Store sphere components
                     all_components['spheres'].append({
