@@ -8,6 +8,7 @@ if gr.NO_RELOAD:
     import myosuite
     import os
     from pathlib import Path
+    import json
     myosuite_path = Path(myosuite.__path__[0])
 
 
@@ -73,6 +74,21 @@ def hex_to_rgb(hex_color):
     rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
     return rgb
 
+def init_target_rgb(i):
+    target_rgb = [
+        [0.8, 0.1, 0.1],
+        [0.1, 0.8, 0.1],
+        [0.1, 0.1, 0.8],
+        [0.8, 0.8, 0.1],
+        [0.4, 0.4, 0.4],
+        [0.4, 0.1, 0.4],
+        [0.1, 0.4, 0.4],
+        [0.4, 0.4, 0.1],
+        [0.1, 0.1, 0.1],
+        [0.8, 0.8, 0.8],
+    ]
+    rgbs =[el*255 for el in target_rgb[i]]
+    return f"rgba({rgbs[0]},{rgbs[1]},{rgbs[2]},1)"
 class BMParameters:
     num_elements: int = 1
 
@@ -111,12 +127,32 @@ class BoxParameters:
     num_elements: int = 8
     
     @staticmethod
+    def init_button_positions(i):
+        button_positions = [
+            [0.392, -0.24, 0.843],
+            [0.392, -0.17, 0.843],
+            [0.392, -0.1, 0.843],
+            [0.482, -0.24, 0.943],
+            [0.482, -0.17, 0.943],
+            [0.482, -0.1, 0.943],
+            [0.392, -0.24, 1.043],
+            [0.392, -0.1, 1.043],
+            [0.392, -0.24, 0.743],
+            [0.392, -0.17, 0.743],
+        ]
+        return button_positions[i]
+
+
+
+    @staticmethod
     def fields():
         return ["box_position_x", "box_position_y", "box_position_z", "box_size_x", "box_size_y", "min_touch_force", "orientation_angle", "rgb"]
     
     @staticmethod
     def get_parameters(i):
         # Boxes option row
+        button_position = BoxParameters.init_button_positions(i)
+        button_rgb = init_target_rgb(i)
         with gr.Row(visible=False) as box_row:
             with gr.Accordion(label=f"Box {i+1} Settings", open=False):
                 with gr.Row():
@@ -124,7 +160,7 @@ class BoxParameters:
                         label="Depth Position",
                         minimum=0.2,
                         maximum=0.55,
-                        value=0.225,
+                        value=button_position[0],
                         step=0.001,
                         interactive=True
                     )
@@ -132,7 +168,7 @@ class BoxParameters:
                         label="Horizontal Position",
                         minimum=-0.25,
                         maximum=0.25,
-                        value=-0.1,
+                        value=button_position[1],
                         step=0.001,
                         interactive=True
                     )
@@ -140,7 +176,7 @@ class BoxParameters:
                         label="Vertical Position",
                         minimum=0.6,
                         maximum=1.2,
-                        value=0.843,
+                        value=button_position[2],
                         step=0.001,
                         interactive=True
                     )
@@ -181,7 +217,7 @@ class BoxParameters:
                     )
                     rgb_btn = gr.ColorPicker(
                         label="RGB",
-                        value="#FF6B6B",
+                        value=button_rgb,
                         interactive=True
                     )
         return box_row, (box_position_x, box_position_y, box_position_z, box_size_x_slider, box_size_y_slider, min_touch_force, orientation_angle, rgb_btn)
@@ -220,7 +256,9 @@ class SphereParameters:
     
     @staticmethod
     def get_parameters(i, dwell_duration_min=0.0):
+
     # Sphere option row  
+        sphere_rgb = init_target_rgb(i)
         with gr.Row(visible=True) as sphere_row:
             with gr.Accordion(label=f"Sphere {i+1} Settings", open=False):
                 with gr.Row():
@@ -269,7 +307,7 @@ class SphereParameters:
                     )
                     color_picker = gr.ColorPicker(
                         label=f"RGB",
-                        value="#FF6B6B",
+                        value=sphere_rgb,
                         interactive=True
                     )
         return sphere_row, (x_slider, y_slider, z_slider, size_slider, dwell_duration, color_picker)
@@ -555,6 +593,40 @@ class RLParameters:
 def update_dwell_duration(dwell_duration, ctrl_dt):
     return gr.update(minimum=max(ctrl_dt, 0))
 
+class ConfigSaver:    
+    def check_folder(self):
+        if not os.path.exists("gradio_configs"):
+            os.makedirs("gradio_configs")
+        files = os.listdir("gradio_configs")
+        json_files = [file for file in files if file.endswith(".json")]
+        file_names = [file.split(".")[0] for file in json_files]
+        return file_names
+    
+    def __init__(self):
+        self.my_configs = self.check_folder()
+
+    def add_config(self, config_name, data):
+        with open(f"gradio_configs/{config_name}.json", "w") as f:
+            json.dump(data, f)
+        
+    def config_save_clicked(self, config_name_input, *args):
+        if config_name_input in self.my_configs:
+            gr.Warning("There is already a configuration with this name. Please choose a different name.")
+        if config_name_input == "":
+            gr.Warning("Please enter a name for the configuration.")
+        else:
+            self.add_config(config_name_input, args)
+            self.my_configs.append(config_name_input)
+        return gr.update(choices=self.my_configs)
+
+    def available_configs(self):
+        return self.my_configs
+
+    def load_config(self, config_name):
+        with open(f"gradio_configs/{config_name}.json", "r") as f:
+            data = json.load(f)
+        return tuple([gr.update(value=k) for k in data])
+
 def get_ui(wandb_url, save_cfgs=[]):
     # Fix box handlers properly
     with gr.Blocks() as demo:
@@ -567,6 +639,16 @@ def get_ui(wandb_url, save_cfgs=[]):
             info="Click to copy the URL and monitor training progress"
                     )
         
+        gr.Markdown("### Pre-saved configurations")
+        config_saver = ConfigSaver()
+        with gr.Row():
+            pre_saved_configs = gr.Dropdown(
+                label="Pre-saved configurations",
+                choices=config_saver.available_configs(),
+                interactive=True,
+                visible=True
+            )
+
         gr.Markdown("### 1. Biomechanical Model Parameters")
         bm_params = BMParameters.get_parameters()
         ctrl_dt, = bm_params
@@ -724,6 +806,11 @@ def get_ui(wandb_url, save_cfgs=[]):
         num_timesteps = rl_params[0]
         target_init_seed = rl_params[-1]
         
+        gr.Markdown("### Save current configuration")
+        with gr.Row():
+            config_name_input = gr.Textbox(label="Configuration Name", value="", interactive=True)
+            save_config_button = gr.Button("Save Configuration", variant="primary", size="lg")
+
         gr.Markdown("### View of the environment")
         render_button = gr.Button("Render Environment", variant="primary", size="lg")
         with gr.Row(visible=False) as env_view_row:
@@ -891,6 +978,19 @@ def get_ui(wandb_url, save_cfgs=[]):
             run_training,
             inputs=run_inputs,
             outputs=output_text
+        )
+
+        pre_saved_configs.change(
+            config_saver.load_config,
+            inputs=pre_saved_configs,
+            outputs=run_inputs
+        )
+
+        save_config_inptus = [config_name_input] + run_inputs 
+        save_config_button.click(
+            config_saver.config_save_clicked,
+            inputs=save_config_inptus,
+            outputs=pre_saved_configs
         )
 
         render_button.click(
