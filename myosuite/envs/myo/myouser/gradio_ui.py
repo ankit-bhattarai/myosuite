@@ -243,7 +243,7 @@ class BoxParameters:
         overrides.append(f"env.task_config.targets.target_{i}.geom_size=[{box_size_x_slider},{box_size_y_slider},0.01]")
         overrides.append(f"env.task_config.targets.target_{i}.site_size=[{box_size_x_slider-0.005},{box_size_y_slider-0.005},0.01]")
         overrides.append(f"env.task_config.targets.target_{i}.min_touch_force={min_touch_force}")
-        overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{orientation_angle*np.pi/180},0]")
+        overrides.append(f"env.task_config.targets.target_{i}.euler=[0,{-orientation_angle*np.pi/180},0]")
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
         return overrides
 
