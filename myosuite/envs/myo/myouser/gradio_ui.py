@@ -645,35 +645,79 @@ def get_ui(wandb_url, save_cfgs=[]):
         obs_keys, omni_keys = ObservationSpace.get_parameters()
 
         gr.Markdown("#### Reward Weights")
+        def get_max_dist(num_elements, *radios_and_box_and_sphere_positions):
+            ee_pos0 = [0., -0.27, 0.37]  #TODO: infer from model!
+
+            _num_targets_max = int(len(radios_and_box_and_sphere_positions) // (1 + 2*3))
+            radios = radios_and_box_and_sphere_positions[:num_elements]
+            box_positions_x = radios_and_box_and_sphere_positions[_num_targets_max:2*_num_targets_max]
+            box_positions_y = radios_and_box_and_sphere_positions[2*_num_targets_max:3*_num_targets_max]
+            box_positions_z = radios_and_box_and_sphere_positions[3*_num_targets_max:4*_num_targets_max]
+            sphere_positions_x = radios_and_box_and_sphere_positions[4*_num_targets_max:5*_num_targets_max]
+            sphere_positions_y = radios_and_box_and_sphere_positions[5*_num_targets_max:6*_num_targets_max]
+            sphere_positions_z = radios_and_box_and_sphere_positions[6*_num_targets_max:7*_num_targets_max]
+            target_positions = [ee_pos0]
+            for target_id in range(num_elements):
+                if radios[target_id] == "Box":
+                    target_positions.append([box_positions_x[target_id], box_positions_y[target_id], box_positions_z[target_id]])
+                elif radios[target_id] == "Sphere":
+                    target_positions.append([np.mean(sphere_positions_x[target_id]), np.mean(sphere_positions_y[target_id]), np.mean(sphere_positions_z[target_id])])
+                else:
+                    raise NotImplementedError()
+            target_positions = np.array(target_positions)
+            max_dist = np.sum(np.linalg.norm(np.diff(target_positions, axis=0), axis=1), axis=0).item()
+            return max_dist
+        def update_max_dist(num_elements, *radios_and_box_and_sphere_positions):
+            max_dist = get_max_dist(num_elements, *radios_and_box_and_sphere_positions)
+            return gr.update(value=max_dist)
+        radios_and_box_and_sphere_positions = radios + [b["box_position_x"] for b in all_components['boxes']] + \
+                                                [b["box_position_y"] for b in all_components['boxes']] + \
+                                                [b["box_position_z"] for b in all_components['boxes']] + \
+                                                [s["x_range"] for s in all_components['spheres']] + \
+                                                [s["y_range"] for s in all_components['spheres']] + \
+                                                [s["z_range"] for s in all_components['spheres']]
+        max_dist = gr.Number(
+                label="Maximum Path Length",   
+                value=get_max_dist(num_elements.value, *[r.value for r in radios_and_box_and_sphere_positions]),
+                interactive=False,
+                visible=False,
+            )
+        for k in radios_and_box_and_sphere_positions + [num_elements]:
+            k.change(fn=update_max_dist, 
+                    inputs=(num_elements, *radios_and_box_and_sphere_positions),
+                    outputs=max_dist,
+                    preprocess=False
+                    )
+
+        num_ctrls = 26  #TODO: infer from chosen MuJoCo model
+        def reward_fct_view(num_elements, reach, phase_bonus, done, neural_effort, max_dist):
+            return  f"""<span style='font-size: 1em;'>The following **Reward** will be provided at each time step *n*, depending on the current target *i*:
+            <div align="center">
+            $r_n =$ <span title="min: {-1*reach*max_dist:.4g};
+            max: {0}">${-1*reach} \cdot (\\text{{distance to current target }} i + \sum_{{j=i+1}}^{{{num_elements}}}\\text{{dist(target }}j\\text{{, target }} j-1\\text{{)}})$</span>
+
+            <span title="min: {0};
+            max: {1*phase_bonus}">$+ {1*phase_bonus} \cdot (\\text{{current target }} i \\text{{ successfully hit for the first time}})$</span>
+            
+            <span title="min: {0};
+            max: {1*done}">$+ {1*done} \cdot (\\text{{task successfully completed}})$</span>
+            
+            <span title="min: {-1*neural_effort*num_ctrls};
+            max: {0}">$- {1*neural_effort} \cdot (\\text{{squared control effort costs}})$</span>
+            </div></span>"""
         _reach_d, _phase_bonus_d, _done_d, _neural_effort_d = RewardFunction.weights_default_min_max_step['reach'][0], RewardFunction.weights_default_min_max_step['phase_bonus'][0], RewardFunction.weights_default_min_max_step['done'][0], RewardFunction.weights_default_min_max_step['neural_effort'][0],
         reward_function_text = gr.Markdown(
-            "<span style='font-size: 1em;'>"
-            f"""The following **Reward** will be provided at each time step *n*, depending on the current target *i*:
-            $$
-            r_n = {-1*_reach_d} \cdot (\\text{{distance to current target }} i + \sum_{{j=i+1}}^{{{num_elements.value}}}\\text{{dist(target }}j\\text{{, target }} j-1\\text{{)}}) + \\\\
-                  {1*_phase_bonus_d} \cdot (\\text{{current target }} i \\text{{ successfully hit for the first time}}) + \\\\
-                  {1*_done_d} \cdot (\\text{{task successfully completed}}) - \\\\
-                  {1*_neural_effort_d} \cdot (\\text{{squared control effort costs}})
-            $$"""
-            "</span>",
+            reward_fct_view(num_elements=num_elements.value, reach=_reach_d, phase_bonus=_phase_bonus_d, done=_done_d, neural_effort=_neural_effort_d, max_dist=max_dist.value),
             elem_id="reward-function",
-            # latex_delimiters=[{"left": "$", "right": "$", "display": False}],
+            line_breaks=True,
+            latex_delimiters=[{"left": "$", "right": "$", "display": False}],
         )
+        def update_reward_fct_view(num_elements, reach, phase_bonus, done, neural_effort, max_dist):
+            return gr.update(value=reward_fct_view(num_elements=num_elements, reach=reach, phase_bonus=phase_bonus, done=done, neural_effort=neural_effort, max_dist=max_dist))
         reward_weights, = RewardFunction.get_parameters()
         weighted_reward_keys_gr = {k.label: k for k in reward_weights}
-        def update_reward_fct_view(num_elements, reach, phase_bonus, done, neural_effort):
-            return gr.update(value=
-            "<span style='font-size: 1em;'>"
-            f"""The following **Reward** will be provided at each time step *n*, depending on the current target *i*:
-            $$
-            r_n = {-1*reach} \cdot (\\text{{distance to current target }} i + \sum_{{j=i+1}}^{{{num_elements}}}\\text{{dist(target }}j\\text{{, target }} j-1\\text{{)}}) + \\\\
-                  {1*phase_bonus} \cdot (\\text{{current target }} i \\text{{ successfully hit for the first time}}) + \\\\
-                  {1*done} \cdot (\\text{{task successfully completed}}) - \\\\
-                  {1*neural_effort} \cdot (\\text{{squared control effort costs}})
-            $$"""
-            "</span>")
-        for k in reward_weights + [num_elements]:
-            k.change(update_reward_fct_view, [num_elements, weighted_reward_keys_gr['reach'], weighted_reward_keys_gr['phase_bonus'], weighted_reward_keys_gr['done'], weighted_reward_keys_gr['neural_effort']], reward_function_text)
+        for k in reward_weights + [num_elements, max_dist]:
+            k.change(update_reward_fct_view, [num_elements, weighted_reward_keys_gr['reach'], weighted_reward_keys_gr['phase_bonus'], weighted_reward_keys_gr['done'], weighted_reward_keys_gr['neural_effort'], max_dist], reward_function_text)
 
         gr.Markdown("### 3. RL Parameters")
         rl_params = RLParameters.get_parameters()
