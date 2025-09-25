@@ -17,8 +17,13 @@
         <body name='side_camera' pos="0.25 -0.27 1.1" euler="1 0 0">
           <camera name='side_camera' pos="0 0 0.6" fovy="70"/>
         </body>
+<<<<<<< HEAD
         <body name='head_on_camera' pos="1.5 0.0 1.0" euler="1.5708 1.5708 0.0">
           <camera name='head_on_camera' pos="0 0 12" fovy="10"/>
+=======
+        <body name='agent_view_camera' pos="0.1 0 1.1" euler="0 -0.05 -1.57">
+          <camera name='agent_view_camera' pos="0 0 0.1" fovy="70"/>
+>>>>>>> 13f33f99bcbf4ac72f46f4670f6d5bb79bf4e0cc
         </body>
     </worldbody>
 </mujoco>
