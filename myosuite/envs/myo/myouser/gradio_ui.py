@@ -149,18 +149,16 @@ class BoxParameters:
     
     @staticmethod
     def init_button_positions(i):
-        button_positions = [
-            [0.392, -0.24, 0.843],
-            [0.392, -0.17, 0.843],
-            [0.392, -0.1, 0.843],
-            [0.482, -0.24, 0.943],
-            [0.482, -0.17, 0.943],
-            [0.482, -0.1, 0.943],
-            [0.392, -0.24, 1.043],
-            [0.392, -0.1, 1.043],
-            [0.392, -0.24, 0.743],
-            [0.392, -0.17, 0.743],
-        ]
+        button_positions = [[0.42, 0.02, 0.01],
+                            [0.42, 0.32, 0.01],
+                            [0.42, 0.02, -0.29],
+                            [0.42, 0.32, -0.29],
+                            [0.5, 0.0, -0.05],
+                            [0.5, 0.07, -0.05],
+                            [0.41, -0.07, 0.05],
+                            [0.41, 0.07, 0.05],
+                            [0.41, -0.07, -0.25],
+                            [0.41, 0.0, -0.25]]
         return button_positions[i]
 
 
@@ -179,24 +177,24 @@ class BoxParameters:
                 with gr.Row():
                     box_position_x = gr.Slider(
                         label="Depth Position",
-                        minimum=0.2,
-                        maximum=0.55,
+                        minimum=0.22,
+                        maximum=0.57,
                         value=button_position[0],
                         step=0.001,
                         interactive=True
                     )
                     box_position_y = gr.Slider(
                         label="Horizontal Position",
-                        minimum=-0.25,
-                        maximum=0.25,
+                        minimum=-0.08,
+                        maximum=0.42,
                         value=button_position[1],
                         step=0.001,
                         interactive=True
                     )
                     box_position_z = gr.Slider(
                         label="Vertical Position",
-                        minimum=0.6,
-                        maximum=1.2,
+                        minimum=-0.41,
+                        maximum=0.21,
                         value=button_position[2],
                         step=0.001,
                         interactive=True
