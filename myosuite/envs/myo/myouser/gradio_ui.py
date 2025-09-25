@@ -90,7 +90,7 @@ def init_target_rgb(i):
     rgbs =[el*255 for el in target_rgb[i]]
     return f"rgba({rgbs[0]},{rgbs[1]},{rgbs[2]},1)"
 class BMParameters:
-    num_elements: int = 1
+    num_elements: int = 4
 
     @staticmethod
     def get_parameters():
@@ -103,7 +103,23 @@ class BMParameters:
                 step=0.01,
                 interactive=True
             )
-        return ctrl_dt, 
+            reset_type = gr.Dropdown(
+                label="Define how to reset the body pose", 
+                choices=("zero", "epsilon_uniform", "range_uniform", "None"),
+                interactive=True,
+                value="range_uniform"
+            )
+            sigdepnoise_enabled = gr.Checkbox(
+                label="Signal-dependent motor noise",   
+                value=False,
+                interactive=True
+            )
+            constantnoise_enabled = gr.Checkbox(
+                label="Constant motor noise",   
+                value=False,
+                interactive=True
+            )
+        return ctrl_dt, reset_type, sigdepnoise_enabled, constantnoise_enabled
 
     @staticmethod
     def get_my_args(all_args):
@@ -118,9 +134,14 @@ class BMParameters:
 
     @classmethod
     def parse_values(cls, all_args):
-        ctrl_dt, = cls.get_my_args(all_args)
+        ctrl_dt, reset_type, sigdepnoise_enabled, constantnoise_enabled = cls.get_my_args(all_args)
         overrides = []
         overrides.append(f"env.ctrl_dt={float(ctrl_dt)}")
+        overrides.append(f"env.task_config.reset_type={reset_type}")
+        sigdepnoise_type = "white" if sigdepnoise_enabled else "None"
+        constantnoise_type = "white" if constantnoise_enabled else "None"
+        overrides.append(f"env.muscle_config.noise_params.sigdepnoise_type={sigdepnoise_type}")
+        overrides.append(f"env.muscle_config.noise_params.constantnoise_type={constantnoise_type}")
         return overrides
 
 class BoxParameters:
@@ -565,7 +586,7 @@ class RLParameters:
 
     @classmethod
     def parse_values(cls, all_args):
-        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed, md_rl_note = cls.get_my_args(all_args)
+        num_timesteps, num_checkpoints, num_evaluations, batch_size, num_envs, num_minibatches, select_checkpoint_run, select_checkpoint_number, target_init_seed = cls.get_my_args(all_args)
         overrides = []
         num_targets = cls.get_number_targets(all_args)
         to_text = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
@@ -659,7 +680,7 @@ def get_ui(project_name, save_cfgs=[]):
 
         md1 = gr.Markdown("### Biomechanical Model Parameters")
         bm_params = BMParameters.get_parameters()
-        ctrl_dt, = bm_params
+        ctrl_dt, reset_type, sigdepnoise_enabled, constantnoise_enabled = bm_params
         
         md2 = gr.Markdown("### Task Parameters")
         md21 = gr.Markdown("#### Target Setup")
