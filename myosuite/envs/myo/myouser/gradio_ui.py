@@ -332,7 +332,6 @@ class SphereParameters:
         overrides.append(f"env.task_config.targets.target_{i}.size=[{size_range[0]},{size_range[1]}]")
         overrides.append(f"env.task_config.targets.target_{i}.dwell_duration={dwell_duration}")
         overrides.append(f"env.task_config.targets.target_{i}.rgb=[{rgb[0]},{rgb[1]},{rgb[2]}]")
-        print(overrides)
         return overrides
 
 class TaskParameters:
@@ -879,7 +878,6 @@ def get_ui(wandb_url, save_cfgs=[]):
             target_init_seed = RLParameters.get_target_init_seed(args)
             next_seed = target_init_seed + 1
             cfg_overrides = args_to_cfg_overrides(*args)
-            print(cfg_overrides)
             config = load_config_interactive(cfg_overrides)
             env = MyoUserUniversal(config.env)
             imgs = env.get_renderings()
