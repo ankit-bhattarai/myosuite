@@ -120,7 +120,7 @@ class ProgressLogger:
 
     wandb_metrics = {rename_key(k): v for k, v in metrics.items()}
     if self.log_wandb:
-      wandb.log({'num_steps': num_steps, **wandb_metrics}, step=num_steps)
+      wandb.log({**wandb_metrics}, step=num_steps)#'num_steps': num_steps, 
 
     if self.log_gradio:
       gr.Info(f"Logged step {num_steps} to wandb!")
