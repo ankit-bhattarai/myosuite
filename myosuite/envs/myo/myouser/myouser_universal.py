@@ -231,14 +231,15 @@ class TargetClass:
 
 class PointingTargetClass(TargetClass):
     def __init__(self, phase_number: int, total_phases: int, target_pos_range: List[List[float]], target_radius_range: List[float], 
-                dwell_steps: int,
+                dwell_steps: int, 
+                target_coordinates_origin: jp.ndarray,
                 weighted_reward_keys: Dict[str, float],
                 show_all_targets: bool = True,
                 target_name: str = "ee_pos", shape: str = "sphere"):
         self.phase_number = phase_number
         self.total_phases = total_phases
         self.is_last_phase = phase_number == total_phases - 1
-        self.target_coordinates_origin = jp.zeros(3) # TODO: to be set later
+        self.target_coordinates_origin = target_coordinates_origin
         self.target_pos_range = jp.array(target_pos_range)
         self.target_radius_range = jp.array(target_radius_range)
         self.dwell_steps = dwell_steps
@@ -426,8 +427,9 @@ class MyoUserUniversal(MyoUserBase):
             if target.name == "pointing_target":
                 target_obj = PointingTargetClass(phase_number=i,
                     total_phases=total_phases,
-                    target_pos_range=jp.array(target.position) + target_coordinates_origin,
+                    target_pos_range=jp.array(target.position),
                     target_radius_range=jp.array(target.size),
+                    target_coordinates_origin=target_coordinates_origin,
                     dwell_steps=int(target.dwell_duration/self.dt),
                     weighted_reward_keys=self._config.task_config.weighted_reward_keys,
                     show_all_targets=self._config.task_config.show_all_targets
