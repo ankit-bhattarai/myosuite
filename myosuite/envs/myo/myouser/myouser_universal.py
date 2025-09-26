@@ -115,10 +115,10 @@ class DefaultTargetsConfig(TargetsConfig):
     target_0: PointingTarget = field(default_factory=lambda: PointingTarget())
     target_1: PointingTarget = field(default_factory=lambda: PointingTarget(rgb=[0.0, 0.0, 1.0]))
     target_2: PointingTarget = field(default_factory=lambda: PointingTarget(rgb=[0.0, 1.0, 0.0]))
-    target_3: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.392, -0.24, 0.843], rgb=[0.8, 0.1, 0.1]))
-    target_4: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.392, -0.1, 0.843], rgb=[0.1, 0.8, 0.1]))
-    target_5: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.482, -0.24, 0.943], rgb=[0.1, 0.1, 0.8]))
-    target_6: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.482, -0.1, 0.943], rgb=[0.8, 0.8, 0.1]))
+    target_3: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.41, -0.05, -0.16], rgb=[0.8, 0.1, 0.1]))
+    target_4: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.41, 0.07, -0.16], rgb=[0.1, 0.8, 0.1]))
+    target_5: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.50, -0.05, -0.06], rgb=[0.1, 0.1, 0.8]))
+    target_6: ButtonTarget = field(default_factory=lambda: ButtonTarget(position=[0.50, 0.07, -0.06], rgb=[0.8, 0.8, 0.1]))
     num_targets: int = 7
 
 LIST_CONFIGS = [
