@@ -9,6 +9,8 @@ if gr.NO_RELOAD:
     import os
     from pathlib import Path
     import json
+    from dataclasses import dataclass, field
+    from typing import List
     myosuite_path = Path(myosuite.__path__[0])
 
 
@@ -25,6 +27,10 @@ INIT_ELEMENTS = 2
 parent_path = myosuite_path.parent
 CHECKPOINT_PATH = os.path.join(parent_path, "tracked_checkpoints/universal")
 
+@dataclass
+class RunState:
+    wandb_run_name: str = ""
+    cfg_overrides: List[str] = field(default_factory=lambda:[])
 
 def get_available_checkpoints():
     checkpoints = os.listdir(CHECKPOINT_PATH)
@@ -647,7 +653,7 @@ class ConfigSaver:
             data = json.load(f)
         return tuple([gr.update(value=k) for k in data])
 
-def get_ui(project_name, save_cfgs=[]):
+def get_ui(project_name, run_state = RunState()):
     # Fix box handlers properly
     with gr.Blocks() as demo:
         pageview = gr.Radio(
@@ -904,11 +910,12 @@ def get_ui(project_name, save_cfgs=[]):
             cfg_overrides = args_to_cfg_overrides(run_name, *args)
             # cfg = load_config_interactive(cfg_overrides, cfg_only=True)
             gr.Info("Set up training start from the GR UI!")
-            save_cfgs.clear()
-            save_cfgs.extend(cfg_overrides)
+            run_state.cfg_overrides.clear()
+            run_state.cfg_overrides.extend(cfg_overrides)
+            run_state.wandb_run_name = run_name
             # train(cfg)
             text = "Go to the next notebook in the cell and run the training!\n"
-            text += "\n".join(save_cfgs)
+            text += "\n".join(run_state.cfg_overrides)
             return text
 
         def render_environment(run_name, *args):
