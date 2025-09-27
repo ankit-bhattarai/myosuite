@@ -672,6 +672,7 @@ def get_ui(project_name, save_cfgs=[]):
             pre_saved_configs = gr.Dropdown(
                 label="Pre-saved configurations",
                 choices=config_saver.available_configs(),
+                value="",
                 interactive=True,
                 visible=True
             )
