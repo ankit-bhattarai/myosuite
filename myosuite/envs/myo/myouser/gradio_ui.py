@@ -897,6 +897,10 @@ def get_ui(project_name, save_cfgs=[]):
             return cfg_overrides
 
         def run_training(run_name, *args):
+            if run_name == "":
+                gr.Warning("Please enter a name for the configuration.")
+                text = "Error: You must enter a name for the configuration."
+                return text
             cfg_overrides = args_to_cfg_overrides(run_name, *args)
             # cfg = load_config_interactive(cfg_overrides, cfg_only=True)
             gr.Info("Set up training start from the GR UI!")
